@@ -49,8 +49,6 @@ public class DdzGameScreen extends Screen {
     private int countdown = 30;
     /** 拖拽选牌：上次处理的牌下标（-1=不在牌上），避免同一张牌被反复切换。 */
     private int lastDragCard = -1;
-    /** 本次拖拽模式：true=滑动连续选牌，false=滑动连续取消选牌（按下时手牌是否为空决定）。 */
-    private boolean dragSelectMode = true;
     /** 拖拽时上次鼠标位置（GUI 缩放坐标），用于路径采样插值防漏牌。 */
     private double lastDragX;
     private double lastDragY;
@@ -249,13 +247,11 @@ public class DdzGameScreen extends Screen {
         return -1;
     }
 
-    /** 按当前拖拽模式处理一张牌（选牌模式=加入选中，取消模式=移出选中）。 */
+    /** 切换一张牌的选中状态（未选中→选中，已选中→取消选中）。 */
     private void toggleCard(int idx) {
         DdzCard c = DdzClientState.INSTANCE.hand.get(idx);
-        if (dragSelectMode) {
+        if (!selected.remove(c.id())) {
             selected.add(c.id());
-        } else {
-            selected.remove(c.id());
         }
         buttonSignature = -1; // 触发按钮重建（出牌按钮可用性）
     }
@@ -263,26 +259,26 @@ public class DdzGameScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
-            // 按下时记录拖拽模式：手牌为空则本次拖拽=连续选牌，否则=连续取消选牌；
-            // 并立即处理按下的那张牌（单次点击选牌/取消选牌，即时响应）
-            dragSelectMode = selected.isEmpty();
+            // 点击：始终切换按下那张牌的选中状态；命中后消费点击以激活后续拖拽
             lastDragCard = -1;
             lastDragX = mouseX;
             lastDragY = mouseY;
             int idx = cardIndexAt(mouseX, mouseY);
             if (idx >= 0) {
                 toggleCard(idx);
-                lastDragCard = idx;
-                return true; // 消费点击：激活后续 mouseDragged 拖拽事件
+                lastDragCard = idx; // 按下已处理，避免拖拽首事件重复切换
+                return true;
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
     /**
-     * 长按左键滑动：按拖拽模式连续处理经过的每张牌。
-     * 鼠标快速滑动时单次事件可能跨越多张牌，这里沿「上次位置→当前位置」线段每 4px 采样
-     * 一次命中检测，保证中间牌不被漏掉；同一张牌只处理一次（lastDragCard 去重）。
+     * 长按左键滑动：逐张切换经过的每张牌——所在牌未选中则选中（滑选），
+     * 已选中则取消（滑取消），实时按该牌自身状态决定。
+     * 鼠标快速滑动时单次事件可能跨越多张牌，这里沿「上次位置→当前位置」线段每 4px
+     * 采样一次命中检测，保证中间牌不被漏掉；同一张牌在本次拖拽中只切换一次
+     * （lastDragCard 去重，移开再滑回会再次切换）。
      */
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
