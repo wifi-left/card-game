@@ -111,7 +111,7 @@ public final class DdzSoundPlayer {
     private static void play(SoundEvent event) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level != null && mc.getSoundManager() != null) {
-            mc.getSoundManager().play(SimpleSoundInstance.forUI(event, 1.0F));
+            mc.getSoundManager().play(SimpleSoundInstance.forUI(event, 1.0F, 1.0F));
         }
     }
 }

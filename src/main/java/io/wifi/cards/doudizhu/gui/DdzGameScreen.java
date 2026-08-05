@@ -58,6 +58,8 @@ public class DdzGameScreen extends Screen {
     /** 拖拽时上次鼠标位置（GUI 缩放坐标），用于路径采样插值防漏牌。 */
     private double lastDragX;
     private double lastDragY;
+    /** 本次按下是否始于手牌（从按钮/空白按下拖动不处理手牌，避免误选）。 */
+    private boolean dragArmed;
 
     public DdzGameScreen() {
         super(Component.literal("斗地主"));
@@ -335,10 +337,12 @@ public class DdzGameScreen extends Screen {
             lastDragY = mouseY;
             int idx = cardIndexAt(mouseX, mouseY);
             if (idx >= 0) {
+                dragArmed = true; // 从手牌上按下：长按拖动才会滑选/滑取消
                 toggleCard(idx);
                 lastDragCard = idx; // 按下已处理，避免拖拽首事件重复切换
                 return true;
             }
+            dragArmed = false; // 从按钮/空白按下：拖动不处理手牌（避免误选）
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
@@ -352,7 +356,7 @@ public class DdzGameScreen extends Screen {
      */
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (button == 0) {
+        if (button == 0 && dragArmed) {
             double dx = mouseX - lastDragX;
             double dy = mouseY - lastDragY;
             double dist = Math.hypot(dx, dy);

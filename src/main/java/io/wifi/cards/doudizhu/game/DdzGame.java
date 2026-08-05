@@ -80,6 +80,15 @@ public class DdzGame {
     private final List<String> historyCards = new ArrayList<>();
     /** 服务端世界引用（用于游戏刻计时；全假人房间为 null）。 */
     private final ServerLevel level;
+    /** 随机源（叫分起始座位、全员不叫随机定地主等）。 */
+    private final Random random = new Random();
+    /** 托管/机器人在出牌阶段自动行动的延迟（tick，2 秒）。 */
+    private static final int AUTO_ACT_DELAY_TICKS = 40;
+    /** 是否在等待延迟后的自动行动（仅出牌阶段；叫分/抢地主立即行动）。 */
+    private boolean pendingAutoAct;
+    private int pendingAutoActSeat = -1;
+    private long autoActDueGameTime;
+    private int autoActDelayCounter;
 
     public DdzGame(DdzRoom room) {
         this.room = room;
@@ -121,7 +130,6 @@ public class DdzGame {
         historyNames.clear();
         historyTypes.clear();
         historyCards.clear();
-        Random random = new Random();
         DdzGameMode mode = room.flowerMode ? DdzGameMode.FLOWER : DdzGameMode.CLASSIC;
         List<DdzCard> deck = DdzDeck.shuffled(mode, random);
         int bottomCount = room.flowerMode ? 4 : 3;
@@ -189,9 +197,17 @@ public class DdzGame {
         callCount++;
         if (callCount >= 3) {
             if (maxScoreSeat < 0) {
-                // 三人均不叫：本局作废，重新发牌
-                room.broadcast(new NoticeS2C("三人均未叫分，本局作废，重新发牌"));
-                start();
+                if (allAuto()) {
+                    // 全员托管/机器人且无人叫分：重发会陷入"不叫→重发"无限递归（栈溢出），
+                    // 改为随机指定地主继续对局
+                    int seat = random.nextInt(3);
+                    room.broadcast(new NoticeS2C("全员托管且无人叫分，随机指定地主"));
+                    becomeLandlord(seat, 1, 1);
+                } else {
+                    // 三人均不叫：本局作废，重新发牌
+                    room.broadcast(new NoticeS2C("三人均未叫分，本局作废，重新发牌"));
+                    start();
+                }
                 return;
             }
             becomeLandlord(maxScoreSeat, maxScore, 1);
@@ -199,6 +215,16 @@ public class DdzGame {
         }
         callSeat = next(callSeat);
         turn(callSeat);
+    }
+
+    /** 所有座位是否都处于自动行动状态（托管或机器人），用于避免"全不叫重发"死循环。 */
+    private boolean allAuto() {
+        for (int i = 0; i < 3; i++) {
+            if (!players[i].trusted() && !(botAuto && room.isBot(i))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** 抢地主表态。 */
@@ -310,7 +336,7 @@ public class DdzGame {
         }
     }
 
-    /** 开启/关闭指定座位托管（真人与假人均可）；开启且正轮到该座位时立即自动行动。 */
+    /** 开启/关闭指定座位托管（真人与假人均可）；开启且正轮到该座位时安排自动行动（出牌延迟 2 秒）。 */
     public void setTrustSeat(int seat, boolean enabled) {
         if (seat < 0 || seat >= 3) {
             return;
@@ -320,11 +346,11 @@ public class DdzGame {
         // 回传托管状态，客户端按钮（托管/取消托管）与服务端保持一致
         room.sendToSeat(seat, new TrustStateS2C(enabled));
         if (enabled && seat == currentSeat && isActivePhase()) {
-            autoAct(seat);
+            scheduleAutoAct(seat);
         }
     }
 
-    /** 玩家断线：自动托管代打（对局继续），正轮到他时立即自动行动。 */
+    /** 玩家断线：自动托管代打（对局继续），正轮到他时安排自动行动（出牌延迟 2 秒）。 */
     public void onPlayerDisconnect(int seat) {
         if (seat < 0 || seat >= 3) {
             return;
@@ -332,7 +358,7 @@ public class DdzGame {
         DdzPlayer p = players[seat];
         p.setTrusted(true);
         if (p.seat() == currentSeat) {
-            autoAct(p.seat());
+            scheduleAutoAct(p.seat());
         }
     }
 
@@ -401,10 +427,21 @@ public class DdzGame {
         resendResult(seat);
     }
 
-    /** 服务端每 tick 调用：超时判断（与客户端共用 level.getGameTime() 基准）。 */
+    /** 服务端每 tick 调用：托管出牌延迟到点判断 + 超时判断（与客户端共用 level.getGameTime() 基准）。 */
     public void tick() {
         if (!isActivePhase()) {
             return;
+        }
+        // 托管/机器人在出牌阶段延迟 2 秒后自动行动（让玩家看清上一手）
+        if (pendingAutoAct && currentSeat == pendingAutoActSeat) {
+            boolean due = level != null
+                    ? level.getGameTime() >= autoActDueGameTime
+                    : ++autoActDelayCounter >= AUTO_ACT_DELAY_TICKS;
+            if (due) {
+                pendingAutoAct = false;
+                autoAct(currentSeat);
+                return;
+            }
         }
         if (level != null) {
             if (level.getGameTime() >= turnEndGameTime) {
@@ -417,6 +454,17 @@ public class DdzGame {
                 tickCounter = 0;
                 autoAct(currentSeat);
             }
+        }
+    }
+
+    /** 安排自动行动：出牌阶段延迟 {@value #AUTO_ACT_DELAY_TICKS} tick（2 秒）再行动，叫分/抢地主立即。 */
+    private void scheduleAutoAct(int seat) {
+        if (phase == DdzGamePhase.PLAYING) {
+            pendingAutoAct = true;
+            pendingAutoActSeat = seat;
+            autoActDueGameTime = (level != null ? level.getGameTime() : 0) + AUTO_ACT_DELAY_TICKS;
+        } else {
+            autoAct(seat);
         }
     }
 
@@ -546,9 +594,12 @@ public class DdzGame {
         currentSeat = seat;
         turnEndGameTime = (level != null ? level.getGameTime() : 0) + TURN_SECONDS * 20L;
         tickCounter = 0;
+        autoActDelayCounter = 0;
+        pendingAutoAct = false; // 回合推进时清除待行动状态（手动操作/上轮延迟已处理）
+        pendingAutoActSeat = -1;
         room.broadcast(new TurnS2C((byte) seat, turnEndGameTime));
         if (players[seat].trusted() || (botAuto && room.isBot(seat))) {
-            autoAct(seat);
+            scheduleAutoAct(seat);
         }
     }
 

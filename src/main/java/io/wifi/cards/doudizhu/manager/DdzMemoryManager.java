@@ -32,6 +32,9 @@ public final class DdzMemoryManager {
     /** 结算后无人操作，保留的 tick 数（60 秒）。 */
     private static final long SETTLED_KEEP_MS = 60_000;
 
+    /** 同时存在的房间数上限（防恶意客户端洪泛创建）。 */
+    private static final int MAX_ROOMS = 64;
+
     /** 房间码字符集（去掉易混淆的 0/O/1/I）。 */
     private static final char[] CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
     private static final Random RANDOM = new Random();
@@ -47,6 +50,11 @@ public final class DdzMemoryManager {
     public void createRoom(MinecraftServer server, ServerPlayer player, boolean flowerMode, DdzRuleSet ruleSet, boolean announce) {
         if (currentRoom(player) != null) {
             error(player, "你已经在房间里了");
+            return;
+        }
+        // 防御：房间总数上限，防止恶意客户端洪泛创建房间耗尽内存
+        if (rooms.size() >= MAX_ROOMS) {
+            error(player, "房间数量已达上限，请稍后再试");
             return;
         }
         DdzRoom room = new DdzRoom(generateCode(), flowerMode, ruleSet);
@@ -67,6 +75,11 @@ public final class DdzMemoryManager {
     }
 
     public void joinRoom(ServerPlayer player, String code) {
+        // 防御：房间码长度上限（房间码固定 5 位，杜绝超长输入）
+        if (code == null || code.length() > 16) {
+            error(player, "房间码无效");
+            return;
+        }
         DdzRoom room = rooms.get(code.toUpperCase().trim());
         if (room == null) {
             error(player, "房间不存在：" + code);
@@ -158,6 +171,12 @@ public final class DdzMemoryManager {
     public void onPlayCards(ServerPlayer player, int[] cardIds) {
         DdzGame game = gameOf(player);
         if (game != null) {
+            // 防御：单次出牌最多 21 张（花牌模式地主 17+4）；超长数组直接拒绝，
+            // 防止恶意客户端发送超大数组造成内存分配与校验开销
+            if (cardIds.length > 21) {
+                error(player, "出牌数量异常");
+                return;
+            }
             // 防御：过滤越界 id（恶意客户端可能发送非法值导致数组越界）；
             // 非法 id 不在任何玩家手牌中，后续 containsAll 校验会拒绝本次出牌
             List<DdzCard> cards = new ArrayList<>(cardIds.length);
