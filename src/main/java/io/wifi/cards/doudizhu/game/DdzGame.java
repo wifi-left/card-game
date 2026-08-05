@@ -167,6 +167,11 @@ public class DdzGame {
         for (int i = 0; i < 3; i++) {
             room.sendToSeat(i, new GameStartS2C((byte) i, ids(players[i].hand()), (byte) callSeat, (byte) bottomCards.size()));
         }
+        // 旁观者：重发新局快照（mySeat=-1、空手牌），重置其客户端上一局残留状态
+        // （明牌列表、最近出牌、最高叫分等；否则"再来一局"后旁观者仍显示上一局信息）
+        for (ServerPlayer sp : room.spectators) {
+            room.sendToSpectator(sp, new GameStartS2C((byte) -1, new int[0], (byte) callSeat, (byte) bottomCards.size()));
+        }
         turn(callSeat);
     }
 

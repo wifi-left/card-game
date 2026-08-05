@@ -164,6 +164,11 @@ public final class DdzMemoryManager {
 
     /** 再来一局：结算后重置房间状态并重新发牌（房间不散）。 */
     public void nextGame(ServerPlayer player) {
+        // 严格限制：旁观者无权开始新对局（新局只能由成员触发）
+        if (spectatorRoomIds.containsKey(player.getUUID())) {
+            error(player, "旁观者不能开始新对局");
+            return;
+        }
         DdzRoom room = currentRoom(player);
         if (room == null || room.game == null || room.phase() != DdzGamePhase.SETTLED) {
             return;
@@ -174,22 +179,34 @@ public final class DdzMemoryManager {
 
     // ---------------- 对局操作转发 ----------------
 
-    public void onCall(ServerPlayer player, byte score) {
+    /**
+     * 对局操作的门卫：旁观者一律明确拒绝（只读观看，任何操作请求都提示），
+     * 非成员且非旁观者（理论不可达）静默忽略。
+     */
+    private DdzGame gameOfStrict(ServerPlayer player) {
         DdzGame game = gameOf(player);
+        if (game == null && spectatorRoomIds.containsKey(player.getUUID())) {
+            error(player, "旁观者不能操作对局");
+        }
+        return game;
+    }
+
+    public void onCall(ServerPlayer player, byte score) {
+        DdzGame game = gameOfStrict(player);
         if (game != null) {
             game.onCall(player, score);
         }
     }
 
     public void onRob(ServerPlayer player, boolean rob) {
-        DdzGame game = gameOf(player);
+        DdzGame game = gameOfStrict(player);
         if (game != null) {
             game.onRob(player, rob);
         }
     }
 
     public void onPlayCards(ServerPlayer player, int[] cardIds) {
-        DdzGame game = gameOf(player);
+        DdzGame game = gameOfStrict(player);
         if (game != null) {
             // 防御：单次出牌最多 21 张（花牌模式地主 17+4）；超长数组直接拒绝，
             // 防止恶意客户端发送超大数组造成内存分配与校验开销
@@ -215,14 +232,14 @@ public final class DdzMemoryManager {
     }
 
     public void onPass(ServerPlayer player) {
-        DdzGame game = gameOf(player);
+        DdzGame game = gameOfStrict(player);
         if (game != null) {
             game.onPlay(player, null);
         }
     }
 
     public void onReveal(ServerPlayer player) {
-        DdzGame game = gameOf(player);
+        DdzGame game = gameOfStrict(player);
         if (game != null) {
             game.onReveal(player);
         }
@@ -246,7 +263,7 @@ public final class DdzMemoryManager {
     }
 
     public void setTrust(ServerPlayer player, boolean enabled) {
-        DdzGame game = gameOf(player);
+        DdzGame game = gameOfStrict(player);
         if (game != null) {
             game.setTrust(player, enabled);
         }
@@ -512,8 +529,8 @@ public final class DdzMemoryManager {
         // 全服广播：房间已开始，其他玩家可点击旁观
         ServerPlayer host = room.members[0];
         if (host != null && host.getServer() != null) {
-            Component msg = Component.literal("房间【" + room.id + "】已开始，")
-                    .append(Component.literal("【点击旁观】").withStyle(style -> style
+            Component msg = Component.literal("[斗地主] 房间 " + room.id + " 已开始，")
+                    .append(Component.literal("[点击旁观]").withStyle(style -> style
                             .withColor(ChatFormatting.GREEN)
                             .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/doudizhu spectate " + room.id))));
             host.getServer().getPlayerList().broadcastSystemMessage(msg, false);

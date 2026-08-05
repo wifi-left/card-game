@@ -170,4 +170,20 @@ class DdzAutoPlayTest {
         // 民间规则：禁三带二 → 无牌可出
         assertNull(DdzAutoPlay.findPlay(hand, target, false, DdzRuleSet.FOLK));
     }
+
+    @Test
+    void planeWithSinglesNoWingsNoCrash() {
+        // 手牌仅 333444（无翅膀可带），目标 55566678（飞机带两单）：
+        // 翅膀不足 → 返回 null（不得 NPE，回归 concat(null) 崩溃）
+        DdzPlayResult target = target(8, 9, 10, 12, 13, 14, 16, 20); // 55566678
+        assertNull(find(c(0, 1, 2, 4, 5, 6), target));
+    }
+
+    @Test
+    void planeWithPairsNoWingsNoCrash() {
+        // 手牌仅 333444（无对子翅膀），目标 3334445566（飞机带对子）：
+        // 翅膀不足 → 返回 null（不得 NPE，回归 concat(null) 崩溃）
+        DdzPlayResult target = target(0, 1, 2, 4, 5, 6, 8, 9, 12, 13); // 3334445566
+        assertNull(find(c(0, 1, 2, 4, 5, 6), target));
+    }
 }

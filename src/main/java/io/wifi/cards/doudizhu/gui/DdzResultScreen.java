@@ -29,6 +29,14 @@ public class DdzResultScreen extends Screen {
     @Override
     protected void init() {
         int cx = width / 2;
+        DdzClientState s = DdzClientState.INSTANCE;
+        if (s.mySeat < 0) {
+            // 旁观者：无"再来一局"权限（新局由成员触发），仅提供退出旁观返回大厅
+            addRenderableWidget(Button.builder(Component.literal("退出旁观"), b ->
+                    ClientPlayNetworking.send(new LeaveRoomC2S()))
+                    .bounds(cx - 55, height / 2 + 44, 110, 20).build());
+            return;
+        }
         addRenderableWidget(Button.builder(Component.literal("再来一局"), b ->
                 ClientPlayNetworking.send(new NextGameC2S()))
                 .bounds(cx - 120, height / 2 + 44, 110, 20).build());

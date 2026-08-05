@@ -506,9 +506,11 @@ public final class DdzAutoPlay {
                     // 花牌未被机身占用时，可作最后一张单牌翅膀
                     List<DdzCard> wings = smallestSingles(byRank, start, start + len - 1, len,
                             !flowerUsed && hasFlower ? flower.get(0) : null);
-                    List<DdzCard> full = concat(cand, wings);
-                    if (wings != null && playable(full, target, flowerMode, ruleSet)) {
-                        return full;
+                    if (wings != null) {
+                        List<DdzCard> full = concat(cand, wings);
+                        if (playable(full, target, flowerMode, ruleSet)) {
+                            return full;
+                        }
                     }
                 }
                 return null;
@@ -541,9 +543,11 @@ public final class DdzAutoPlay {
                     }
                     List<DdzCard> wings = smallestPairs(byRank, start, start + len - 1, len,
                             !flowerUsed && hasFlower ? flower.get(0) : null);
-                    List<DdzCard> full = concat(cand, wings);
-                    if (wings != null && playable(full, target, flowerMode, ruleSet)) {
-                        return full;
+                    if (wings != null) {
+                        List<DdzCard> full = concat(cand, wings);
+                        if (playable(full, target, flowerMode, ruleSet)) {
+                            return full;
+                        }
                     }
                 }
                 return null;

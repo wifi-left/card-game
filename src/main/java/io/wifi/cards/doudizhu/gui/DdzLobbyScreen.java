@@ -73,8 +73,13 @@ public class DdzLobbyScreen extends Screen {
 
     /** 滚动后重建全部控件（位置随 contentTop 变化）。 */
     private void rebuild() {
+        // 保留输入框内容（滚动重建会重新创建 EditBox，直接重建会清空已输入的房间码）
+        String prevCode = codeBox != null ? codeBox.getValue() : "";
         clearWidgets();
         init();
+        if (codeBox != null && !prevCode.isEmpty()) {
+            codeBox.setValue(prevCode);
+        }
     }
 
     @Override
