@@ -36,6 +36,11 @@ public class DdzLobbyScreen extends Screen {
         return false;
     }
 
+    /** 取消全局背景虚化：不再渲染模糊/纹理背景，仅由各内容区块绘制半透明黑色背景。 */
+    @Override
+    public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+    }
+
     @Override
     protected void init() {
         DdzClientState s = DdzClientState.INSTANCE;
@@ -85,9 +90,13 @@ public class DdzLobbyScreen extends Screen {
         g.fill(0, 0, width, 26, 0x66000000);
         DdzGui.centeredShadow(g, this.font, width, "斗地主大厅", 9, 0xFFFFD700);
         if (!s.inRoom()) {
+            // 提示区半透明黑底（仅在有内容处）
+            g.fill(cx - 200, hc + 72, cx + 200, hc + 110, 0x55000000);
             DdzGui.centeredShadow(g, this.font, width, "创建房间邀请好友一起玩，或输入房间码加入", hc + 80, 0xFFAAAAAA);
             DdzGui.centeredShadow(g, this.font, width, "提示：房主可用 /doudizhu invite <玩家名> 邀请", hc + 94, 0xFF777777);
         } else {
+            // 房间信息区半透明黑底
+            g.fill(cx - 200, 30, cx + 200, 120, 0x55000000);
             DdzGui.centeredShadow(g, this.font, width,
                     "房间 " + s.roomCode + "（" + (s.flowerMode ? "花牌模式" : "经典模式")
                             + " · " + s.ruleSet.displayName() + "）",

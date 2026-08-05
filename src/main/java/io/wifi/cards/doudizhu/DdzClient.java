@@ -11,10 +11,13 @@ import io.wifi.cards.doudizhu.network.DdzPackets.OpenLobbyS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.PassBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.PlayBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.ReconnectS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.RevealS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RobBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomClosedS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomStateS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.TrustStateS2C;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 
@@ -31,6 +34,16 @@ public final class DdzClient {
 
     public static void init() {
         registerReceivers();
+        registerDisconnectCleanup();
+    }
+
+    /**
+     * 离开服务器/世界（断线、退出地图、切换服务器）时清空本地房间缓存：
+     * 断开时收不到服务端 RoomClosedS2C，不清空会导致重进后残留旧房间状态。
+     */
+    private static void registerDisconnectCleanup() {
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
+                client.execute(DdzClientState.INSTANCE::clearAll));
     }
 
     // ---------------- 客户端网络接收器 ----------------
@@ -61,6 +74,10 @@ public final class DdzClient {
                 ctx.client().execute(() -> state.onRoomClosed(payload.reason())));
         ClientPlayNetworking.registerGlobalReceiver(NoticeS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> state.onNotice(payload.message())));
+        ClientPlayNetworking.registerGlobalReceiver(RevealS2C.TYPE, (payload, ctx) ->
+                ctx.client().execute(() -> state.onReveal(payload)));
+        ClientPlayNetworking.registerGlobalReceiver(TrustStateS2C.TYPE, (payload, ctx) ->
+                ctx.client().execute(() -> state.onTrustState(payload)));
         // 服务端命令 /doudizhu 触发：在主线程打开大厅
         ClientPlayNetworking.registerGlobalReceiver(OpenLobbyS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> Minecraft.getInstance().setScreen(new DdzLobbyScreen())));

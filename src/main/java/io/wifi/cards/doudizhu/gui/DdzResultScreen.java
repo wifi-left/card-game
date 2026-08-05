@@ -21,6 +21,11 @@ public class DdzResultScreen extends Screen {
         return false;
     }
 
+    /** 取消全局背景虚化：不再渲染模糊/纹理背景，仅由各内容区块绘制半透明黑色背景。 */
+    @Override
+    public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+    }
+
     @Override
     protected void init() {
         int cx = width / 2;
@@ -37,9 +42,12 @@ public class DdzResultScreen extends Screen {
         // 背景与控件由 super 渲染（含 renderBackground），自定义内容绘制在其上
         super.render(g, mouseX, mouseY, partialTick);
         DdzClientState s = DdzClientState.INSTANCE;
+        int cx = width / 2;
         // 顶部标题条
         g.fill(0, 0, width, 26, 0x66000000);
         DdzGui.centeredShadow(g, this.font, width, "本局结算", 9, 0xFFFFD700);
+        // 结算信息区半透明黑底（仅在有内容处）
+        g.fill(cx - 200, 30, cx + 200, 128, 0x55000000);
         String title = s.resultLandlordWin ? "地主胜利！" : "农民胜利！";
         DdzGui.centeredShadow(g, this.font, width, title, 40,
                 s.resultLandlordWin ? 0xFFFFFF55 : 0xFFFF5555);

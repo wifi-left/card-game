@@ -110,6 +110,26 @@ public class DdzRoom {
         }
     }
 
+    /** 对局中玩家退出：座位转由机器人托管（对局继续），真人不再占座。 */
+    public void quitToBot(int seat) {
+        if (seat < 0 || seat >= size) {
+            return;
+        }
+        String name = members[seat] != null ? members[seat].getGameProfile().getName() : "";
+        members[seat] = null;
+        botNames[seat] = name.isEmpty() ? "机器人" : name + "（托管）";
+    }
+
+    /** 是否还有真人玩家（机器人座位不算；退出/断线托管后座位已转机器人）。 */
+    public boolean hasRealPlayer() {
+        for (int i = 0; i < size; i++) {
+            if (members[i] != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public int seatOf(ServerPlayer player) {
         for (int i = 0; i < size; i++) {
             if (members[i] == player) {

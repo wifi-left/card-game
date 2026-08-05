@@ -35,6 +35,7 @@ public final class DdzPackets {
     public static final ResourceLocation PASS = id("pass");
     public static final ResourceLocation TOGGLE_TRUST = id("toggle_trust");
     public static final ResourceLocation NEXT_GAME = id("next_game");
+    public static final ResourceLocation REVEAL_ACTION = id("reveal_action");
 
     // ---------------- S2C ----------------
 
@@ -51,6 +52,8 @@ public final class DdzPackets {
     public static final ResourceLocation GAME_RESULT = id("game_result");
     public static final ResourceLocation ROOM_CLOSED = id("room_closed");
     public static final ResourceLocation NOTICE = id("notice");
+    public static final ResourceLocation REVEAL = id("reveal");
+    public static final ResourceLocation TRUST_STATE = id("trust_state");
 
     // ---------------- Payload 定义 ----------------
 
@@ -171,6 +174,20 @@ public final class DdzPackets {
                 (buf, value) -> {
                 },
                 buf -> new NextGameC2S());
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    /** 地主选择明牌（C2S，出第一手牌前有效）。 */
+    public record RevealC2S() implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<RevealC2S> TYPE = new CustomPacketPayload.Type<>(REVEAL_ACTION);
+        public static final StreamCodec<FriendlyByteBuf, RevealC2S> CODEC = StreamCodec.of(
+                (buf, value) -> {
+                },
+                buf -> new RevealC2S());
 
         @Override
         public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
@@ -464,6 +481,35 @@ public final class DdzPackets {
         }
     }
 
+    /** 明牌广播（S2C）：地主公开全部手牌，所有玩家可见。 */
+    public record RevealS2C(byte landlordSeat, int[] handIds) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<RevealS2C> TYPE = new CustomPacketPayload.Type<>(REVEAL);
+        public static final StreamCodec<FriendlyByteBuf, RevealS2C> CODEC = StreamCodec.of(
+                (buf, value) -> {
+                    buf.writeByte(value.landlordSeat());
+                    buf.writeVarIntArray(value.handIds());
+                },
+                buf -> new RevealS2C(buf.readByte(), buf.readVarIntArray()));
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    /** 托管状态（S2C）：托管开启/关闭时回传，客户端按钮与服务端保持一致。 */
+    public record TrustStateS2C(boolean enabled) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<TrustStateS2C> TYPE = new CustomPacketPayload.Type<>(TRUST_STATE);
+        public static final StreamCodec<FriendlyByteBuf, TrustStateS2C> CODEC = StreamCodec.of(
+                (buf, value) -> buf.writeBoolean(value.enabled()),
+                buf -> new TrustStateS2C(buf.readBoolean()));
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
     // ---------------- 注册 ----------------
 
     /** 注册全部 payload 类型 + 服务端接收器（主入口调用，客户端也会执行此方法）。 */
@@ -477,6 +523,7 @@ public final class DdzPackets {
         PayloadTypeRegistry.playC2S().register(PassC2S.TYPE, PassC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(ToggleTrustC2S.TYPE, ToggleTrustC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(NextGameC2S.TYPE, NextGameC2S.CODEC);
+        PayloadTypeRegistry.playC2S().register(RevealC2S.TYPE, RevealC2S.CODEC);
 
         PayloadTypeRegistry.playS2C().register(RoomStateS2C.TYPE, RoomStateS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(GameStartS2C.TYPE, GameStartS2C.CODEC);
@@ -491,6 +538,8 @@ public final class DdzPackets {
         PayloadTypeRegistry.playS2C().register(GameResultS2C.TYPE, GameResultS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(RoomClosedS2C.TYPE, RoomClosedS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(NoticeS2C.TYPE, NoticeS2C.CODEC);
+        PayloadTypeRegistry.playS2C().register(RevealS2C.TYPE, RevealS2C.CODEC);
+        PayloadTypeRegistry.playS2C().register(TrustStateS2C.TYPE, TrustStateS2C.CODEC);
 
         registerServerReceivers();
     }
@@ -523,5 +572,7 @@ public final class DdzPackets {
                 m.setTrust(ctx.player(), payload.enabled()));
         ServerPlayNetworking.registerGlobalReceiver(NextGameC2S.TYPE, (payload, ctx) ->
                 m.nextGame(ctx.player()));
+        ServerPlayNetworking.registerGlobalReceiver(RevealC2S.TYPE, (payload, ctx) ->
+                m.onReveal(ctx.player()));
     }
 }

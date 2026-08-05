@@ -9,9 +9,11 @@ import io.wifi.cards.doudizhu.network.DdzPackets.LandlordS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.PassBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.PlayBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.ReconnectS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.RevealS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RobBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomStateS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.TrustStateS2C;
 import io.wifi.cards.doudizhu.rule.DdzCardType;
 import io.wifi.cards.doudizhu.rule.DdzRuleSet;
 import net.minecraft.client.Minecraft;
@@ -65,6 +67,10 @@ public final class DdzClientState {
     public boolean myTrust;
     /** 服务端拒绝了最近一次出牌（GameScreen 消费后清空选中）。 */
     public boolean playRejected;
+    /** 本局是否已明牌（地主公开手牌）。 */
+    public boolean revealed;
+    /** 明牌显示的地主手牌（出牌时同步移除）。 */
+    public final List<DdzCard> revealedCards = new ArrayList<>();
 
     // ---- 结算 ----
     public String resultLandlordName = "";
@@ -126,6 +132,11 @@ public final class DdzClientState {
             if (!(mc.screen instanceof DdzLobbyScreen) || stateChanged) {
                 mc.setScreen(new DdzLobbyScreen());
             }
+        } else if (phase == DdzGamePhase.SETTLED) {
+            // 本局已结束：打开结算界面（数据由随后的 GameResultS2C 填充），不打开打牌界面
+            if (!(mc.screen instanceof DdzResultScreen)) {
+                mc.setScreen(new DdzResultScreen());
+            }
         } else if (!(mc.screen instanceof DdzGameScreen)) {
             mc.setScreen(new DdzGameScreen());
         }
@@ -159,6 +170,8 @@ public final class DdzClientState {
         this.lastRob = false;
         this.remaining = new int[]{17, 17, 17};
         this.playRejected = false;
+        this.revealed = false;
+        this.revealedCards.clear();
         Minecraft mc = Minecraft.getInstance();
         if (!(mc.screen instanceof DdzGameScreen)) {
             mc.setScreen(new DdzGameScreen());
@@ -194,11 +207,18 @@ public final class DdzClientState {
         this.lastRobName = "";
         this.lastRob = false;
         this.playRejected = false;
+        this.revealed = false;
+        this.revealedCards.clear();
         this.remaining = toIntArray(payload.remainingCounts());
         Minecraft mc = Minecraft.getInstance();
         if (phase == DdzGamePhase.WAITING) {
             if (!(mc.screen instanceof DdzLobbyScreen)) {
                 mc.setScreen(new DdzLobbyScreen());
+            }
+        } else if (phase == DdzGamePhase.SETTLED) {
+            // 结算中：打开结算界面（数据由服务端随后重发的 GameResultS2C 填充）
+            if (!(mc.screen instanceof DdzResultScreen)) {
+                mc.setScreen(new DdzResultScreen());
             }
         } else {
             // 强制重建 GameScreen：倒计时、按钮、选中状态全部重置
@@ -238,6 +258,8 @@ public final class DdzClientState {
         this.lastPlayType = null;
         this.lastPlaySeat = -1;
         this.lastPassName = "";
+        this.revealed = false;
+        this.revealedCards.clear();
         if (mySeat == landlordSeat) {
             hand.addAll(bottomCards);
             DdzCard.sortByRank(hand);
@@ -255,13 +277,27 @@ public final class DdzClientState {
         this.lastPassName = "";
         this.multiplier = payload.multiplier();
         this.remaining = toIntArray(payload.remainingCounts());
+        Set<Integer> played = new HashSet<>();
+        for (int id : payload.cardIds()) {
+            played.add(id);
+        }
         if (payload.seat() == mySeat) {
-            Set<Integer> played = new HashSet<>();
-            for (int id : payload.cardIds()) {
-                played.add(id);
-            }
             hand.removeIf(c -> played.contains(c.id()));
         }
+        // 明牌中：地主出牌时同步从明牌列表移除
+        if (revealed && payload.seat() == landlordSeat) {
+            revealedCards.removeIf(c -> played.contains(c.id()));
+        }
+    }
+
+    /** 明牌广播：地主公开全部手牌。 */
+    public void onReveal(RevealS2C payload) {
+        this.revealed = true;
+        this.revealedCards.clear();
+        for (int id : payload.handIds()) {
+            revealedCards.add(DdzCard.byId(id));
+        }
+        DdzCard.sortByRank(revealedCards);
     }
 
     public void onPass(PassBroadcastS2C payload) {
@@ -272,6 +308,11 @@ public final class DdzClientState {
     public void onTurn(TurnS2C payload) {
         this.currentSeat = payload.seat();
         this.turnEndGameTime = payload.endGameTime();
+    }
+
+    /** 托管状态回传：按钮（托管/取消托管）与服务端保持一致（含 debug trust 命令、断线托管、重连）。 */
+    public void onTrustState(TrustStateS2C payload) {
+        this.myTrust = payload.enabled();
     }
 
     public void onResult(GameResultS2C payload) {
@@ -314,6 +355,11 @@ public final class DdzClientState {
         }
     }
 
+    /** 清空全部本地状态（离开服务器/世界时调用，避免房间缓存残留影响下次进入）。 */
+    public void clearAll() {
+        reset();
+    }
+
     private void reset() {
         roomCode = null;
         flowerMode = false;
@@ -346,6 +392,8 @@ public final class DdzClientState {
         lastRob = false;
         myTrust = false;
         playRejected = false;
+        revealed = false;
+        revealedCards.clear();
         resultLandlordName = "";
         resultLandlordWin = false;
         resultBaseScore = 1;

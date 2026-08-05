@@ -4,8 +4,10 @@ import com.mojang.authlib.GameProfile;
 import io.wifi.cards.doudizhu.card.DdzCard;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
 import io.wifi.cards.doudizhu.network.DdzPackets.CallScoreC2S;
+import io.wifi.cards.doudizhu.network.DdzPackets.LeaveRoomC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.PassC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.PlayCardsC2S;
+import io.wifi.cards.doudizhu.network.DdzPackets.RevealC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.RobActionC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.ToggleTrustC2S;
 import io.wifi.cards.doudizhu.rule.DdzAutoPlay;
@@ -28,10 +30,10 @@ import java.util.UUID;
 /**
  * 游戏桌面界面（第一轮文字化牌面）：
  * <ul>
- *   <li>顶部：对手信息（名字 + 剩余张数 + 地主标记），当前行动高亮</li>
- *   <li>中央：阶段标题、轮到谁 + 倒计时、上一手出牌、底牌</li>
- *   <li>底部：手牌（点击选牌高亮，花牌金色）</li>
- *   <li>右下：动态操作按钮（叫分 / 抢地主 / 出牌 + 提示 + 托管）</li>
+ * <li>顶部：对手信息（名字 + 剩余张数 + 地主标记），当前行动高亮</li>
+ * <li>中央：阶段标题、轮到谁 + 倒计时、上一手出牌、底牌</li>
+ * <li>底部：手牌（点击选牌高亮，花牌金色）</li>
+ * <li>右下：动态操作按钮（叫分 / 抢地主 / 出牌 + 提示 + 托管）</li>
  * </ul>
  */
 public class DdzGameScreen extends Screen {
@@ -44,7 +46,14 @@ public class DdzGameScreen extends Screen {
     private final Set<Integer> selected = new HashSet<>();
     private final List<Button> actionButtons = new ArrayList<>();
     private int buttonSignature = -1;
-    private int countdown = 15;
+    private int countdown = 30;
+    /** 拖拽选牌：上次处理的牌下标（-1=不在牌上），避免同一张牌被反复切换。 */
+    private int lastDragCard = -1;
+    /** 本次拖拽模式：true=滑动连续选牌，false=滑动连续取消选牌（按下时手牌是否为空决定）。 */
+    private boolean dragSelectMode = true;
+    /** 拖拽时上次鼠标位置（GUI 缩放坐标），用于路径采样插值防漏牌。 */
+    private double lastDragX;
+    private double lastDragY;
 
     public DdzGameScreen() {
         super(Component.literal("斗地主"));
@@ -53,6 +62,23 @@ public class DdzGameScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    /** 取消全局背景虚化：不再渲染模糊/纹理背景，仅由各内容区块绘制半透明黑色背景。 */
+    @Override
+    public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        Minecraft mc = Minecraft.getInstance();
+        // 按聊天绑定键（原版 options.keyChat，默认 T）打开聊天框；
+        // 关闭/发送后由 DdzChatScreen 切回本界面
+        if (mc.options.keyChat.matches(keyCode, scanCode)) {
+            mc.setScreen(new DdzChatScreen(this));
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     // ---------------- tick / 按钮 ----------------
@@ -74,9 +100,9 @@ public class DdzGameScreen extends Screen {
             selected.clear();
             buttonSignature = -1;
         }
-        // 阶段/轮到谁/托管/选牌变化时重建按钮
+        // 阶段/轮到谁/托管/明牌/选牌变化时重建按钮
         int signature = (s.phase.ordinal() * 100 + (s.currentSeat + 1) * 10 + (s.myTrust ? 1 : 0)) * 2
-                + (selected.isEmpty() ? 0 : 1);
+                + (selected.isEmpty() ? 0 : 1) + (s.revealed ? 1000 : 0);
         if (signature != buttonSignature) {
             buttonSignature = signature;
             rebuildActionButtons();
@@ -89,11 +115,16 @@ public class DdzGameScreen extends Screen {
         }
         actionButtons.clear();
         DdzClientState s = DdzClientState.INSTANCE;
+        int x = width - 100;
+        int y = height - 150;
+        // 常驻行：退出游戏 + 托管（整局可用，随时可退出/取消托管）
+        if (s.phase == DdzGamePhase.CALLING || s.phase == DdzGamePhase.ROBBING || s.phase == DdzGamePhase.PLAYING) {
+            actionButtons.add(button(x - 95, y - 26, "退出", b -> sendLeave(), true));
+            actionButtons.add(button(x, y - 26, s.myTrust ? "取消托管" : "托管", b -> sendTrust(), true));
+        }
         if (!s.isMyTurn()) {
             return;
         }
-        int x = width - 100;
-        int y = height - 150;
         switch (s.phase) {
             case CALLING -> {
                 actionButtons.add(button(x, y, "不叫", b -> sendCall((byte) 0), true));
@@ -106,11 +137,16 @@ public class DdzGameScreen extends Screen {
                 actionButtons.add(button(x, y + 26, "抢地主 🔥", b -> sendRob(true), true));
             }
             case PLAYING -> {
-                actionButtons.add(button(x, y, "出牌", b -> sendPlay(), !selected.isEmpty()));
+                // 地主出第一手牌前可选择明牌（公开手牌）；明牌后恢复出牌按钮
+                boolean canReveal = s.landlordSeat == s.mySeat && !s.revealed && s.lastPlaySeat < 0;
+                if (canReveal) {
+                    actionButtons.add(button(x, y, "明牌", b -> sendReveal(), true));
+                } else {
+                    actionButtons.add(button(x, y, "出牌", b -> sendPlay(), !selected.isEmpty()));
+                }
                 actionButtons.add(button(x, y + 26, "不出", b -> sendPass(),
                         s.lastPlaySeat >= 0 && s.lastPlaySeat != s.mySeat));
                 actionButtons.add(button(x, y + 52, "提示", b -> hint(), true));
-                actionButtons.add(button(x, y + 78, s.myTrust ? "取消托管" : "托管", b -> sendTrust(), true));
             }
             default -> {
             }
@@ -154,10 +190,20 @@ public class DdzGameScreen extends Screen {
         ClientPlayNetworking.send(new PassC2S());
     }
 
+    /** 地主选择明牌：公开全部手牌。 */
+    private void sendReveal() {
+        ClientPlayNetworking.send(new RevealC2S());
+    }
+
     private void sendTrust() {
         DdzClientState s = DdzClientState.INSTANCE;
         s.myTrust = !s.myTrust;
         ClientPlayNetworking.send(new ToggleTrustC2S(s.myTrust));
+    }
+
+    /** 退出游戏：座位由服务端转机器人托管，本客户端回到大厅。 */
+    private void sendLeave() {
+        ClientPlayNetworking.send(new LeaveRoomC2S());
     }
 
     /** 提示：复用服务端托管引擎，选出一手可压的牌。 */
@@ -175,38 +221,106 @@ public class DdzGameScreen extends Screen {
         }
     }
 
-    // ---------------- 鼠标选牌 ----------------
+    // ---------------- 鼠标选牌（事件驱动，与假滚动条同链路；路径采样防漏牌） ----------------
+
+    /**
+     * 命中检测：返回鼠标下的牌下标（顶层优先，即最右侧/已抬起的牌先命中），不在牌上返回 -1。
+     * 坐标须为 GUI 缩放坐标。
+     */
+    private int cardIndexAt(double mouseX, double mouseY) {
+        DdzClientState s = DdzClientState.INSTANCE;
+        List<DdzCard> hand = s.hand;
+        int n = hand.size();
+        if (n == 0) {
+            return -1;
+        }
+        int totalW = CARD_W + (n - 1) * CARD_GAP;
+        int x0 = Math.max(2, (width - totalW) / 2);
+        int y = height - CARD_H - 8;
+        // 牌按从左到右绘制，右侧牌叠在左侧牌之上；倒序遍历保证点击到的是最顶上那张
+        for (int i = n - 1; i >= 0; i--) {
+            DdzCard c = hand.get(i);
+            int cx = x0 + i * CARD_GAP;
+            int cy = selected.contains(c.id()) ? y - SELECT_OFFSET : y;
+            if (mouseX >= cx && mouseX < cx + CARD_W && mouseY >= cy && mouseY < cy + CARD_H) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** 按当前拖拽模式处理一张牌（选牌模式=加入选中，取消模式=移出选中）。 */
+    private void toggleCard(int idx) {
+        DdzCard c = DdzClientState.INSTANCE.hand.get(idx);
+        if (dragSelectMode) {
+            selected.add(c.id());
+        } else {
+            selected.remove(c.id());
+        }
+        buttonSignature = -1; // 触发按钮重建（出牌按钮可用性）
+    }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0) {
-            DdzClientState s = DdzClientState.INSTANCE;
-            List<DdzCard> hand = s.hand;
-            int n = hand.size();
-            int totalW = CARD_W + (n - 1) * CARD_GAP;
-            int x0 = Math.max(2, (width - totalW) / 2);
-            int y = height - CARD_H - 8;
-            for (int i = 0; i < n; i++) {
-                DdzCard c = hand.get(i);
-                int cx = x0 + i * CARD_GAP;
-                int cy = selected.contains(c.id()) ? y - SELECT_OFFSET : y;
-                if (mouseX >= cx && mouseX < cx + CARD_W && mouseY >= cy && mouseY < cy + CARD_H) {
-                    if (!selected.remove(c.id())) {
-                        selected.add(c.id());
-                    }
-                    buttonSignature = -1; // 触发按钮重建（出牌按钮可用性）
-                    return true;
-                }
+            // 按下时记录拖拽模式：手牌为空则本次拖拽=连续选牌，否则=连续取消选牌；
+            // 并立即处理按下的那张牌（单次点击选牌/取消选牌，即时响应）
+            dragSelectMode = selected.isEmpty();
+            lastDragCard = -1;
+            lastDragX = mouseX;
+            lastDragY = mouseY;
+            int idx = cardIndexAt(mouseX, mouseY);
+            if (idx >= 0) {
+                toggleCard(idx);
+                lastDragCard = idx;
+                return true; // 消费点击：激活后续 mouseDragged 拖拽事件
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    /**
+     * 长按左键滑动：按拖拽模式连续处理经过的每张牌。
+     * 鼠标快速滑动时单次事件可能跨越多张牌，这里沿「上次位置→当前位置」线段每 4px 采样
+     * 一次命中检测，保证中间牌不被漏掉；同一张牌只处理一次（lastDragCard 去重）。
+     */
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (button == 0) {
+            double dx = mouseX - lastDragX;
+            double dy = mouseY - lastDragY;
+            double dist = Math.hypot(dx, dy);
+            int steps = Math.max(1, (int) (dist / 4));
+            for (int i = 1; i <= steps; i++) {
+                double sx = lastDragX + dx * i / steps;
+                double sy = lastDragY + dy * i / steps;
+                int idx = cardIndexAt(sx, sy);
+                if (idx >= 0 && idx != lastDragCard) {
+                    toggleCard(idx);
+                    lastDragCard = idx;
+                }
+            }
+            lastDragX = mouseX;
+            lastDragY = mouseY;
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (button == 0) {
+            lastDragCard = -1; // 松手后下次拖拽重新计数，避免残留状态
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     // ---------------- 渲染 ----------------
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        // 背景与控件由 super 渲染（含 renderBackground），自定义内容绘制在其上
+        // 背景与控件由 super 渲染（renderBackground 已覆盖为空，无全局虚化），自定义内容绘制在其上；
+        // 聊天历史由原版 HUD 自动渲染，此处不重复绘制
         super.render(g, mouseX, mouseY, partialTick);
         drawTopInfo(g);
         drawCenter(g);
@@ -217,20 +331,22 @@ public class DdzGameScreen extends Screen {
         DdzClientState s = DdzClientState.INSTANCE;
         int leftSeat = (s.mySeat + 1) % 3;
         int rightSeat = (s.mySeat + 2) % 3;
-        // 顶部信息条（含玩家头颅）
+        // 顶部信息条（含玩家头颅与牌背）
         g.fill(0, 0, width, 54, 0x66000000);
-        // 左侧：左对手（上）+ 自己（下），带头颅
+        // 左侧：左对手（上：头像+牌背叠+名字）+ 自己（下：头像+名字）
         drawHead(g, s.playerUuids[leftSeat], 6, 6, 16);
-        g.drawString(this.font, nameLine(leftSeat), 26, 9,
+        drawCardBacks(g, 24, 9, s.countOf(leftSeat));
+        g.drawString(this.font, nameLine(leftSeat), 46, 11,
                 s.currentSeat == leftSeat ? 0xFFFFFF55 : 0xFFFFFFFF, true);
         drawHead(g, s.playerUuids[s.mySeat], 6, 32, 16);
         String me = "你" + (s.mySeat == s.landlordSeat ? "（地主）" : "") + "：" + s.hand.size() + " 张"
                 + (s.myTrust ? "（托管中）" : "");
         g.drawString(this.font, me, 26, 35, 0xFFFFFFFF, true);
-        // 右侧：右对手，带头颅
+        // 右侧：右对手（头像+牌背叠+名字右对齐）
         drawHead(g, s.playerUuids[rightSeat], width - 22, 6, 16);
+        drawCardBacks(g, width - 42, 9, s.countOf(rightSeat));
         String rightText = nameLine(rightSeat);
-        g.drawString(this.font, rightText, width - this.font.width(rightText) - 26, 9,
+        g.drawString(this.font, rightText, width - this.font.width(rightText) - 46, 11,
                 s.currentSeat == rightSeat ? 0xFFFFFF55 : 0xFFFFFFFF, true);
         // 顶部正中央：当前阶段 + 轮到谁/倒计时
         DdzGui.centeredShadow(g, this.font, width, phaseText(), 13, 0xFFFFD700);
@@ -241,6 +357,22 @@ public class DdzGameScreen extends Screen {
             DdzGui.centeredShadow(g, this.font, width, turnText, 29,
                     s.isMyTurn() ? 0xFFFFFF55 : 0xFFAAAAAA);
         }
+    }
+
+    /** 绘制一叠牌背（最多 3 张错位示意，看不到内容），数量 0 时不画。 */
+    private void drawCardBacks(GuiGraphics g, int x, int y, int count) {
+        int shown = Math.min(3, count);
+        for (int i = 0; i < shown; i++) {
+            drawCardBack(g, x + i * 2, y + i, 14, 18);
+        }
+    }
+
+    /** 绘制一张牌背（深蓝底 + 问号）。 */
+    private void drawCardBack(GuiGraphics g, int x, int y, int w, int h) {
+        g.fill(x, y, x + w, y + h, 0xFF000000);
+        g.fill(x + 1, y + 1, x + w - 1, y + h - 1, 0xFF2B4B8F);
+        Font font = Minecraft.getInstance().font;
+        g.drawString(font, "?", x + (w - font.width("?")) / 2, y + (h - 9) / 2, 0xFFFFFFFF, false);
     }
 
     /** 当前阶段标题（顶部正中央显示）。 */
@@ -297,13 +429,13 @@ public class DdzGameScreen extends Screen {
             actionText = s.lastPassName + " 不出";
         }
         if (actionText != null) {
-            DdzGui.centeredShadow(g, this.font, panelX + panelW, actionText, 62, 0xFFFFD700);
+            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, actionText, 62, 0xFFFFD700);
         }
 
         // 上一手出牌
         if (!s.lastPlayCards.isEmpty() && s.lastPlayType != null) {
             String label = s.lastPlayName + " 出了 " + s.lastPlayType.displayName();
-            DdzGui.centeredShadow(g, this.font, panelX + panelW, label, 80, 0xFFFFFFFF);
+            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, label, 80, 0xFFFFFFFF);
             int n = s.lastPlayCards.size();
             // 宽牌型（如 20 张飞机带翅膀）动态缩小牌宽并按需重叠，保证不溢出面板
             int cardW = Math.max(8, Math.min(24, (panelW - 16) / n));
@@ -321,7 +453,22 @@ public class DdzGameScreen extends Screen {
             for (DdzCard c : s.bottomCards) {
                 sb.append(c.display()).append(' ');
             }
-            DdzGui.centeredShadow(g, this.font, panelX + panelW, sb.toString(), 132, 0xFFFFFF88);
+            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, sb.toString(), 132, 0xFFFFFF88);
+        }
+
+        // 明牌：公开地主全部手牌（所有玩家可见，随地主出牌同步移除）
+        if (s.revealed && !s.revealedCards.isEmpty()) {
+            int n = s.revealedCards.size();
+            int rw = Math.max(8, Math.min(16, (panelW - 8) / n));
+            int rg = Math.max(2, rw - 6);
+            int totalW = rw + (n - 1) * rg;
+            int x0 = panelX + Math.max(2, (panelW - totalW) / 2);
+            int rh = Math.max(14, rw + 6);
+            g.fill(panelX, 154, panelX + panelW, 154 + rh + 4, 0x44000000);
+            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, s.landlordName + " 明牌", 155, 0xFFFFD700);
+            for (int i = 0; i < n; i++) {
+                drawCard(g, s.revealedCards.get(i), x0 + i * rg, 165, rw, rh);
+            }
         }
     }
 
@@ -347,21 +494,19 @@ public class DdzGameScreen extends Screen {
         }
     }
 
-    /** 绘制一张牌（文字化：色块 + 居中点数/花色文字，花牌金色）。无阴影保证小字号清晰。 */
+    /** 绘制一张牌（文字化：色块 + 左上角点数/花色文字，花牌金色）。无阴影保证小字号清晰。 */
     public static void drawCard(GuiGraphics g, DdzCard card, int x, int y, int w, int h) {
         int bg;
         if (card.isFlower()) {
-            bg = 0xFFF7D94C;      // 金色花牌
+            bg = 0xFFF7D94C; // 金色花牌
         } else if (card.isRed()) {
-            bg = 0xFFFFE6E6;      // 红牌浅红底
+            bg = 0xFFFFE6E6; // 红牌浅红底
         } else {
             bg = 0xFFF0F0F0;
         }
-        g.fill(x, y, x + w, y + h, 0xFF000000);      // 黑色描边
+        g.fill(x, y, x + w, y + h, 0xFF000000); // 黑色描边
         g.fill(x + 1, y + 1, x + w - 1, y + h - 1, bg);
         int color = card.isFlower() ? 0xFF7A4E00 : (card.isRed() ? 0xFFD00000 : 0xFF111111);
-        Font font = Minecraft.getInstance().font;
-        String text = card.display();
-        g.drawString(font, text, x + Math.max(2, (w - font.width(text)) / 2), y + 3, color, false);
+        g.drawString(Minecraft.getInstance().font, card.display(), x + 3, y + 3, color, false);
     }
 }

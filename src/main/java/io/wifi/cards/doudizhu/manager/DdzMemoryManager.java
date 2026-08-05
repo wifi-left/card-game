@@ -92,6 +92,13 @@ public final class DdzMemoryManager {
         }
     }
 
+    /**
+     * 离开房间/退出游戏：
+     * <ul>
+     *   <li>等待/结算中：正常离开（不满 3 人解散房间）</li>
+     *   <li>对局中：退出游戏，座位转机器人托管，对局继续；房间已无真人则关闭房间</li>
+     * </ul>
+     */
     public void leaveRoom(ServerPlayer player) {
         DdzRoom room = currentRoom(player);
         if (room == null) {
@@ -100,10 +107,26 @@ public final class DdzMemoryManager {
         }
         DdzGamePhase phase = room.phase();
         if (phase != DdzGamePhase.WAITING && phase != DdzGamePhase.SETTLED) {
-            error(player, "对局进行中，不能离开房间");
+            quitFromGame(player, room);
             return;
         }
         removeFromRoom(player, room, true);
+    }
+
+    /** 对局中退出游戏：座位转机器人托管（对局继续）；房间已无真人玩家则关闭房间。 */
+    private void quitFromGame(ServerPlayer player, DdzRoom room) {
+        int seat = room.seatOf(player);
+        if (seat < 0) {
+            return;
+        }
+        room.quitToBot(seat);
+        playerRoomIds.remove(player.getUUID());
+        room.game.setTrustSeat(seat, true); // 机器人托管代打（正轮到则立即行动）
+        ServerPlayNetworking.send(player, new RoomClosedS2C("你已退出游戏，座位由机器人托管"));
+        room.broadcastState();
+        if (!room.hasRealPlayer()) {
+            destroyRoom(room, "房间内已无真人玩家，房间关闭");
+        }
     }
 
     /** 再来一局：结算后重置房间状态并重新发牌（房间不散）。 */
@@ -151,6 +174,13 @@ public final class DdzMemoryManager {
         DdzGame game = gameOf(player);
         if (game != null) {
             game.onPlay(player, null);
+        }
+    }
+
+    public void onReveal(ServerPlayer player) {
+        DdzGame game = gameOf(player);
+        if (game != null) {
+            game.onReveal(player);
         }
     }
 
@@ -272,22 +302,6 @@ public final class DdzMemoryManager {
         if (room.size < 3) {
             destroyRoom(room, "调试假人已移除，房间关闭");
         }
-    }
-
-    /** 设置房间内假人是否自动托管行动（调试用）。 */
-    public void setBotAuto(ServerPlayer player, boolean auto) {
-        DdzRoom room = currentRoom(player);
-        if (room == null || room.game == null) {
-            error(player, "对局尚未开始");
-            return;
-        }
-        room.game.setBotAuto(auto);
-    }
-
-    /** 指定座位是否为调试假人（调试命令校验用）。 */
-    public boolean isBotSeat(ServerPlayer player, int seat) {
-        DdzRoom room = currentRoom(player);
-        return room != null && room.isBot(seat);
     }
 
     /**

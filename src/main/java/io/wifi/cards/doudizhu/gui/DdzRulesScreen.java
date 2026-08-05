@@ -131,6 +131,8 @@ public class DdzRulesScreen extends Screen {
         super.render(g, mouseX, mouseY, partialTick);
         g.fill(0, 0, width, 26, 0x66000000);
         DdzGui.centeredShadow(g, this.font, width, "斗地主规则", 9, 0xFFFFD700);
+        // 内容区半透明黑底（仅在有内容处），滚动文本绘制在其上
+        g.fill(0, CONTENT_TOP, width, height - BOTTOM_BAR, 0x44000000);
         g.enableScissor(0, CONTENT_TOP, width, height - BOTTOM_BAR);
         int y = CONTENT_TOP;
         int viewportBottom = height - BOTTOM_BAR;

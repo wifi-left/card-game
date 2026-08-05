@@ -14,6 +14,8 @@ import io.wifi.cards.doudizhu.network.DdzPackets.NoticeS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.PassBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.PlayBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.ReconnectS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.RevealS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.TrustStateS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RobBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
 import io.wifi.cards.doudizhu.rule.DdzAutoPlay;
@@ -40,7 +42,7 @@ import java.util.UUID;
  */
 public class DdzGame {
     /** 每回合行动时限（秒）。 */
-    public static final int TURN_SECONDS = 15;
+    public static final int TURN_SECONDS = 30;
 
     private final DdzRoom room;
     private final DdzPlayer[] players = new DdzPlayer[3];
@@ -62,8 +64,13 @@ public class DdzGame {
     private int turnSeconds;
     private long turnEndGameTime;
     private int tickCounter;
+    /** 是否已明牌（地主公开手牌，出第一手牌前可选）。 */
+    private boolean revealed;
     /** 调试假人是否自动托管行动（默认开；关闭后可手动指挥假人）。 */
     private boolean botAuto = true;
+    /** 结算结果缓存（重发/重开结算界面用）。 */
+    private boolean resultLandlordWin;
+    private int[] resultDeltas = new int[3];
     /** 服务端世界引用（用于游戏刻计时；全假人房间为 null）。 */
     private final ServerLevel level;
 
@@ -100,11 +107,6 @@ public class DdzGame {
         return players[seat].hand();
     }
 
-    /** 设置调试假人是否自动托管行动。 */
-    public void setBotAuto(boolean auto) {
-        this.botAuto = auto;
-    }
-
     /** 开局：洗牌发牌，随机起始叫分玩家。 */
     public void start() {
         phase = DdzGamePhase.DEALING;
@@ -135,6 +137,7 @@ public class DdzGame {
         callCount = 0;
         maxScore = 0;
         maxScoreSeat = -1;
+        revealed = false;
 
         phase = DdzGamePhase.CALLING;
         callSeat = random.nextInt(3);
@@ -286,15 +289,25 @@ public class DdzGame {
         return true;
     }
 
-    /** 开启/关闭托管；开启且正轮到该玩家时立即自动行动。 */
+    /** 开启/关闭指定玩家托管；开启且正轮到该玩家时立即自动行动。 */
     public void setTrust(ServerPlayer player, boolean enabled) {
         DdzPlayer p = playerOf(player);
-        if (p == null) {
+        if (p != null) {
+            setTrustSeat(p.seat(), enabled);
+        }
+    }
+
+    /** 开启/关闭指定座位托管（真人与假人均可）；开启且正轮到该座位时立即自动行动。 */
+    public void setTrustSeat(int seat, boolean enabled) {
+        if (seat < 0 || seat >= 3) {
             return;
         }
+        DdzPlayer p = players[seat];
         p.setTrusted(enabled);
-        if (enabled && p.seat() == currentSeat && isActivePhase()) {
-            autoAct(p.seat());
+        // 回传托管状态，客户端按钮（托管/取消托管）与服务端保持一致
+        room.sendToSeat(seat, new TrustStateS2C(enabled));
+        if (enabled && seat == currentSeat && isActivePhase()) {
+            autoAct(seat);
         }
     }
 
@@ -318,6 +331,32 @@ public class DdzGame {
         players[seat].setTrusted(false);
     }
 
+    /** 地主选择明牌：公开全部手牌给所有玩家（仅地主出第一手牌前有效）。 */
+    public void onReveal(ServerPlayer player) {
+        DdzPlayer p = playerOf(player);
+        if (p == null) {
+            return;
+        }
+        if (phase != DdzGamePhase.PLAYING) {
+            reject(p, "现在不能明牌");
+            return;
+        }
+        if (p.seat() != landlordSeat) {
+            reject(p, "只有地主可以明牌");
+            return;
+        }
+        if (revealed) {
+            reject(p, "本局已经明牌");
+            return;
+        }
+        if (lastPlaySeat >= 0) {
+            reject(p, "已出过牌，不能明牌");
+            return;
+        }
+        revealed = true;
+        room.broadcast(new RevealS2C((byte) landlordSeat, ids(players[landlordSeat].hand())));
+    }
+
     /** 发送当前对局完整快照给指定座位（断线重连用，含该玩家自己的手牌）。 */
     public void syncTo(int seat) {
         DdzPlayResult lp = lastPlay;
@@ -339,6 +378,14 @@ public class DdzGame {
                 lp == null ? (byte) -1 : (byte) lp.type.ordinal(),
                 lp == null ? 0 : lp.key,
                 remainingCounts()));
+        // 已明牌时补发明牌快照（当前地主手牌）
+        if (revealed) {
+            room.sendToSeat(seat, new RevealS2C((byte) landlordSeat, ids(players[landlordSeat].hand())));
+        }
+        // 补发托管状态，重连后按钮与服务端保持一致
+        room.sendToSeat(seat, new TrustStateS2C(players[seat].trusted()));
+        // 结算中：重发结算结果，客户端打开结算界面（而非结束的对局界面）
+        resendResult(seat);
     }
 
     /** 服务端每 tick 调用：超时判断（与客户端共用 level.getGameTime() 基准）。 */
@@ -431,9 +478,20 @@ public class DdzGame {
                 deltas[i] = landlordWin ? -unit : unit;
             }
         }
+        resultLandlordWin = landlordWin;
+        resultDeltas = deltas;
         room.broadcast(new GameResultS2C((byte) landlordSeat, players[landlordSeat].name(), landlordWin,
                 (byte) baseScore, multiplier, deltas));
         room.settledAtMillis = System.currentTimeMillis();
+    }
+
+    /** 结算中重新下发结算结果（客户端关闭结算弹窗后 /doudizhu 重开，或重连补发）。 */
+    public void resendResult(int seat) {
+        if (phase != DdzGamePhase.SETTLED || seat < 0 || seat >= 3) {
+            return;
+        }
+        room.sendToSeat(seat, new GameResultS2C((byte) landlordSeat, players[landlordSeat].name(),
+                resultLandlordWin, (byte) baseScore, multiplier, resultDeltas));
     }
 
     private void turn(int seat) {

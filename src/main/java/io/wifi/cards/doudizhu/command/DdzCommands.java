@@ -75,7 +75,16 @@ public final class DdzCommands {
                                             .then(Commands.argument("code", StringArgumentType.word())
                                                     .executes(ctx -> debugForceJoin(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"),
                                                             StringArgumentType.getString(ctx, "code"))))))
+                            .then(Commands.literal("kick")
+                                    .then(Commands.argument("player", EntityArgument.player())
+                                            .executes(ctx -> debugKick(ctx.getSource(),
+                                                    EntityArgument.getPlayer(ctx, "player")))))
                             .then(Commands.literal("trust")
+                                    .then(Commands.argument("seat", IntegerArgumentType.integer(0, 2))
+                                            .then(Commands.argument("enabled", BoolArgumentType.bool())
+                                                    .executes(ctx -> debugTrustSeat(ctx.getSource(),
+                                                            IntegerArgumentType.getInteger(ctx, "seat"),
+                                                            BoolArgumentType.getBool(ctx, "enabled")))))
                                     .then(Commands.argument("player", EntityArgument.player())
                                             .then(Commands.argument("enabled", BoolArgumentType.bool())
                                                     .executes(ctx -> debugTrust(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"),
@@ -154,15 +163,16 @@ public final class DdzCommands {
         return 1;
     }
 
-    /** 假人自动托管开关：/doudizhu debug auto <true|false>。 */
+    /** 执行者本人托管开关：开启=自己进入自动托管；关闭=退出托管。
+     *  /doudizhu debug auto <true|false>（配合 /execute as @a 可让所有玩家各自进入托管）。 */
     private static int debugAuto(CommandSourceStack source, boolean enabled) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
-        DdzMemoryManager.INSTANCE.setBotAuto(player, enabled);
-        source.sendSuccess(() -> Component.literal("假人自动托管：" + (enabled ? "开启" : "关闭")), false);
+        DdzMemoryManager.INSTANCE.setTrust(player, enabled);
+        source.sendSuccess(() -> Component.literal("托管：" + (enabled ? "开启" : "关闭")), false);
         return 1;
     }
 
-    /** 指挥当前轮到假人叫分：/doudizhu debug call <0|1|2|3>。 */
+    /** 指挥当前轮到者叫分（真人与假人均可）：/doudizhu debug call <0|1|2|3>。 */
     private static int debugCall(CommandSourceStack source, int score) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         DdzGame game = gameOf(source, player);
@@ -170,16 +180,12 @@ public final class DdzCommands {
             return 0;
         }
         int seat = game.currentSeat();
-        if (!DdzMemoryManager.INSTANCE.isBotSeat(player, seat)) {
-            source.sendFailure(Component.literal("当前轮到真人，只有轮到假人时才可指挥"));
-            return 0;
-        }
         game.onCall(null, score);
-        source.sendSuccess(() -> Component.literal("假人叫分：" + score), false);
+        source.sendSuccess(() -> Component.literal("已指挥座位 " + seat + " 叫分：" + score), false);
         return 1;
     }
 
-    /** 指挥当前轮到假人抢地主：/doudizhu debug rob <true|false>。 */
+    /** 指挥当前轮到者抢地主（真人与假人均可）：/doudizhu debug rob <true|false>。 */
     private static int debugRob(CommandSourceStack source, boolean rob) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         DdzGame game = gameOf(source, player);
@@ -187,19 +193,15 @@ public final class DdzCommands {
             return 0;
         }
         int seat = game.currentSeat();
-        if (!DdzMemoryManager.INSTANCE.isBotSeat(player, seat)) {
-            source.sendFailure(Component.literal("当前轮到真人，只有轮到假人时才可指挥"));
-            return 0;
-        }
         game.onRob(null, rob);
-        source.sendSuccess(() -> Component.literal("假人抢地主：" + (rob ? "抢" : "不抢")), false);
+        source.sendSuccess(() -> Component.literal("已指挥座位 " + seat + " 抢地主：" + (rob ? "抢" : "不抢")), false);
         return 1;
     }
 
     /**
-     * 指挥当前轮到假人出指定牌：/doudizhu debug play &lt;牌串&gt;。
+     * 指挥当前轮到者出指定牌（真人与假人均可）：/doudizhu debug play &lt;牌串&gt;。
      * 牌串字符：3-9 T(10) J Q K A 2 X(小王) D(大王) F(花牌)，重复表示多张（如 "8888" 炸弹）。
-     * 假人手牌数量不足或字符非法时不行动。
+     * 该座位手牌数量不足或字符非法时不行动。
      */
     private static int debugPlay(CommandSourceStack source, String cardsStr) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
@@ -208,24 +210,20 @@ public final class DdzCommands {
             return 0;
         }
         int seat = game.currentSeat();
-        if (!DdzMemoryManager.INSTANCE.isBotSeat(player, seat)) {
-            source.sendFailure(Component.literal("当前轮到真人，只有轮到假人时才可指定出牌"));
-            return 0;
-        }
         List<DdzCard> cards = parseCards(cardsStr, game.handOf(seat));
         if (cards == null) {
-            source.sendFailure(Component.literal("牌串非法或假人手牌中数量不足（字符：3-9 T J Q K A 2 X小王 D大王 F花牌）"));
+            source.sendFailure(Component.literal("牌串非法或该座位手牌中数量不足（字符：3-9 T J Q K A 2 X小王 D大王 F花牌）"));
             return 0;
         }
         if (game.onPlay(null, cards)) {
-            source.sendSuccess(() -> Component.literal("假人已出牌：" + cardsStr), false);
+            source.sendSuccess(() -> Component.literal("已指挥座位 " + seat + " 出牌：" + cardsStr), false);
             return 1;
         }
-        source.sendFailure(Component.literal("该牌型不合法或无法压过上家，假人未出牌"));
+        source.sendFailure(Component.literal("该牌型不合法或无法压过上家，未出牌"));
         return 0;
     }
 
-    /** 指挥当前轮到假人不出：/doudizhu debug pass。 */
+    /** 指挥当前轮到者不出（真人与假人均可）：/doudizhu debug pass。 */
     private static int debugPass(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         DdzGame game = gameOf(source, player);
@@ -233,15 +231,11 @@ public final class DdzCommands {
             return 0;
         }
         int seat = game.currentSeat();
-        if (!DdzMemoryManager.INSTANCE.isBotSeat(player, seat)) {
-            source.sendFailure(Component.literal("当前轮到真人，只有轮到假人时才可指挥"));
-            return 0;
-        }
         if (game.onPlay(null, null)) {
-            source.sendSuccess(() -> Component.literal("假人不出"), false);
+            source.sendSuccess(() -> Component.literal("已指挥座位 " + seat + " 不出"), false);
             return 1;
         }
-        source.sendFailure(Component.literal("假人当前不能不出（如自由出牌权）"));
+        source.sendFailure(Component.literal("该座位当前不能不出（如自由出牌权）"));
         return 0;
     }
 
@@ -265,6 +259,30 @@ public final class DdzCommands {
             return 0;
         }
         source.sendSuccess(() -> Component.literal("已强制 " + target.getGameProfile().getName() + " 加入房间 " + code), false);
+        return 1;
+    }
+
+    /** 强制指定玩家退出游戏（对局中座位转机器人托管；房间无真人则关闭）：
+     *  /doudizhu debug kick <玩家>。 */
+    private static int debugKick(CommandSourceStack source, ServerPlayer target) {
+        if (DdzMemoryManager.INSTANCE.currentRoom(target) == null) {
+            source.sendFailure(Component.literal(target.getGameProfile().getName() + " 不在任何房间中"));
+            return 0;
+        }
+        DdzMemoryManager.INSTANCE.leaveRoom(target);
+        source.sendSuccess(() -> Component.literal("已强制 " + target.getGameProfile().getName() + " 退出游戏"), false);
+        return 1;
+    }
+
+    /** 强制指定座位开启/关闭托管（真人与假人均可，无需真人在线）：/doudizhu debug trust <0|1|2> <true|false>。 */
+    private static int debugTrustSeat(CommandSourceStack source, int seat, boolean enabled) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        DdzGame game = gameOf(source, player);
+        if (game == null) {
+            return 0;
+        }
+        game.setTrustSeat(seat, enabled);
+        source.sendSuccess(() -> Component.literal("已" + (enabled ? "开启" : "关闭") + " 座位 " + seat + " 的托管"), false);
         return 1;
     }
 
