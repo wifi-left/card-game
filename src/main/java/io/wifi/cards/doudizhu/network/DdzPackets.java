@@ -59,16 +59,17 @@ public final class DdzPackets {
 
     // ---------------- Payload 定义 ----------------
 
-    /** 创建房间（C2S）。flowerMode=花牌模式；ruleSet=规则集序号（0 标准 / 1 民间）；announce=是否公布到聊天栏。 */
-    public record CreateRoomC2S(boolean flowerMode, byte ruleSet, boolean announce) implements CustomPacketPayload {
+    /** 创建房间（C2S）。flowerMode=花牌模式；ruleSet=规则集序号（0 标准 / 1 民间）；announce=是否公布到聊天栏；botCount=加入机器人数量（0~2）。 */
+    public record CreateRoomC2S(boolean flowerMode, byte ruleSet, boolean announce, byte botCount) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<CreateRoomC2S> TYPE = new CustomPacketPayload.Type<>(CREATE_ROOM);
         public static final StreamCodec<FriendlyByteBuf, CreateRoomC2S> CODEC = StreamCodec.of(
                 (buf, value) -> {
                     buf.writeBoolean(value.flowerMode());
                     buf.writeByte(value.ruleSet());
                     buf.writeBoolean(value.announce());
+                    buf.writeByte(value.botCount());
                 },
-                buf -> new CreateRoomC2S(buf.readBoolean(), buf.readByte(), buf.readBoolean()));
+                buf -> new CreateRoomC2S(buf.readBoolean(), buf.readByte(), buf.readBoolean(), buf.readByte()));
 
         @Override
         public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
@@ -590,11 +591,12 @@ public final class DdzPackets {
     private static void registerServerReceivers() {
         DdzMemoryManager m = DdzMemoryManager.INSTANCE;
         ServerPlayNetworking.registerGlobalReceiver(CreateRoomC2S.TYPE, (payload, ctx) -> {
-            // 防御：规则集序号越界（恶意客户端可发送任意 byte）时回退标准规则
+            // 防御：规则集序号越界（恶意客户端可发送任意 byte）时回退标准规则；机器人数量钳制 0~2
             byte rs = payload.ruleSet();
             DdzRuleSet ruleSet = rs >= 0 && rs < DdzRuleSet.values().length
                     ? DdzRuleSet.values()[rs] : DdzRuleSet.STANDARD;
-            m.createRoom(ctx.server(), ctx.player(), payload.flowerMode(), ruleSet, payload.announce());
+            m.createRoom(ctx.server(), ctx.player(), payload.flowerMode(), ruleSet, payload.announce(),
+                    Math.max(0, Math.min(payload.botCount(), 2)));
         });
         ServerPlayNetworking.registerGlobalReceiver(JoinRoomC2S.TYPE, (payload, ctx) ->
                 m.joinRoom(ctx.player(), payload.roomCode()));

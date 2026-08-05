@@ -61,12 +61,19 @@ public class DdzRoom {
         return members[seat] != null ? members[seat].getGameProfile().getName() : "";
     }
 
+    /** 加入真人（内部防御：房间最多 3 人，满员时忽略）。 */
     public void addPlayer(ServerPlayer player) {
+        if (size >= 3) {
+            return;
+        }
         members[size++] = player;
     }
 
-    /** 在下一个空座位放置调试假人（假人自动托管行动）。 */
+    /** 加入机器人（内部防御：房间最多 3 人，满员时忽略）。 */
     public void addBot(String name) {
+        if (size >= 3) {
+            return;
+        }
         botNames[size++] = name;
     }
 

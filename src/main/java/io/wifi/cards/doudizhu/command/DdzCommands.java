@@ -18,6 +18,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
@@ -75,6 +76,21 @@ public final class DdzCommands {
                                             .then(Commands.argument("code", StringArgumentType.word())
                                                     .executes(ctx -> debugForceJoin(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"),
                                                             StringArgumentType.getString(ctx, "code"))))))
+                            .then(Commands.literal("rooms")
+                                    .executes(ctx -> debugRooms(ctx.getSource(), 1))
+                                    .then(Commands.argument("page", IntegerArgumentType.integer(1))
+                                            .executes(ctx -> debugRooms(ctx.getSource(),
+                                                    IntegerArgumentType.getInteger(ctx, "page")))))
+                            .then(Commands.literal("room")
+                                    .then(Commands.argument("code", StringArgumentType.word())
+                                            .executes(ctx -> debugRoom(ctx.getSource(),
+                                                    StringArgumentType.getString(ctx, "code")))))
+                            .then(Commands.literal("roomdelete")
+                                    .then(Commands.argument("code", StringArgumentType.word())
+                                            .executes(ctx -> debugRoomDelete(ctx.getSource(),
+                                                    StringArgumentType.getString(ctx, "code")))))
+                            .then(Commands.literal("roomclear")
+                                    .executes(ctx -> debugRoomClear(ctx.getSource())))
                             .then(Commands.literal("kick")
                                     .then(Commands.argument("player", EntityArgument.player())
                                             .executes(ctx -> debugKick(ctx.getSource(),
@@ -272,6 +288,111 @@ public final class DdzCommands {
         DdzMemoryManager.INSTANCE.leaveRoom(target);
         source.sendSuccess(() -> Component.literal("已强制 " + target.getGameProfile().getName() + " 退出游戏"), false);
         return 1;
+    }
+
+    // ---------------- 管理员房间管理 ----------------
+
+    /** 房间列表（一页 10 个，可翻页；每行带 [显示具体信息][删除房间] 快捷点击）：
+     *  /doudizhu debug rooms [页码]。 */
+    private static int debugRooms(CommandSourceStack source, int page) {
+        List<DdzRoom> rooms = DdzMemoryManager.INSTANCE.roomSnapshot();
+        int perPage = 10;
+        int totalPages = Math.max(1, (rooms.size() + perPage - 1) / perPage);
+        final int shownPage = Math.min(page, totalPages);
+        source.sendSuccess(() -> Component.literal(
+                "房间列表（共 " + rooms.size() + " 个，第 " + shownPage + "/" + totalPages + " 页）"), false);
+        int from = (shownPage - 1) * perPage;
+        for (int i = from; i < Math.min(rooms.size(), from + perPage); i++) {
+            DdzRoom room = rooms.get(i);
+            final String code = room.id;
+            Component line = Component.literal((i + 1) + ". [" + code + "] 人数 " + room.size + "/3 · "
+                    + phaseName(room.phase()))
+                    .append(Component.literal(" [显示具体信息]").withStyle(style -> style
+                            .withColor(ChatFormatting.GREEN)
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/doudizhu debug room " + code))))
+                    .append(Component.literal(" [删除房间]").withStyle(style -> style
+                            .withColor(ChatFormatting.RED)
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/doudizhu debug roomdelete " + code))));
+            source.sendSuccess(() -> line, false);
+        }
+        if (totalPages > 1) {
+            MutableComponent nav = Component.literal("翻页：");
+            if (shownPage > 1) {
+                nav.append(Component.literal(" [上一页]").withStyle(style -> style
+                        .withColor(ChatFormatting.YELLOW)
+                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                                "/doudizhu debug rooms " + (shownPage - 1)))));
+            }
+            if (shownPage < totalPages) {
+                nav.append(Component.literal(" [下一页]").withStyle(style -> style
+                        .withColor(ChatFormatting.YELLOW)
+                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
+                                "/doudizhu debug rooms " + (shownPage + 1)))));
+            }
+            final MutableComponent navLine = nav;
+            source.sendSuccess(() -> navLine, false);
+        }
+        return 1;
+    }
+
+    /** 房间详细信息（成员：真人 + 机器人，含在线/托管状态）：/doudizhu debug room <房间码>。 */
+    private static int debugRoom(CommandSourceStack source, String code) {
+        DdzRoom room = DdzMemoryManager.INSTANCE.roomByCode(code);
+        if (room == null) {
+            source.sendFailure(Component.literal("房间不存在：" + code));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("房间 " + room.id + "（"
+                + (room.flowerMode ? "花牌模式" : "经典模式") + " · " + room.ruleSet.displayName()
+                + "）· " + phaseName(room.phase())), false);
+        for (int i = 0; i < 3; i++) {
+            String name = room.seatName(i);
+            if (name.isEmpty()) {
+                continue;
+            }
+            final int seat = i;
+            final String line;
+            if (room.isBot(i)) {
+                line = "  座位" + (i + 1) + "：" + name + "（机器人）";
+            } else {
+                boolean online = room.members[i] != null && DdzRoom.isConnected(room.members[i]);
+                boolean trusted = room.game != null && room.game.isTrusted(i);
+                line = "  座位" + (i + 1) + "：" + name + "（真人·" + (online ? "在线" : "离线")
+                        + (trusted ? "·托管中" : "") + "）";
+            }
+            source.sendSuccess(() -> Component.literal(line), false);
+        }
+        return 1;
+    }
+
+    /** 删除指定房间：/doudizhu debug roomdelete <房间码>。 */
+    private static int debugRoomDelete(CommandSourceStack source, String code) {
+        String error = DdzMemoryManager.INSTANCE.deleteRoom(code);
+        if (error != null) {
+            source.sendFailure(Component.literal(error));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("已删除房间 " + code.toUpperCase()), false);
+        return 1;
+    }
+
+    /** 清空所有房间：/doudizhu debug roomclear。 */
+    private static int debugRoomClear(CommandSourceStack source) {
+        int count = DdzMemoryManager.INSTANCE.clearAllRooms();
+        source.sendSuccess(() -> Component.literal("已清空全部房间（共 " + count + " 个）"), false);
+        return 1;
+    }
+
+    /** 阶段中文名（管理命令显示用）。 */
+    private static String phaseName(DdzGamePhase phase) {
+        return switch (phase) {
+            case WAITING -> "等待中";
+            case DEALING -> "发牌中";
+            case CALLING -> "叫分阶段";
+            case ROBBING -> "抢地主阶段";
+            case PLAYING -> "出牌阶段";
+            case SETTLED -> "本局结束";
+        };
     }
 
     /** 强制指定座位开启/关闭托管（真人与假人均可，无需真人在线）：/doudizhu debug trust <0|1|2> <true|false>。 */

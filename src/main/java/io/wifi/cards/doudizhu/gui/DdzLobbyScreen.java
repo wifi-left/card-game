@@ -25,6 +25,8 @@ public class DdzLobbyScreen extends Screen {
     private DdzRuleSet ruleSet = DdzRuleSet.STANDARD;
     /** 创建房间时是否公布到聊天栏（全服玩家可点击加入）。 */
     private boolean announce = true;
+    /** 创建房间时加入的机器人数量（0~2，补位自动开局）。 */
+    private int botCount;
     private EditBox codeBox;
 
     public DdzLobbyScreen() {
@@ -59,19 +61,23 @@ public class DdzLobbyScreen extends Screen {
                 announce = !announce;
                 b.setMessage(Component.literal("公布房间：" + (announce ? "开" : "关")));
             }).bounds(cx - 80, hc - 52, 160, 20).build());
+            addRenderableWidget(Button.builder(Component.literal("机器人：关"), b -> {
+                botCount = (botCount + 1) % 3; // 关 → 1 个 → 2 个
+                b.setMessage(Component.literal("机器人：" + (botCount == 0 ? "关" : botCount + " 个")));
+            }).bounds(cx - 80, hc - 28, 160, 20).build());
             addRenderableWidget(Button.builder(Component.literal("创建房间"), b ->
-                    ClientPlayNetworking.send(new CreateRoomC2S(flowerMode, (byte) ruleSet.ordinal(), announce)))
-                    .bounds(cx - 80, hc - 28, 160, 20).build());
-            codeBox = new EditBox(this.font, cx - 80, hc - 2, 160, 20, Component.literal("房间码"));
+                    ClientPlayNetworking.send(new CreateRoomC2S(flowerMode, (byte) ruleSet.ordinal(), announce, (byte) botCount)))
+                    .bounds(cx - 80, hc - 4, 160, 20).build());
+            codeBox = new EditBox(this.font, cx - 80, hc + 22, 160, 20, Component.literal("房间码"));
             codeBox.setMaxLength(5);
             codeBox.setFilter(str -> str.chars().allMatch(Character::isLetterOrDigit));
             addRenderableWidget(codeBox);
             addRenderableWidget(Button.builder(Component.literal("加入房间"), b ->
                     ClientPlayNetworking.send(new JoinRoomC2S(codeBox.getValue().trim().toUpperCase())))
-                    .bounds(cx - 80, hc + 24, 160, 20).build());
+                    .bounds(cx - 80, hc + 48, 160, 20).build());
             addRenderableWidget(Button.builder(Component.literal("规则介绍"), b ->
                     Minecraft.getInstance().setScreen(new DdzRulesScreen()))
-                    .bounds(cx - 80, hc + 52, 160, 20).build());
+                    .bounds(cx - 80, hc + 76, 160, 20).build());
         } else {
             addRenderableWidget(Button.builder(Component.literal("离开房间"), b ->
                     ClientPlayNetworking.send(new LeaveRoomC2S()))

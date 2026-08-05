@@ -217,8 +217,13 @@ public class DdzGame {
         turn(callSeat);
     }
 
-    /** 所有座位是否都处于自动行动状态（托管或机器人），用于避免"全不叫重发"死循环。 */
-    private boolean allAuto() {
+    /** 指定座位是否处于托管状态（管理命令显示用）。 */
+    public boolean isTrusted(int seat) {
+        return seat >= 0 && seat < 3 && players[seat].trusted();
+    }
+
+    /** 所有座位是否都处于自动行动状态（托管或机器人）。全自动时对局无人游玩，由管理器结束房间。 */
+    public boolean allAuto() {
         for (int i = 0; i < 3; i++) {
             if (!players[i].trusted() && !(botAuto && room.isBot(i))) {
                 return false;

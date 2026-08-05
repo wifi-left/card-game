@@ -47,7 +47,7 @@ public final class DdzMemoryManager {
 
     // ---------------- 房间操作 ----------------
 
-    public void createRoom(MinecraftServer server, ServerPlayer player, boolean flowerMode, DdzRuleSet ruleSet, boolean announce) {
+    public void createRoom(MinecraftServer server, ServerPlayer player, boolean flowerMode, DdzRuleSet ruleSet, boolean announce, int botCount) {
         if (currentRoom(player) != null) {
             error(player, "你已经在房间里了");
             return;
@@ -61,7 +61,15 @@ public final class DdzMemoryManager {
         room.addPlayer(player);
         rooms.put(room.id, room);
         playerRoomIds.put(player.getUUID(), room.id);
+        // 房主可选加入机器人补位（0~2 个；满 3 人自动开局）
+        int bots = Math.max(0, Math.min(botCount, 3 - room.size));
+        for (int i = 0; i < bots; i++) {
+            room.addBot("Bot" + (room.size + 1));
+        }
         room.broadcastState();
+        if (room.isFull()) {
+            startGame(room);
+        }
         // 公布房间：全服聊天栏广播可点击加入消息
         if (announce && server != null) {
             String mode = flowerMode ? "花牌模式" : "经典模式";
@@ -278,6 +286,12 @@ public final class DdzMemoryManager {
             if (room.game != null) {
                 room.game.tick();
             }
+            // 全员托管/机器人：无人游玩，结束本局并关闭房间（覆盖开局/中途/退出等所有路径）
+            if (room.game != null && room.game.allAuto()
+                    && room.phase() != DdzGamePhase.WAITING && room.phase() != DdzGamePhase.SETTLED) {
+                destroyRoom(room, "全员托管/机器人，本局结束");
+                continue;
+            }
             if (room.game != null && room.allDisconnected()
                     && room.phase() != DdzGamePhase.WAITING && room.phase() != DdzGamePhase.SETTLED) {
                 destroyRoom(room, "所有玩家已离线，房间已解散");
@@ -329,6 +343,42 @@ public final class DdzMemoryManager {
         if (room.size < 3) {
             destroyRoom(room, "调试假人已移除，房间关闭");
         }
+    }
+
+    // ---------------- 管理员房间管理 ----------------
+
+    /** 房间快照（按房间码排序，管理命令显示用）。 */
+    public List<DdzRoom> roomSnapshot() {
+        List<DdzRoom> list = new ArrayList<>(rooms.values());
+        list.sort(java.util.Comparator.comparing(r -> r.id));
+        return list;
+    }
+
+    /** 按房间码查找房间（管理命令用），不存在返回 null。 */
+    public DdzRoom roomByCode(String code) {
+        return rooms.get(code.toUpperCase().trim());
+    }
+
+    /** 删除指定房间（通知成员后销毁）；返回错误信息或 null。 */
+    public String deleteRoom(String code) {
+        DdzRoom room = rooms.get(code.toUpperCase().trim());
+        if (room == null) {
+            return "房间不存在：" + code;
+        }
+        room.broadcast(new RoomClosedS2C("管理员删除了房间"));
+        destroyRoomInternal(room);
+        return null;
+    }
+
+    /** 清空全部房间（通知所有成员），返回删除数量。 */
+    public int clearAllRooms() {
+        int count = rooms.size();
+        for (DdzRoom room : new ArrayList<>(rooms.values())) {
+            room.broadcast(new RoomClosedS2C("管理员清空了所有房间"));
+        }
+        rooms.clear();
+        playerRoomIds.clear();
+        return count;
     }
 
     /**
