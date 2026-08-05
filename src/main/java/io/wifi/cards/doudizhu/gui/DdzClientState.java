@@ -5,6 +5,7 @@ import io.wifi.cards.doudizhu.model.DdzGamePhase;
 import io.wifi.cards.doudizhu.network.DdzPackets.CallBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.GameResultS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.GameStartS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.HistoryS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.LandlordS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.PassBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.PlayBroadcastS2C;
@@ -71,6 +72,16 @@ public final class DdzClientState {
     public boolean revealed;
     /** 明牌显示的地主手牌（出牌时同步移除）。 */
     public final List<DdzCard> revealedCards = new ArrayList<>();
+    /** 一手出牌记录（主界面渲染最近两手历史用）。 */
+    public record PlayEntry(int seat, String name, List<DdzCard> cards, DdzCardType type, int key) {
+    }
+    /** 本局最近两手出牌（最新在前，主界面中央渲染）。 */
+    public final List<PlayEntry> lastPlays = new ArrayList<>();
+    /** 一条出牌历史（历史界面文本行；不出时 typeName="不出"、cardsText 为空）。 */
+    public record HistoryLine(String name, String typeName, String cardsText, boolean pass) {
+    }
+    /** 本局完整出牌历史（历史界面，由 HistoryS2C 下发填充）。 */
+    public final List<HistoryLine> historyLines = new ArrayList<>();
 
     // ---- 结算 ----
     public String resultLandlordName = "";
@@ -172,6 +183,8 @@ public final class DdzClientState {
         this.playRejected = false;
         this.revealed = false;
         this.revealedCards.clear();
+        this.lastPlays.clear();
+        this.historyLines.clear();
         Minecraft mc = Minecraft.getInstance();
         if (!(mc.screen instanceof DdzGameScreen)) {
             mc.setScreen(new DdzGameScreen());
@@ -210,6 +223,13 @@ public final class DdzClientState {
         this.revealed = false;
         this.revealedCards.clear();
         this.remaining = toIntArray(payload.remainingCounts());
+        // 历史出牌：以快照的最近一手重建（更早的历史由历史界面请求完整记录）
+        this.lastPlays.clear();
+        if (payload.lastPlaySeat() >= 0) {
+            this.lastPlays.add(new PlayEntry(payload.lastPlaySeat(), payload.lastPlayName(),
+                    DdzCard.byIds(payload.lastPlayCards()), safeType(payload.lastPlayType()), payload.lastPlayKey()));
+        }
+        this.historyLines.clear();
         Minecraft mc = Minecraft.getInstance();
         if (phase == DdzGamePhase.WAITING) {
             if (!(mc.screen instanceof DdzLobbyScreen)) {
@@ -260,6 +280,8 @@ public final class DdzClientState {
         this.lastPassName = "";
         this.revealed = false;
         this.revealedCards.clear();
+        this.lastPlays.clear();
+        this.historyLines.clear();
         if (mySeat == landlordSeat) {
             hand.addAll(bottomCards);
             DdzCard.sortByRank(hand);
@@ -288,6 +310,12 @@ public final class DdzClientState {
         if (revealed && payload.seat() == landlordSeat) {
             revealedCards.removeIf(c -> played.contains(c.id()));
         }
+        // 历史出牌（主界面渲染最近两手，最新在前）
+        lastPlays.add(0, new PlayEntry(payload.seat(), payload.playerName(),
+                DdzCard.byIds(payload.cardIds()), safeType(payload.typeOrdinal()), payload.keyValue()));
+        while (lastPlays.size() > 2) {
+            lastPlays.remove(lastPlays.size() - 1);
+        }
     }
 
     /** 明牌广播：地主公开全部手牌。 */
@@ -298,6 +326,17 @@ public final class DdzClientState {
             revealedCards.add(DdzCard.byId(id));
         }
         DdzCard.sortByRank(revealedCards);
+    }
+
+    /** 出牌历史下发（历史界面）：填充完整本局记录（最新在前）。 */
+    public void onHistory(HistoryS2C payload) {
+        this.historyLines.clear();
+        String[] names = payload.names();
+        String[] types = payload.types();
+        String[] cards = payload.cards();
+        for (int i = 0; i < names.length; i++) {
+            historyLines.add(new HistoryLine(names[i], types[i], cards[i], "不出".equals(types[i])));
+        }
     }
 
     public void onPass(PassBroadcastS2C payload) {
@@ -394,6 +433,8 @@ public final class DdzClientState {
         playRejected = false;
         revealed = false;
         revealedCards.clear();
+        lastPlays.clear();
+        historyLines.clear();
         resultLandlordName = "";
         resultLandlordWin = false;
         resultBaseScore = 1;

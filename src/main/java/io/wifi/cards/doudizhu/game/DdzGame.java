@@ -8,6 +8,7 @@ import io.wifi.cards.doudizhu.model.DdzGamePhase;
 import io.wifi.cards.doudizhu.model.DdzPlayer;
 import io.wifi.cards.doudizhu.network.DdzPackets.CallBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.GameResultS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.HistoryS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.GameStartS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.LandlordS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.NoticeS2C;
@@ -71,6 +72,12 @@ public class DdzGame {
     /** 结算结果缓存（重发/重开结算界面用）。 */
     private boolean resultLandlordWin;
     private int[] resultDeltas = new int[3];
+    /** 本局出牌历史（最新在前，上限 HISTORY_LIMIT 条；含"不出"记录）。 */
+    private static final int HISTORY_LIMIT = 60;
+    private final List<Integer> historySeats = new ArrayList<>();
+    private final List<String> historyNames = new ArrayList<>();
+    private final List<String> historyTypes = new ArrayList<>();
+    private final List<String> historyCards = new ArrayList<>();
     /** 服务端世界引用（用于游戏刻计时；全假人房间为 null）。 */
     private final ServerLevel level;
 
@@ -110,6 +117,10 @@ public class DdzGame {
     /** 开局：洗牌发牌，随机起始叫分玩家。 */
     public void start() {
         phase = DdzGamePhase.DEALING;
+        historySeats.clear();
+        historyNames.clear();
+        historyTypes.clear();
+        historyCards.clear();
         Random random = new Random();
         DdzGameMode mode = room.flowerMode ? DdzGameMode.FLOWER : DdzGameMode.CLASSIC;
         List<DdzCard> deck = DdzDeck.shuffled(mode, random);
@@ -248,6 +259,7 @@ public class DdzGame {
                 return false;
             }
             passCount++;
+            addHistory(p.seat(), p.name(), "不出", "");
             room.broadcast(new PassBroadcastS2C(p.name(), remainingCounts()));
             if (passCount >= 2) {
                 // 两家都不出，上家获得自由出牌权
@@ -279,6 +291,7 @@ public class DdzGame {
         lastPlay = chosen;
         lastPlaySeat = p.seat();
         passCount = 0;
+        addHistory(p.seat(), p.name(), chosen.type.displayName(), cardsText(cards));
         room.broadcast(new PlayBroadcastS2C((byte) p.seat(), p.name(), ids(cards),
                 (byte) chosen.type.ordinal(), chosen.key, multiplier, remainingCounts()));
         if (p.hand().isEmpty()) {
@@ -492,6 +505,41 @@ public class DdzGame {
         }
         room.sendToSeat(seat, new GameResultS2C((byte) landlordSeat, players[landlordSeat].name(),
                 resultLandlordWin, (byte) baseScore, multiplier, resultDeltas));
+    }
+
+    /** 记录一条出牌历史（最新在前，超出上限裁掉最旧的）。 */
+    private void addHistory(int seat, String name, String type, String cards) {
+        historySeats.add(0, seat);
+        historyNames.add(0, name);
+        historyTypes.add(0, type);
+        historyCards.add(0, cards);
+        if (historyNames.size() > HISTORY_LIMIT) {
+            historySeats.remove(historySeats.size() - 1);
+            historyNames.remove(historyNames.size() - 1);
+            historyTypes.remove(historyTypes.size() - 1);
+            historyCards.remove(historyCards.size() - 1);
+        }
+    }
+
+    /** 牌列表 → 紧凑文本（如 "333 55"）。 */
+    private static String cardsText(List<DdzCard> cards) {
+        StringBuilder sb = new StringBuilder();
+        for (DdzCard c : cards) {
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(c.display());
+        }
+        return sb.toString();
+    }
+
+    /** 向指定座位下发本局出牌历史（HistoryC2S 请求响应）。 */
+    public void sendHistory(int seat) {
+        room.sendToSeat(seat, new HistoryS2C(
+                historySeats.stream().mapToInt(Integer::intValue).toArray(),
+                historyNames.toArray(new String[0]),
+                historyTypes.toArray(new String[0]),
+                historyCards.toArray(new String[0])));
     }
 
     private void turn(int seat) {

@@ -36,6 +36,7 @@ public final class DdzPackets {
     public static final ResourceLocation TOGGLE_TRUST = id("toggle_trust");
     public static final ResourceLocation NEXT_GAME = id("next_game");
     public static final ResourceLocation REVEAL_ACTION = id("reveal_action");
+    public static final ResourceLocation HISTORY_REQUEST = id("history_request");
 
     // ---------------- S2C ----------------
 
@@ -54,6 +55,7 @@ public final class DdzPackets {
     public static final ResourceLocation NOTICE = id("notice");
     public static final ResourceLocation REVEAL = id("reveal");
     public static final ResourceLocation TRUST_STATE = id("trust_state");
+    public static final ResourceLocation HISTORY = id("history");
 
     // ---------------- Payload 定义 ----------------
 
@@ -510,6 +512,42 @@ public final class DdzPackets {
         }
     }
 
+    /** 请求出牌历史（C2S）：客户端打开历史界面时请求，服务端回 HistoryS2C。 */
+    public record HistoryC2S() implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<HistoryC2S> TYPE = new CustomPacketPayload.Type<>(HISTORY_REQUEST);
+        public static final StreamCodec<FriendlyByteBuf, HistoryC2S> CODEC = StreamCodec.of(
+                (buf, value) -> {
+                },
+                buf -> new HistoryC2S());
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    /** 出牌历史（S2C）：并行数组（最新在前）。types/cards 与 names 等长；"不出"行 typeName="不出"、cardsText 为空。 */
+    public record HistoryS2C(int[] seats, String[] names, String[] types, String[] cards) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<HistoryS2C> TYPE = new CustomPacketPayload.Type<>(HISTORY);
+        public static final StreamCodec<FriendlyByteBuf, HistoryS2C> CODEC = StreamCodec.of(
+                (buf, value) -> {
+                    buf.writeVarIntArray(value.seats());
+                    buf.writeCollection(java.util.Arrays.asList(value.names()), (b, s) -> b.writeUtf(s));
+                    buf.writeCollection(java.util.Arrays.asList(value.types()), (b, s) -> b.writeUtf(s));
+                    buf.writeCollection(java.util.Arrays.asList(value.cards()), (b, s) -> b.writeUtf(s));
+                },
+                buf -> new HistoryS2C(
+                        buf.readVarIntArray(),
+                        buf.readCollection(java.util.ArrayList::new, b -> b.readUtf()).toArray(new String[0]),
+                        buf.readCollection(java.util.ArrayList::new, b -> b.readUtf()).toArray(new String[0]),
+                        buf.readCollection(java.util.ArrayList::new, b -> b.readUtf()).toArray(new String[0])));
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
     // ---------------- 注册 ----------------
 
     /** 注册全部 payload 类型 + 服务端接收器（主入口调用，客户端也会执行此方法）。 */
@@ -524,6 +562,7 @@ public final class DdzPackets {
         PayloadTypeRegistry.playC2S().register(ToggleTrustC2S.TYPE, ToggleTrustC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(NextGameC2S.TYPE, NextGameC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(RevealC2S.TYPE, RevealC2S.CODEC);
+        PayloadTypeRegistry.playC2S().register(HistoryC2S.TYPE, HistoryC2S.CODEC);
 
         PayloadTypeRegistry.playS2C().register(RoomStateS2C.TYPE, RoomStateS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(GameStartS2C.TYPE, GameStartS2C.CODEC);
@@ -540,6 +579,7 @@ public final class DdzPackets {
         PayloadTypeRegistry.playS2C().register(NoticeS2C.TYPE, NoticeS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(RevealS2C.TYPE, RevealS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(TrustStateS2C.TYPE, TrustStateS2C.CODEC);
+        PayloadTypeRegistry.playS2C().register(HistoryS2C.TYPE, HistoryS2C.CODEC);
 
         registerServerReceivers();
     }
@@ -574,5 +614,7 @@ public final class DdzPackets {
                 m.nextGame(ctx.player()));
         ServerPlayNetworking.registerGlobalReceiver(RevealC2S.TYPE, (payload, ctx) ->
                 m.onReveal(ctx.player()));
+        ServerPlayNetworking.registerGlobalReceiver(HistoryC2S.TYPE, (payload, ctx) ->
+                m.onHistoryRequest(ctx.player()));
     }
 }

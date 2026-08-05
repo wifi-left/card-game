@@ -46,8 +46,8 @@ public class DdzResultScreen extends Screen {
         // 顶部标题条
         g.fill(0, 0, width, 26, 0x66000000);
         DdzGui.centeredShadow(g, this.font, width, "本局结算", 9, 0xFFFFD700);
-        // 结算信息区半透明黑底（仅在有内容处）
-        g.fill(cx - 200, 30, cx + 200, 128, 0x55000000);
+        // 结算信息区半透明黑底（覆盖到最底部玩家行 124 之下）
+        g.fill(cx - 200, 30, cx + 200, 138, 0x55000000);
         String title = s.resultLandlordWin ? "地主胜利！" : "农民胜利！";
         DdzGui.centeredShadow(g, this.font, width, title, 40,
                 s.resultLandlordWin ? 0xFFFFFF55 : 0xFFFF5555);

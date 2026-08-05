@@ -95,8 +95,8 @@ public class DdzLobbyScreen extends Screen {
             DdzGui.centeredShadow(g, this.font, width, "创建房间邀请好友一起玩，或输入房间码加入", hc + 80, 0xFFAAAAAA);
             DdzGui.centeredShadow(g, this.font, width, "提示：房主可用 /doudizhu invite <玩家名> 邀请", hc + 94, 0xFF777777);
         } else {
-            // 房间信息区半透明黑底
-            g.fill(cx - 200, 30, cx + 200, 120, 0x55000000);
+            // 房间信息区半透明黑底（覆盖到最底部提示行 116 之下）
+            g.fill(cx - 200, 30, cx + 200, 130, 0x55000000);
             DdzGui.centeredShadow(g, this.font, width,
                     "房间 " + s.roomCode + "（" + (s.flowerMode ? "花牌模式" : "经典模式")
                             + " · " + s.ruleSet.displayName() + "）",

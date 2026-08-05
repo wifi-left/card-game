@@ -4,6 +4,7 @@ import com.mojang.authlib.GameProfile;
 import io.wifi.cards.doudizhu.card.DdzCard;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
 import io.wifi.cards.doudizhu.network.DdzPackets.CallScoreC2S;
+import io.wifi.cards.doudizhu.network.DdzPackets.HistoryC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.LeaveRoomC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.PassC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.PlayCardsC2S;
@@ -55,6 +56,18 @@ public class DdzGameScreen extends Screen {
 
     public DdzGameScreen() {
         super(Component.literal("斗地主"));
+    }
+
+    @Override
+    protected void init() {
+        // 左下角：规则 / 出牌历史（子界面返回时回到本打牌界面，并渲染本界面为背景）
+        addRenderableWidget(Button.builder(Component.literal("规则"), b ->
+                        Minecraft.getInstance().setScreen(new DdzRulesScreen(DdzGameScreen.this)))
+                .bounds(8, height - 26, 60, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("历史"), b -> {
+            ClientPlayNetworking.send(new HistoryC2S());
+            Minecraft.getInstance().setScreen(new DdzHistoryScreen(DdzGameScreen.this));
+        }).bounds(72, height - 26, 60, 20).build());
     }
 
     @Override
@@ -135,16 +148,19 @@ public class DdzGameScreen extends Screen {
                 actionButtons.add(button(x, y + 26, "抢地主 🔥", b -> sendRob(true), true));
             }
             case PLAYING -> {
-                // 地主出第一手牌前可选择明牌（公开手牌）；明牌后恢复出牌按钮
+                // 出牌按钮始终显示；地主出第一手牌前额外显示「明牌」按钮（公开手牌）
+                actionButtons.add(button(x, y, "出牌", b -> sendPlay(), !selected.isEmpty()));
                 boolean canReveal = s.landlordSeat == s.mySeat && !s.revealed && s.lastPlaySeat < 0;
                 if (canReveal) {
-                    actionButtons.add(button(x, y, "明牌", b -> sendReveal(), true));
+                    actionButtons.add(button(x, y + 26, "明牌", b -> sendReveal(), true));
+                    actionButtons.add(button(x, y + 52, "不出", b -> sendPass(),
+                            s.lastPlaySeat >= 0 && s.lastPlaySeat != s.mySeat));
+                    actionButtons.add(button(x, y + 78, "提示", b -> hint(), true));
                 } else {
-                    actionButtons.add(button(x, y, "出牌", b -> sendPlay(), !selected.isEmpty()));
+                    actionButtons.add(button(x, y + 26, "不出", b -> sendPass(),
+                            s.lastPlaySeat >= 0 && s.lastPlaySeat != s.mySeat));
+                    actionButtons.add(button(x, y + 52, "提示", b -> hint(), true));
                 }
-                actionButtons.add(button(x, y + 26, "不出", b -> sendPass(),
-                        s.lastPlaySeat >= 0 && s.lastPlaySeat != s.mySeat));
-                actionButtons.add(button(x, y + 52, "提示", b -> hint(), true));
             }
             default -> {
             }
@@ -428,18 +444,22 @@ public class DdzGameScreen extends Screen {
             DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, actionText, 62, 0xFFFFD700);
         }
 
-        // 上一手出牌
-        if (!s.lastPlayCards.isEmpty() && s.lastPlayType != null) {
-            String label = s.lastPlayName + " 出了 " + s.lastPlayType.displayName();
-            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, label, 80, 0xFFFFFFFF);
-            int n = s.lastPlayCards.size();
+        // 最近两手历史出牌（最新在前；第 1 张在上、第 2 张在下）
+        List<DdzClientState.PlayEntry> plays = s.lastPlays;
+        for (int i = 0; i < Math.min(2, plays.size()); i++) {
+            DdzClientState.PlayEntry e = plays.get(i);
+            int labelY = i == 0 ? 74 : 106;
+            int cardY = labelY + 10;
+            String label = e.name() + " 出了 " + (e.type() != null ? e.type().displayName() : "");
+            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, label, labelY, 0xFFFFFFFF);
+            int n = e.cards().size();
             // 宽牌型（如 20 张飞机带翅膀）动态缩小牌宽并按需重叠，保证不溢出面板
-            int cardW = Math.max(8, Math.min(24, (panelW - 16) / n));
+            int cardW = Math.max(8, Math.min(20, (panelW - 16) / n));
             int gap = Math.max(2, cardW - 4);
             int totalW = cardW + (n - 1) * gap;
             int x0 = panelX + Math.max(2, (panelW - totalW) / 2);
-            for (int i = 0; i < n; i++) {
-                drawCard(g, s.lastPlayCards.get(i), x0 + i * gap, 92, cardW, Math.max(14, cardW + 10));
+            for (int j = 0; j < n; j++) {
+                drawCard(g, e.cards().get(j), x0 + j * gap, cardY, cardW, 20);
             }
         }
 
@@ -449,7 +469,7 @@ public class DdzGameScreen extends Screen {
             for (DdzCard c : s.bottomCards) {
                 sb.append(c.display()).append(' ');
             }
-            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, sb.toString(), 132, 0xFFFFFF88);
+            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, sb.toString(), 138, 0xFFFFFF88);
         }
 
         // 明牌：公开地主全部手牌（所有玩家可见，随地主出牌同步移除）
@@ -460,7 +480,7 @@ public class DdzGameScreen extends Screen {
             int totalW = rw + (n - 1) * rg;
             int x0 = panelX + Math.max(2, (panelW - totalW) / 2);
             int rh = Math.max(14, rw + 6);
-            g.fill(panelX, 154, panelX + panelW, 154 + rh + 4, 0x44000000);
+            g.fill(panelX, 154, panelX + panelW, 154 + rh + 12, 0x44000000);
             DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, s.landlordName + " 明牌", 155, 0xFFFFD700);
             for (int i = 0; i < n; i++) {
                 drawCard(g, s.revealedCards.get(i), x0 + i * rg, 165, rw, rh);

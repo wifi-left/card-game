@@ -184,6 +184,14 @@ public final class DdzMemoryManager {
         }
     }
 
+    /** 出牌历史请求（历史界面打开时）：下发本局完整出牌历史。 */
+    public void onHistoryRequest(ServerPlayer player) {
+        DdzRoom room = currentRoom(player);
+        if (room != null && room.game != null) {
+            room.game.sendHistory(room.seatOf(player));
+        }
+    }
+
     public void setTrust(ServerPlayer player, boolean enabled) {
         DdzGame game = gameOf(player);
         if (game != null) {
