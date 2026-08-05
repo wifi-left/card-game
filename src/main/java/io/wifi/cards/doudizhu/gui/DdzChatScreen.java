@@ -19,18 +19,10 @@ public class DdzChatScreen extends ChatScreen {
         this.parent = parent;
     }
 
-    /** 打开聊天：保留原版输入框初始化，并接管背景音乐（打牌界面 removed 已停，这里恢复）。 */
+    /** 打开聊天：保留原版输入框初始化（背景音乐由 DdzGameScreen.tickBgm 统一管理，不在此处理）。 */
     @Override
     protected void init() {
         super.init();
-        DdzGameScreen.playBgm();
-    }
-
-    /** 关闭聊天（回到打牌界面，相同实例不会重新 init）：恢复背景音乐。 */
-    @Override
-    public void removed() {
-        DdzGameScreen.playBgm();
-        super.removed();
     }
 
     @Override

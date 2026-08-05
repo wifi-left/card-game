@@ -1,6 +1,7 @@
 package io.wifi.cards.doudizhu;
 
 import io.wifi.cards.doudizhu.gui.DdzClientState;
+import io.wifi.cards.doudizhu.gui.DdzGameScreen;
 import io.wifi.cards.doudizhu.gui.DdzLobbyScreen;
 import io.wifi.cards.doudizhu.network.DdzPackets.CallBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.GameResultS2C;
@@ -18,6 +19,7 @@ import io.wifi.cards.doudizhu.network.DdzPackets.RoomClosedS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomStateS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TrustStateS2C;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
@@ -36,6 +38,16 @@ public final class DdzClient {
     public static void init() {
         registerReceivers();
         registerDisconnectCleanup();
+        registerBgmTick();
+    }
+
+    /**
+     * 背景音乐每 tick 驱动：当前处于打牌上下文（打牌界面或其子界面）时保持循环播放
+     * （已在播放不重启），离开才停止。
+     */
+    private static void registerBgmTick() {
+        ClientTickEvents.END_CLIENT_TICK.register(client ->
+                DdzGameScreen.tickBgm(client.screen));
     }
 
     /**

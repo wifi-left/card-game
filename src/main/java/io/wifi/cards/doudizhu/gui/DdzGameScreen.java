@@ -73,21 +73,34 @@ public class DdzGameScreen extends Screen {
             ClientPlayNetworking.send(new HistoryC2S());
             Minecraft.getInstance().setScreen(new DdzHistoryScreen(DdzGameScreen.this));
         }).bounds(72, height - 26, 60, 20).build());
-        // 背景音乐：进入打牌界面时循环播放（音量 0.3）
-        playBgm();
-    }
-
-    @Override
-    public void removed() {
-        stopBgm(); // 离开打牌界面（大厅/结算/聊天等子界面由各自 init 接管恢复）
-        super.removed();
     }
 
     // ---------------- 背景音乐（循环，音量 0.3） ----------------
 
     private static SimpleSoundInstance bgm;
 
-    /** 开始循环播放背景音乐（幂等：已在播放则跳过）。 */
+    /**
+     * 每 tick 检查当前界面：处于打牌上下文（打牌界面或其子界面：聊天/规则/历史）时
+     * 保持循环播放，已在播放则不重启（切换子界面不会从头再来）；离开打牌上下文才停止。
+     */
+    public static void tickBgm(Screen current) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) {
+            stopBgm();
+            return;
+        }
+        boolean inGameUi = current instanceof DdzGameScreen
+                || current instanceof DdzChatScreen
+                || (current instanceof DdzRulesScreen r && r.isFromGame())
+                || (current instanceof DdzHistoryScreen h && h.isFromGame());
+        if (inGameUi) {
+            playBgm();
+        } else {
+            stopBgm();
+        }
+    }
+
+    /** 开始循环播放背景音乐（幂等：已在播放则跳过，不从头重播）。 */
     public static void playBgm() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.getSoundManager() == null) {
