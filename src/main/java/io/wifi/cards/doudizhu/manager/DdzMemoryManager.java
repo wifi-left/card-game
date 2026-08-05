@@ -468,7 +468,14 @@ public final class DdzMemoryManager {
         if (currentRoom(player) != null) {
             return "你已在房间中，无法旁观";
         }
-        if (spectatorRoomIds.containsKey(player.getUUID())) {
+        String existing = spectatorRoomIds.get(player.getUUID());
+        if (existing != null) {
+            if (existing.equals(room.id)) {
+                // 已在旁观同一房间：视为重新打开旁观界面（重发完整快照，客户端回到 GameScreen）
+                room.broadcastState();
+                room.game.syncToSpectator(player);
+                return null;
+            }
             return "你已在旁观其他房间";
         }
         room.addSpectator(player);
@@ -601,6 +608,17 @@ public final class DdzMemoryManager {
     public DdzRoom currentRoom(ServerPlayer player) {
         String roomId = playerRoomIds.get(player.getUUID());
         return roomId == null ? null : rooms.get(roomId);
+    }
+
+    /** 玩家正在旁观哪个房间（无则 null）。 */
+    public String spectatingRoomId(ServerPlayer player) {
+        return spectatorRoomIds.get(player.getUUID());
+    }
+
+    /** 玩家正在旁观的房间对象；未旁观或房间已销毁返回 null。 */
+    public DdzRoom spectatorRoomOf(ServerPlayer player) {
+        String id = spectatorRoomIds.get(player.getUUID());
+        return id == null ? null : rooms.get(id);
     }
 
     public DdzGame gameOf(ServerPlayer player) {

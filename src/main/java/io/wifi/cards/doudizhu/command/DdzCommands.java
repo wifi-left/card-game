@@ -119,17 +119,29 @@ public final class DdzCommands {
      * 打开 UI：/doudizhu。
      * <ul>
      *   <li>对局中（叫分/抢地主/出牌/结算）：发房间状态 + 完整对局快照，客户端重新打开游戏界面</li>
+     *   <li>旁观中：重发旁观快照（房间状态 + 对局 + 三家手牌 + 历史），客户端重新打开旁观界面</li>
      *   <li>等待中或不在房间：发 OpenLobbyS2C 打开大厅</li>
      * </ul>
      */
     private static int openLobby(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
-        DdzRoom room = DdzMemoryManager.INSTANCE.currentRoom(player);
+        DdzMemoryManager m = DdzMemoryManager.INSTANCE;
+        DdzRoom room = m.currentRoom(player);
         if (room != null && room.phase() != DdzGamePhase.WAITING) {
             // 对局中：先同步房间信息（mySeat/成员），再发完整快照，客户端 onReconnect 会打开 GameScreen
             room.broadcastState();
             room.game.syncTo(room.seatOf(player));
             return 1;
+        }
+        // 旁观者：关闭 UI 后用 /doudizhu 重新打开应回到旁观界面（而非大厅）
+        String specId = m.spectatingRoomId(player);
+        if (specId != null) {
+            DdzRoom specRoom = m.roomByCode(specId);
+            if (specRoom != null && specRoom.game != null) {
+                specRoom.broadcastState(); // 旁观者收到 mySeat=-1 的房间状态
+                specRoom.game.syncToSpectator(player); // 对局快照 + 三家手牌 + 历史
+                return 1;
+            }
         }
         ServerPlayNetworking.send(player, new OpenLobbyS2C());
         return 1;

@@ -84,6 +84,10 @@ public class DdzGameScreen extends Screen {
             ClientPlayNetworking.send(new HistoryC2S());
             Minecraft.getInstance().setScreen(new DdzHistoryScreen(DdzGameScreen.this));
         }).bounds(72, height - 26, 60, 20).build());
+        // 操作按钮（退出/托管/出牌等）在 init 时立即重建：
+        // resize（窗口/全屏/GUI 缩放变化）会重建整个 widget 树，若只等 tick 的签名变化重建，
+        // 旁观者（签名恒定）的「退出旁观」按钮会丢失且无法恢复（成员则要等选牌等变化才恢复）
+        rebuildActionButtons();
     }
 
     // ---------------- 背景音乐（循环，音量 0.3） ----------------
@@ -153,6 +157,25 @@ public class DdzGameScreen extends Screen {
     public void onClose() {
         DdzClientState.chatReopenHint("关闭牌局界面");
         super.onClose();
+    }
+
+    /**
+     * 被替换为子界面（规则/历史/聊天）时调用：父类 removed() 会清空全部 widgets
+     * （含操作按钮），返回本界面时因签名未变不会重建 → 强制重置签名，下个 tick 重建按钮。
+     */
+    @Override
+    public void removed() {
+        super.removed();
+        buttonSignature = -1;
+    }
+
+    /** 窗口 resize：父类会再次调用 init()（重复添加规则/历史按钮），先清空全部再重建。 */
+    @Override
+    public void resize(Minecraft mc, int width, int height) {
+        clearWidgets();
+        actionButtons.clear();
+        buttonSignature = -1;
+        super.resize(mc, width, height);
     }
 
     @Override

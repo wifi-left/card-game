@@ -8,6 +8,8 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 斗地主全部网络包（1.21.1 新版 CustomPayload API）。
@@ -17,6 +19,8 @@ import net.minecraft.resources.ResourceLocation;
  * <p><b>服务端安全：</b>本类不引用任何含 client 的包（客户端接收器在 DdzClient 中注册）。</p>
  */
 public final class DdzPackets {
+    private static final Logger LOGGER = LoggerFactory.getLogger("wifi-card-games");
+
     private DdzPackets() {
     }
 
@@ -643,37 +647,47 @@ public final class DdzPackets {
         // 所有 C2S 处理统一调度到服务器主线程执行：Fabric 接收器运行在 netty 线程，
         // 直接修改房间/对局共享状态会与主线程 tick 产生竞态（members/size/spectators 非线程安全）。
         // ctx.player() 引用在 execute 后依然有效（断线由 isConnected 兜底）。
-        ServerPlayNetworking.registerGlobalReceiver(CreateRoomC2S.TYPE, (payload, ctx) -> ctx.server().execute(() -> {
+        // 处理体统一 guarded 包装：主线程任务抛异常会崩溃整个服务器，任何意外只记录日志。
+        ServerPlayNetworking.registerGlobalReceiver(CreateRoomC2S.TYPE, (payload, ctx) -> ctx.server().execute(() -> guarded(() -> {
             // 防御：规则集序号越界（恶意客户端可发送任意 byte）时回退标准规则；机器人数量钳制 0~2
             byte rs = payload.ruleSet();
             DdzRuleSet ruleSet = rs >= 0 && rs < DdzRuleSet.values().length
                     ? DdzRuleSet.values()[rs] : DdzRuleSet.STANDARD;
             m.createRoom(ctx.server(), ctx.player(), payload.flowerMode(), ruleSet, payload.announce(),
                     Math.max(0, Math.min(payload.botCount(), 2)));
-        }));
+        })));
         ServerPlayNetworking.registerGlobalReceiver(JoinRoomC2S.TYPE, (payload, ctx) ->
-                ctx.server().execute(() -> m.joinRoom(ctx.player(), payload.roomCode())));
+                ctx.server().execute(() -> guarded(() -> m.joinRoom(ctx.player(), payload.roomCode()))));
         ServerPlayNetworking.registerGlobalReceiver(LeaveRoomC2S.TYPE, (payload, ctx) ->
-                ctx.server().execute(() -> m.leaveRoom(ctx.player())));
+                ctx.server().execute(() -> guarded(() -> m.leaveRoom(ctx.player()))));
         ServerPlayNetworking.registerGlobalReceiver(CallScoreC2S.TYPE, (payload, ctx) ->
-                ctx.server().execute(() -> m.onCall(ctx.player(), payload.score())));
+                ctx.server().execute(() -> guarded(() -> m.onCall(ctx.player(), payload.score()))));
         ServerPlayNetworking.registerGlobalReceiver(RobActionC2S.TYPE, (payload, ctx) ->
-                ctx.server().execute(() -> m.onRob(ctx.player(), payload.rob())));
+                ctx.server().execute(() -> guarded(() -> m.onRob(ctx.player(), payload.rob()))));
         ServerPlayNetworking.registerGlobalReceiver(PlayCardsC2S.TYPE, (payload, ctx) ->
-                ctx.server().execute(() -> m.onPlayCards(ctx.player(), payload.cardIds())));
+                ctx.server().execute(() -> guarded(() -> m.onPlayCards(ctx.player(), payload.cardIds()))));
         ServerPlayNetworking.registerGlobalReceiver(PassC2S.TYPE, (payload, ctx) ->
-                ctx.server().execute(() -> m.onPass(ctx.player())));
+                ctx.server().execute(() -> guarded(() -> m.onPass(ctx.player()))));
         ServerPlayNetworking.registerGlobalReceiver(ToggleTrustC2S.TYPE, (payload, ctx) ->
-                ctx.server().execute(() -> m.setTrust(ctx.player(), payload.enabled())));
+                ctx.server().execute(() -> guarded(() -> m.setTrust(ctx.player(), payload.enabled()))));
         ServerPlayNetworking.registerGlobalReceiver(NextGameC2S.TYPE, (payload, ctx) ->
-                ctx.server().execute(() -> m.nextGame(ctx.player())));
+                ctx.server().execute(() -> guarded(() -> m.nextGame(ctx.player()))));
         ServerPlayNetworking.registerGlobalReceiver(RevealC2S.TYPE, (payload, ctx) ->
-                ctx.server().execute(() -> m.onReveal(ctx.player())));
+                ctx.server().execute(() -> guarded(() -> m.onReveal(ctx.player()))));
         ServerPlayNetworking.registerGlobalReceiver(HistoryC2S.TYPE, (payload, ctx) ->
-                ctx.server().execute(() -> m.onHistoryRequest(ctx.player())));
+                ctx.server().execute(() -> guarded(() -> m.onHistoryRequest(ctx.player()))));
         ServerPlayNetworking.registerGlobalReceiver(SpectateC2S.TYPE, (payload, ctx) ->
-                ctx.server().execute(() -> m.spectate(ctx.player(), payload.roomCode())));
+                ctx.server().execute(() -> guarded(() -> m.spectate(ctx.player(), payload.roomCode()))));
         ServerPlayNetworking.registerGlobalReceiver(SpectateLeaveC2S.TYPE, (payload, ctx) ->
-                ctx.server().execute(() -> m.leaveSpectate(ctx.player())));
+                ctx.server().execute(() -> guarded(() -> m.leaveSpectate(ctx.player()))));
+    }
+
+    /** 主线程任务防护：意外异常只记录日志，绝不让服务器崩溃。 */
+    private static void guarded(Runnable task) {
+        try {
+            task.run();
+        } catch (Throwable t) {
+            LOGGER.error("处理斗地主网络包异常", t);
+        }
     }
 }
