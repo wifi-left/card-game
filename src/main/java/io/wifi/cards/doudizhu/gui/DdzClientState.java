@@ -268,8 +268,9 @@ public final class DdzClientState {
         this.lastRob = payload.rob();
         this.multiplier = payload.multiplier();
         this.consecutivePasses = payload.consecutivePasses();
-        // 语音：抢地主
-        if (payload.rob()) {
+        // 语音：抢地主——仅抢地主阶段中的真实抢（倍数 ≥×2）；
+        // 叫 3 分触发的初始广播（×1）不播（已播"叫三分"语音）
+        if (payload.rob() && payload.multiplier() > 1) {
             DdzSoundPlayer.playRob();
         }
     }

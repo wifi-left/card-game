@@ -89,6 +89,9 @@ public class DdzGame {
     private int pendingAutoActSeat = -1;
     private long autoActDueGameTime;
     private int autoActDelayCounter;
+    /** 抢地主阶段每位玩家的剩余表态次数（0=不可再表态）。
+     *  第一个抢地主的人（叫 3 分触发者）可抢两次（初始 2），其余玩家各一次。 */
+    private final int[] robTurns = new int[3];
 
     public DdzGame(DdzRoom room) {
         this.room = room;
@@ -248,6 +251,12 @@ public class DdzGame {
             reject(p, "还没轮到你");
             return;
         }
+        // 每位玩家最多表态一次；第一个抢地主的人（叫 3 分触发者）可抢两次
+        if (robTurns[p.seat()] <= 0) {
+            reject(p, "你已经表态过了");
+            return;
+        }
+        robTurns[p.seat()]--;
         if (rob) {
             landlordSeat = p.seat();
             multiplier *= 2;
@@ -257,11 +266,25 @@ public class DdzGame {
         }
         room.broadcast(new RobBroadcastS2C(p.name(), rob, multiplier, (byte) consecutivePasses));
         if (consecutivePasses >= 2) {
+            // 连续两家不抢：终止（当前 landlordSeat 为地主）
             endRobPhase();
             return;
         }
-        currentSeat = next(currentSeat);
-        turn(currentSeat);
+        // 推进到下一个未表态的座位；全部表态完毕则终止
+        advanceRobTurn(p.seat());
+    }
+
+    /** 抢地主阶段推进到下一个仍有表态次数的座位；全部表态完毕则结束（最后抢的人为地主）。 */
+    private void advanceRobTurn(int seat) {
+        for (int i = 1; i <= 3; i++) {
+            int s = (seat + i) % 3;
+            if (robTurns[s] > 0) {
+                currentSeat = s;
+                turn(s);
+                return;
+            }
+        }
+        endRobPhase();
     }
 
     /**
@@ -509,6 +532,8 @@ public class DdzGame {
         landlordSeat = seat;
         multiplier = 1;
         consecutivePasses = 0;
+        java.util.Arrays.fill(robTurns, 1);
+        robTurns[seat] = 2; // 叫 3 分者（第一个抢地主的）可抢两次
         room.broadcast(new RobBroadcastS2C(players[seat].name(), true, 1, (byte) 0));
         currentSeat = next(seat);
         turn(currentSeat);
@@ -607,6 +632,11 @@ public class DdzGame {
     }
 
     private void turn(int seat) {
+        // 抢地主阶段：表态次数用尽的座位不再行动（跳过），避免托管/自动行动卡住
+        if (phase == DdzGamePhase.ROBBING && robTurns[seat] <= 0) {
+            advanceRobTurn(seat);
+            return;
+        }
         currentSeat = seat;
         turnEndGameTime = (level != null ? level.getGameTime() : 0) + TURN_SECONDS * 20L;
         tickCounter = 0;
