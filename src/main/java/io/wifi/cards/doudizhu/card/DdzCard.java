@@ -15,7 +15,10 @@ import java.util.List;
  * 网络传输只传 id，客户端用 byId 反查。
  */
 public final class DdzCard {
-    private static final DdzCard[] ALL = new DdzCard[55];
+    /** 全牌堆牌数（0~54 共 55 张，含花牌）。 */
+    public static final int TOTAL_COUNT = 55;
+
+    private static final DdzCard[] ALL = new DdzCard[TOTAL_COUNT];
 
     static {
         int id = 0;

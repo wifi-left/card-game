@@ -1,9 +1,7 @@
 package io.wifi.cards.doudizhu.network;
 
-import io.wifi.cards.doudizhu.gui.DdzClientState;
 import io.wifi.cards.doudizhu.manager.DdzMemoryManager;
 import io.wifi.cards.doudizhu.rule.DdzRuleSet;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.FriendlyByteBuf;
@@ -16,6 +14,7 @@ import net.minecraft.resources.ResourceLocation;
  * <p>C2S：创建/加入/离开房间、叫分、抢地主、出牌、不出、托管、再来一局。</p>
  * <p>S2C：房间状态、发牌、叫分/抢地主广播、地主确定、出牌/不出广播、轮到谁、结算、房间关闭、通知。</p>
  * <p>序列化统一使用 StreamCodec + FriendlyByteBuf；牌只传 id（见 {@code DdzCard}）。</p>
+ * <p><b>服务端安全：</b>本类不引用任何含 client 的包（客户端接收器在 DdzClient 中注册）。</p>
  */
 public final class DdzPackets {
     private DdzPackets() {
@@ -41,6 +40,8 @@ public final class DdzPackets {
 
     public static final ResourceLocation ROOM_STATE = id("room_state");
     public static final ResourceLocation GAME_START = id("game_start");
+    public static final ResourceLocation RECONNECT = id("reconnect");
+    public static final ResourceLocation OPEN_LOBBY = id("open_lobby");
     public static final ResourceLocation CALL_BROADCAST = id("call_broadcast");
     public static final ResourceLocation ROB_BROADCAST = id("rob_broadcast");
     public static final ResourceLocation LANDLORD = id("landlord");
@@ -53,15 +54,16 @@ public final class DdzPackets {
 
     // ---------------- Payload 定义 ----------------
 
-    /** 创建房间（C2S）。flowerMode=花牌模式；ruleSet=规则集序号（0 标准 / 1 民间）。 */
-    public record CreateRoomC2S(boolean flowerMode, byte ruleSet) implements CustomPacketPayload {
+    /** 创建房间（C2S）。flowerMode=花牌模式；ruleSet=规则集序号（0 标准 / 1 民间）；announce=是否公布到聊天栏。 */
+    public record CreateRoomC2S(boolean flowerMode, byte ruleSet, boolean announce) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<CreateRoomC2S> TYPE = new CustomPacketPayload.Type<>(CREATE_ROOM);
         public static final StreamCodec<FriendlyByteBuf, CreateRoomC2S> CODEC = StreamCodec.of(
                 (buf, value) -> {
                     buf.writeBoolean(value.flowerMode());
                     buf.writeByte(value.ruleSet());
+                    buf.writeBoolean(value.announce());
                 },
-                buf -> new CreateRoomC2S(buf.readBoolean(), buf.readByte()));
+                buf -> new CreateRoomC2S(buf.readBoolean(), buf.readByte(), buf.readBoolean()));
 
         @Override
         public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
@@ -176,9 +178,9 @@ public final class DdzPackets {
         }
     }
 
-    /** 房间状态同步（S2C，逐玩家发送，mySeat 为该玩家的座位）。 */
+    /** 房间状态同步（S2C，逐玩家发送，mySeat 为该玩家的座位）。uuids 用于客户端渲染玩家头颅。 */
     public record RoomStateS2C(String roomCode, boolean flowerMode, byte phaseOrdinal, byte ruleSet, byte mySeat,
-                               String[] names, boolean[] connected) implements CustomPacketPayload {
+                               String[] names, String[] uuids, boolean[] connected) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<RoomStateS2C> TYPE = new CustomPacketPayload.Type<>(ROOM_STATE);
         public static final StreamCodec<FriendlyByteBuf, RoomStateS2C> CODEC = StreamCodec.of(
                 (buf, value) -> {
@@ -189,6 +191,10 @@ public final class DdzPackets {
                     buf.writeByte(value.mySeat());
                     buf.writeVarInt(value.names().length);
                     for (String s : value.names()) {
+                        buf.writeUtf(s == null ? "" : s);
+                    }
+                    buf.writeVarInt(value.uuids().length);
+                    for (String s : value.uuids()) {
                         buf.writeUtf(s == null ? "" : s);
                     }
                     buf.writeVarInt(value.connected().length);
@@ -207,12 +213,17 @@ public final class DdzPackets {
                     for (int i = 0; i < n; i++) {
                         names[i] = buf.readUtf();
                     }
+                    int u = buf.readVarInt();
+                    String[] uuids = new String[u];
+                    for (int i = 0; i < u; i++) {
+                        uuids[i] = buf.readUtf();
+                    }
                     int m = buf.readVarInt();
                     boolean[] conn = new boolean[m];
                     for (int i = 0; i < m; i++) {
                         conn[i] = buf.readBoolean();
                     }
-                    return new RoomStateS2C(code, flower, phase, ruleSet, mySeat, names, conn);
+                    return new RoomStateS2C(code, flower, phase, ruleSet, mySeat, names, uuids, conn);
                 });
 
         @Override
@@ -232,6 +243,58 @@ public final class DdzPackets {
                     buf.writeByte(value.bottomCount());
                 },
                 buf -> new GameStartS2C(buf.readByte(), buf.readVarIntArray(), buf.readByte(), buf.readByte()));
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    /** 打开大厅（S2C）：由服务端命令触发，客户端在主线程打开 LobbyScreen。 */
+    public record OpenLobbyS2C() implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<OpenLobbyS2C> TYPE = new CustomPacketPayload.Type<>(OPEN_LOBBY);
+        public static final StreamCodec<FriendlyByteBuf, OpenLobbyS2C> CODEC = StreamCodec.of(
+                (buf, value) -> {
+                },
+                buf -> new OpenLobbyS2C());
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    /** 重连快照（S2C，逐人发送）：断线玩家重连后同步当前对局完整状态。 */
+    public record ReconnectS2C(byte phaseOrdinal, int[] hand, byte callMaxScore, byte currentSeat, long endGameTime,
+                               int multiplier, byte consecutivePasses, byte baseScore, byte landlordSeat,
+                               String landlordName, int[] bottomCards, byte lastPlaySeat, String lastPlayName,
+                               int[] lastPlayCards, byte lastPlayType, int lastPlayKey,
+                               byte[] remainingCounts) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<ReconnectS2C> TYPE = new CustomPacketPayload.Type<>(RECONNECT);
+        public static final StreamCodec<FriendlyByteBuf, ReconnectS2C> CODEC = StreamCodec.of(
+                (buf, value) -> {
+                    buf.writeByte(value.phaseOrdinal());
+                    buf.writeVarIntArray(value.hand());
+                    buf.writeByte(value.callMaxScore());
+                    buf.writeByte(value.currentSeat());
+                    buf.writeLong(value.endGameTime());
+                    buf.writeVarInt(value.multiplier());
+                    buf.writeByte(value.consecutivePasses());
+                    buf.writeByte(value.baseScore());
+                    buf.writeByte(value.landlordSeat());
+                    buf.writeUtf(value.landlordName());
+                    buf.writeVarIntArray(value.bottomCards());
+                    buf.writeByte(value.lastPlaySeat());
+                    buf.writeUtf(value.lastPlayName());
+                    buf.writeVarIntArray(value.lastPlayCards());
+                    buf.writeByte(value.lastPlayType());
+                    buf.writeVarInt(value.lastPlayKey());
+                    buf.writeByteArray(value.remainingCounts());
+                },
+                buf -> new ReconnectS2C(buf.readByte(), buf.readVarIntArray(), buf.readByte(), buf.readByte(),
+                        buf.readLong(), buf.readVarInt(), buf.readByte(), buf.readByte(), buf.readByte(),
+                        buf.readUtf(), buf.readVarIntArray(), buf.readByte(), buf.readUtf(), buf.readVarIntArray(),
+                        buf.readByte(), buf.readVarInt(), buf.readByteArray()));
 
         @Override
         public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
@@ -334,15 +397,18 @@ public final class DdzPackets {
         }
     }
 
-    /** 轮到谁（S2C），seconds 为出牌倒计时。 */
-    public record TurnS2C(byte seat, byte seconds) implements CustomPacketPayload {
+    /**
+     * 轮到谁（S2C）。endGameTime 为行动截止的游戏刻（level.getGameTime() + 15*20），
+     * 客户端用本地的 level.getGameTime() 计算剩余时间，两端时间基准一致。
+     */
+    public record TurnS2C(byte seat, long endGameTime) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<TurnS2C> TYPE = new CustomPacketPayload.Type<>(TURN);
         public static final StreamCodec<FriendlyByteBuf, TurnS2C> CODEC = StreamCodec.of(
                 (buf, value) -> {
                     buf.writeByte(value.seat());
-                    buf.writeByte(value.seconds());
+                    buf.writeLong(value.endGameTime());
                 },
-                buf -> new TurnS2C(buf.readByte(), buf.readByte()));
+                buf -> new TurnS2C(buf.readByte(), buf.readLong()));
 
         @Override
         public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
@@ -414,6 +480,8 @@ public final class DdzPackets {
 
         PayloadTypeRegistry.playS2C().register(RoomStateS2C.TYPE, RoomStateS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(GameStartS2C.TYPE, GameStartS2C.CODEC);
+        PayloadTypeRegistry.playS2C().register(ReconnectS2C.TYPE, ReconnectS2C.CODEC);
+        PayloadTypeRegistry.playS2C().register(OpenLobbyS2C.TYPE, OpenLobbyS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(CallBroadcastS2C.TYPE, CallBroadcastS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(RobBroadcastS2C.TYPE, RobBroadcastS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(LandlordS2C.TYPE, LandlordS2C.CODEC);
@@ -427,37 +495,18 @@ public final class DdzPackets {
         registerServerReceivers();
     }
 
-    /** 注册客户端接收器（客户端入口调用）。 */
-    public static void registerClient() {
-        DdzClientState state = DdzClientState.INSTANCE;
-        ClientPlayNetworking.registerGlobalReceiver(RoomStateS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onRoomState(payload)));
-        ClientPlayNetworking.registerGlobalReceiver(GameStartS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onGameStart(payload)));
-        ClientPlayNetworking.registerGlobalReceiver(CallBroadcastS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onCall(payload)));
-        ClientPlayNetworking.registerGlobalReceiver(RobBroadcastS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onRob(payload)));
-        ClientPlayNetworking.registerGlobalReceiver(LandlordS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onLandlord(payload)));
-        ClientPlayNetworking.registerGlobalReceiver(PlayBroadcastS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onPlay(payload)));
-        ClientPlayNetworking.registerGlobalReceiver(PassBroadcastS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onPass(payload)));
-        ClientPlayNetworking.registerGlobalReceiver(TurnS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onTurn(payload)));
-        ClientPlayNetworking.registerGlobalReceiver(GameResultS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onResult(payload)));
-        ClientPlayNetworking.registerGlobalReceiver(RoomClosedS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onRoomClosed(payload.reason())));
-        ClientPlayNetworking.registerGlobalReceiver(NoticeS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onNotice(payload.message())));
-    }
+    // 客户端接收器在 io.wifi.cards.doudizhu.DdzClient（客户端类）中注册，
+    // 本类不引用任何含 client 的包，保证服务端可正常加载。
 
     private static void registerServerReceivers() {
         DdzMemoryManager m = DdzMemoryManager.INSTANCE;
-        ServerPlayNetworking.registerGlobalReceiver(CreateRoomC2S.TYPE, (payload, ctx) ->
-                m.createRoom(ctx.player(), payload.flowerMode(), DdzRuleSet.values()[payload.ruleSet()]));
+        ServerPlayNetworking.registerGlobalReceiver(CreateRoomC2S.TYPE, (payload, ctx) -> {
+            // 防御：规则集序号越界（恶意客户端可发送任意 byte）时回退标准规则
+            byte rs = payload.ruleSet();
+            DdzRuleSet ruleSet = rs >= 0 && rs < DdzRuleSet.values().length
+                    ? DdzRuleSet.values()[rs] : DdzRuleSet.STANDARD;
+            m.createRoom(ctx.server(), ctx.player(), payload.flowerMode(), ruleSet, payload.announce());
+        });
         ServerPlayNetworking.registerGlobalReceiver(JoinRoomC2S.TYPE, (payload, ctx) ->
                 m.joinRoom(ctx.player(), payload.roomCode()));
         ServerPlayNetworking.registerGlobalReceiver(LeaveRoomC2S.TYPE, (payload, ctx) ->

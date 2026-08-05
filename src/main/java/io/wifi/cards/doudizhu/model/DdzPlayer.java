@@ -6,14 +6,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-/** 对局中的一名玩家（服务端权威状态）。 */
+/** 对局中的一名玩家（服务端权威状态，可为调试假人）。 */
 public class DdzPlayer {
     private final UUID uuid;
     private final String name;
     private final int seat;
     private final List<DdzCard> hand = new ArrayList<>();
     private boolean trusted;
-    private boolean connected = true;
     private boolean landlord;
 
     public DdzPlayer(UUID uuid, String name, int seat) {
@@ -44,14 +43,6 @@ public class DdzPlayer {
 
     public void setTrusted(boolean trusted) {
         this.trusted = trusted;
-    }
-
-    public boolean connected() {
-        return connected;
-    }
-
-    public void setConnected(boolean connected) {
-        this.connected = connected;
     }
 
     public boolean landlord() {

@@ -13,11 +13,13 @@ import io.wifi.cards.doudizhu.network.DdzPackets.LandlordS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.NoticeS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.PassBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.PlayBroadcastS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.ReconnectS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RobBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
 import io.wifi.cards.doudizhu.rule.DdzAutoPlay;
 import io.wifi.cards.doudizhu.rule.DdzCardTypeRecognizer;
 import io.wifi.cards.doudizhu.rule.DdzPlayResult;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
@@ -25,17 +27,20 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 斗地主对局状态机（服务端权威，纯内存）。
  * <p>流程：发牌 → 叫分（不叫/1/2/3，须更高）→ 有人叫 3 进入抢地主（循环抢，连续 2 人不抢终止）
  * 或无人叫 3 取最高分者 → 出牌（地主先出，两 Pass 后自由出牌）→ 结算。</p>
- * <p>托管：主动开启 / 超时（15 秒）/ 断线自动触发。倍数 = 底分阶段倍数 × 2^(炸弹/王炸/软炸弹出现次数)。
- * 出牌校验按房间规则集（标准/民间）与花牌模式过滤禁用的牌型（如花牌模式的三带二）。</p>
+ * <p>托管：主动开启 / 超时（15 秒）/ 断线自动触发；调试假人可自动托管行动。
+ * 倍数 = 底分阶段倍数 × 2^(炸弹/王炸/软炸弹出现次数)。
+ * 出牌校验按房间规则集（标准/民间）与花牌模式过滤禁用的牌型（如花牌模式的三带二）。
+ * 玩家断线自动托管续玩，重连时由 DdzMemoryManager 替换连接引用并同步快照（ReconnectS2C）。</p>
  */
 public class DdzGame {
+    /** 每回合行动时限（秒）。 */
     public static final int TURN_SECONDS = 15;
-    private static final int TICKS_PER_SECOND = 20;
 
     private final DdzRoom room;
     private final DdzPlayer[] players = new DdzPlayer[3];
@@ -55,18 +60,49 @@ public class DdzGame {
     private DdzPlayResult lastPlay;
     private int passCount;
     private int turnSeconds;
+    private long turnEndGameTime;
     private int tickCounter;
+    /** 调试假人是否自动托管行动（默认开；关闭后可手动指挥假人）。 */
+    private boolean botAuto = true;
+    /** 服务端世界引用（用于游戏刻计时；全假人房间为 null）。 */
+    private final ServerLevel level;
 
-    public DdzGame(DdzRoom room, ServerPlayer[] members) {
+    public DdzGame(DdzRoom room) {
         this.room = room;
+        ServerLevel foundLevel = null;
         for (int i = 0; i < 3; i++) {
-            ServerPlayer member = members[i];
-            players[i] = new DdzPlayer(member.getUUID(), member.getGameProfile().getName(), i);
+            String name = room.seatName(i);
+            if (name.isEmpty()) {
+                name = "???"; // 防御：异常状态下的座位显示名兜底
+            }
+            UUID uuid = room.isBot(i)
+                    ? UUID.nameUUIDFromBytes(("ddz-bot-" + i).getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                    : room.members[i].getUUID();
+            if (foundLevel == null && room.members[i] != null) {
+                foundLevel = room.members[i].serverLevel();
+            }
+            players[i] = new DdzPlayer(uuid, name, i);
         }
+        this.level = foundLevel;
     }
 
     public DdzGamePhase phase() {
         return phase;
+    }
+
+    /** 当前行动座位（调试命令用）。 */
+    public int currentSeat() {
+        return currentSeat;
+    }
+
+    /** 某座位的手牌（调试命令用）。 */
+    public List<DdzCard> handOf(int seat) {
+        return players[seat].hand();
+    }
+
+    /** 设置调试假人是否自动托管行动。 */
+    public void setBotAuto(boolean auto) {
+        this.botAuto = auto;
     }
 
     /** 开局：洗牌发牌，随机起始叫分玩家。 */
@@ -181,28 +217,32 @@ public class DdzGame {
         turn(currentSeat);
     }
 
-    /** 出牌；cards 为 null 表示不出。 */
-    public void onPlay(ServerPlayer player, List<DdzCard> cards) {
+    /**
+     * 出牌；cards 为 null 表示不出。
+     *
+     * @return 是否成功执行（失败时已向该玩家发送拒绝提示）
+     */
+    public boolean onPlay(ServerPlayer player, List<DdzCard> cards) {
         DdzPlayer p = playerOf(player);
         if (p == null) {
-            return;
+            return false;
         }
         if (phase != DdzGamePhase.PLAYING) {
             reject(p, "现在不是出牌阶段");
-            return;
+            return false;
         }
         if (p.seat() != currentSeat) {
             reject(p, "还没轮到你出牌");
-            return;
+            return false;
         }
         if (cards == null || cards.isEmpty()) {
             if (lastPlaySeat < 0) {
                 reject(p, "地主必须先出牌");
-                return;
+                return false;
             }
             if (lastPlaySeat == p.seat()) {
                 reject(p, "轮到你自由出牌，不能不出");
-                return;
+                return false;
             }
             passCount++;
             room.broadcast(new PassBroadcastS2C(p.name(), remainingCounts()));
@@ -213,7 +253,7 @@ public class DdzGame {
             } else {
                 turn(next(p.seat()));
             }
-            return;
+            return true;
         }
         // 出牌校验
         Set<Integer> played = new HashSet<>();
@@ -222,12 +262,12 @@ public class DdzGame {
         }
         if (played.size() != cards.size() || !p.hand().containsAll(cards)) {
             reject(p, "出牌与手牌不符");
-            return;
+            return false;
         }
         DdzPlayResult chosen = choosePlay(cards, lastPlay == null || lastPlaySeat == p.seat() ? null : lastPlay);
         if (chosen == null) {
             reject(p, "牌型不合法或无法压过上家");
-            return;
+            return false;
         }
         p.hand().removeAll(cards);
         if (chosen.type.isBombLike()) {
@@ -240,9 +280,10 @@ public class DdzGame {
                 (byte) chosen.type.ordinal(), chosen.key, multiplier, remainingCounts()));
         if (p.hand().isEmpty()) {
             settle(p.seat());
-            return;
+            return true;
         }
         turn(next(p.seat()));
+        return true;
     }
 
     /** 开启/关闭托管；开启且正轮到该玩家时立即自动行动。 */
@@ -257,33 +298,65 @@ public class DdzGame {
         }
     }
 
-    /** 玩家断线：标记并自动托管（本局结束前保持）。 */
+    /** 玩家断线：自动托管代打（对局继续），正轮到他时立即自动行动。 */
     public void onPlayerDisconnect(int seat) {
         if (seat < 0 || seat >= 3) {
             return;
         }
         DdzPlayer p = players[seat];
-        p.setConnected(false);
         p.setTrusted(true);
         if (p.seat() == currentSeat) {
             autoAct(p.seat());
         }
     }
 
-    /** 服务端每 tick 调用：超时倒计时。 */
+    /** 玩家重连：恢复手动控制（对局状态由 ReconnectS2C 快照同步）。 */
+    public void onPlayerReconnect(int seat) {
+        if (seat < 0 || seat >= 3) {
+            return;
+        }
+        players[seat].setTrusted(false);
+    }
+
+    /** 发送当前对局完整快照给指定座位（断线重连用，含该玩家自己的手牌）。 */
+    public void syncTo(int seat) {
+        DdzPlayResult lp = lastPlay;
+        room.sendToSeat(seat, new ReconnectS2C(
+                (byte) phase.ordinal(),
+                ids(players[seat].hand()),
+                (byte) maxScore,
+                (byte) currentSeat,
+                turnEndGameTime,
+                multiplier,
+                (byte) consecutivePasses,
+                (byte) baseScore,
+                (byte) landlordSeat,
+                landlordSeat >= 0 ? players[landlordSeat].name() : "",
+                ids(bottomCards),
+                (byte) (lp == null ? -1 : lastPlaySeat),
+                lp == null ? "" : players[lastPlaySeat].name(),
+                lp == null ? new int[0] : ids(lp.cards),
+                lp == null ? (byte) -1 : (byte) lp.type.ordinal(),
+                lp == null ? 0 : lp.key,
+                remainingCounts()));
+    }
+
+    /** 服务端每 tick 调用：超时判断（与客户端共用 level.getGameTime() 基准）。 */
     public void tick() {
         if (!isActivePhase()) {
             return;
         }
-        tickCounter++;
-        if (tickCounter < TICKS_PER_SECOND) {
-            return;
-        }
-        tickCounter = 0;
-        turnSeconds--;
-        if (turnSeconds <= 0) {
-            turnSeconds = TURN_SECONDS;
-            autoAct(currentSeat);
+        if (level != null) {
+            if (level.getGameTime() >= turnEndGameTime) {
+                autoAct(currentSeat);
+            }
+        } else {
+            // 全假人房间（无世界引用）：退化为本地 tick 计数
+            tickCounter++;
+            if (tickCounter >= TURN_SECONDS * 20) {
+                tickCounter = 0;
+                autoAct(currentSeat);
+            }
         }
     }
 
@@ -365,10 +438,10 @@ public class DdzGame {
 
     private void turn(int seat) {
         currentSeat = seat;
-        turnSeconds = TURN_SECONDS;
+        turnEndGameTime = (level != null ? level.getGameTime() : 0) + TURN_SECONDS * 20L;
         tickCounter = 0;
-        room.broadcast(new TurnS2C((byte) seat, (byte) TURN_SECONDS));
-        if (players[seat].trusted()) {
+        room.broadcast(new TurnS2C((byte) seat, turnEndGameTime));
+        if (players[seat].trusted() || (botAuto && room.isBot(seat))) {
             autoAct(seat);
         }
     }

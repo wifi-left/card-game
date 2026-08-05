@@ -7,6 +7,9 @@ import io.wifi.cards.doudizhu.network.DdzPackets.NoticeS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomClosedS2C;
 import io.wifi.cards.doudizhu.rule.DdzRuleSet;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -41,7 +44,7 @@ public final class DdzMemoryManager {
 
     // ---------------- 房间操作 ----------------
 
-    public void createRoom(ServerPlayer player, boolean flowerMode, DdzRuleSet ruleSet) {
+    public void createRoom(MinecraftServer server, ServerPlayer player, boolean flowerMode, DdzRuleSet ruleSet, boolean announce) {
         if (currentRoom(player) != null) {
             error(player, "你已经在房间里了");
             return;
@@ -51,6 +54,16 @@ public final class DdzMemoryManager {
         rooms.put(room.id, room);
         playerRoomIds.put(player.getUUID(), room.id);
         room.broadcastState();
+        // 公布房间：全服聊天栏广播可点击加入消息
+        if (announce && server != null) {
+            String mode = flowerMode ? "花牌模式" : "经典模式";
+            Component message = Component.literal("[斗地主] " + player.getGameProfile().getName()
+                    + " 创建了房间 " + room.id + "（" + mode + " · " + ruleSet.displayName() + "）")
+                    .append(Component.literal(" [点击加入]").withStyle(style -> style
+                            .withColor(ChatFormatting.GREEN)
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/doudizhu accept " + room.id))));
+            server.getPlayerList().broadcastSystemMessage(message, false);
+        }
     }
 
     public void joinRoom(ServerPlayer player, String code) {
@@ -122,7 +135,15 @@ public final class DdzMemoryManager {
     public void onPlayCards(ServerPlayer player, int[] cardIds) {
         DdzGame game = gameOf(player);
         if (game != null) {
-            game.onPlay(player, DdzCard.byIds(cardIds));
+            // 防御：过滤越界 id（恶意客户端可能发送非法值导致数组越界）；
+            // 非法 id 不在任何玩家手牌中，后续 containsAll 校验会拒绝本次出牌
+            List<DdzCard> cards = new ArrayList<>(cardIds.length);
+            for (int id : cardIds) {
+                if (id >= 0 && id < DdzCard.TOTAL_COUNT) {
+                    cards.add(DdzCard.byId(id));
+                }
+            }
+            game.onPlay(player, cards);
         }
     }
 
@@ -142,7 +163,10 @@ public final class DdzMemoryManager {
 
     // ---------------- 生命周期 ----------------
 
-    /** 断线处理：对局中→自动托管；等待/结算中→视为离开。 */
+    /**
+     * 断线处理：对局中（叫分/抢地主/出牌）掉线 → 自动托管代打，对局继续；
+     * 等待/结算中 → 视为离开（不满 3 人解散）。
+     */
     public void onPlayerDisconnect(ServerPlayer player) {
         DdzRoom room = currentRoom(player);
         if (room == null) {
@@ -155,6 +179,40 @@ public final class DdzMemoryManager {
         } else {
             room.game.onPlayerDisconnect(room.seatOf(player));
         }
+    }
+
+    /**
+     * 玩家（重连）进入服务器：若其仍在对局中（断线托管续玩），
+     * 替换连接引用、恢复手动控制、同步完整对局快照，使重连玩家可继续游玩。
+     */
+    public void onPlayerJoin(ServerPlayer player) {
+        String roomId = playerRoomIds.get(player.getUUID());
+        if (roomId == null) {
+            return;
+        }
+        DdzRoom room = rooms.get(roomId);
+        if (room == null) {
+            playerRoomIds.remove(player.getUUID());
+            return;
+        }
+        DdzGamePhase phase = room.phase();
+        if (phase == DdzGamePhase.WAITING || phase == DdzGamePhase.SETTLED) {
+            // 等待/结算中断线已按离开处理（会话已清除），理论不会到达；防御性兜底关闭房间
+            room.broadcast(new RoomClosedS2C(player.getGameProfile().getName() + " 重连发现旧房间，房间已关闭"));
+            destroyRoomInternal(room);
+            return;
+        }
+        int seat = room.replacePlayerByUuid(player.getUUID(), player);
+        if (seat < 0) {
+            // 找不到对应座位（理论不会发生）→ 防御性关闭房间
+            room.broadcast(new RoomClosedS2C(player.getGameProfile().getName() + " 重连失败，房间已关闭"));
+            destroyRoomInternal(room);
+            return;
+        }
+        room.game.onPlayerReconnect(seat);
+        room.broadcast(new NoticeS2C(player.getGameProfile().getName() + " 已重连"));
+        room.broadcastState();
+        room.game.syncTo(seat);
     }
 
     /** 服务端每 tick：对局计时 + 空闲房间清理。 */
@@ -175,10 +233,95 @@ public final class DdzMemoryManager {
         }
     }
 
+    // ---------------- 调试假人（开发端） ----------------
+
+    /** 向等待中的房间添加 1~2 个调试假人；满 3 人自动开局。 */
+    public void addBots(ServerPlayer player, int count) {
+        DdzRoom room = currentRoom(player);
+        if (room == null) {
+            error(player, "你不在任何房间里，请先创建房间");
+            return;
+        }
+        if (room.phase() != DdzGamePhase.WAITING) {
+            error(player, "只有等待中的房间可以添加假人");
+            return;
+        }
+        int canAdd = Math.min(Math.max(count, 1), 3 - room.size);
+        for (int i = 0; i < canAdd; i++) {
+            room.addBot("Bot" + (room.size + 1));
+        }
+        room.broadcastState();
+        if (room.isFull()) {
+            startGame(room);
+        }
+    }
+
+    /** 移除房间内全部假人；对局中移除导致人数不足时结束本局并关闭房间。 */
+    public void removeBots(ServerPlayer player) {
+        DdzRoom room = currentRoom(player);
+        if (room == null) {
+            error(player, "你不在任何房间里");
+            return;
+        }
+        if (room.botCount() == 0) {
+            error(player, "房间内没有假人");
+            return;
+        }
+        room.removeBots();
+        room.broadcastState();
+        if (room.size < 3) {
+            destroyRoom(room, "调试假人已移除，房间关闭");
+        }
+    }
+
+    /** 设置房间内假人是否自动托管行动（调试用）。 */
+    public void setBotAuto(ServerPlayer player, boolean auto) {
+        DdzRoom room = currentRoom(player);
+        if (room == null || room.game == null) {
+            error(player, "对局尚未开始");
+            return;
+        }
+        room.game.setBotAuto(auto);
+    }
+
+    /** 指定座位是否为调试假人（调试命令校验用）。 */
+    public boolean isBotSeat(ServerPlayer player, int seat) {
+        DdzRoom room = currentRoom(player);
+        return room != null && room.isBot(seat);
+    }
+
+    /**
+     * 强制将指定玩家加入房间（调试用，无视客户端操作）。
+     *
+     * @return 错误消息；null 表示成功
+     */
+    public String forceJoin(ServerPlayer target, String roomCode) {
+        DdzRoom room = rooms.get(roomCode.toUpperCase().trim());
+        if (room == null) {
+            return "房间不存在：" + roomCode;
+        }
+        if (currentRoom(target) != null) {
+            return target.getGameProfile().getName() + " 已在其他房间";
+        }
+        if (room.isFull()) {
+            return "房间已满";
+        }
+        if (room.phase() != DdzGamePhase.WAITING) {
+            return "游戏已经开始，无法加入";
+        }
+        room.addPlayer(target);
+        playerRoomIds.put(target.getUUID(), room.id);
+        room.broadcastState();
+        if (room.isFull()) {
+            startGame(room);
+        }
+        return null;
+    }
+
     // ---------------- 内部 ----------------
 
     private void startGame(DdzRoom room) {
-        room.game = new DdzGame(room, room.members);
+        room.game = new DdzGame(room);
         room.game.start();
     }
 
@@ -233,7 +376,7 @@ public final class DdzMemoryManager {
         return roomId == null ? null : rooms.get(roomId);
     }
 
-    private DdzGame gameOf(ServerPlayer player) {
+    public DdzGame gameOf(ServerPlayer player) {
         DdzRoom room = currentRoom(player);
         return room == null ? null : room.game;
     }

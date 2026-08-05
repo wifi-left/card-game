@@ -11,15 +11,22 @@ import java.util.List;
 
 /**
  * 规则介绍界面：玩法、牌型、大小、花牌模式差异、流程与结算说明。
- * 内容超出一屏时可滚动查看（滚轮），Esc 或"返回"按钮退出。
+ * 内容超出一屏时可滚动查看（滚轮 + 右侧可拖拽滚动条），Esc 或"返回"按钮退出。
  */
 public class DdzRulesScreen extends Screen {
     private static final int CONTENT_TOP = 30;
     private static final int LINE_H = 10;
     private static final int BOTTOM_BAR = 30;
+    /** 滚动条距右缘的距离与宽度。 */
+    private static final int SCROLLBAR_RIGHT = 8;
+    private static final int SCROLLBAR_W = 3;
 
     private final List<String> lines = new ArrayList<>();
     private float scroll;
+    /** 是否正在拖拽滚动条滑块。 */
+    private boolean draggingScrollbar;
+    /** 按下时鼠标相对滑块顶部的偏移。 */
+    private double dragOffset;
 
     public DdzRulesScreen() {
         super(Component.literal("斗地主规则"));
@@ -28,6 +35,42 @@ public class DdzRulesScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    // ---------------- 滚动计算 ----------------
+
+    private int trackTop() {
+        return CONTENT_TOP;
+    }
+
+    private int trackBottom() {
+        return height - BOTTOM_BAR;
+    }
+
+    private int trackHeight() {
+        return trackBottom() - trackTop();
+    }
+
+    private int maxScroll() {
+        return Math.max(0, lines.size() * LINE_H - trackHeight());
+    }
+
+    private int thumbHeight() {
+        int track = trackHeight();
+        int content = lines.size() * LINE_H;
+        return Math.max(12, track * Math.min(track, content) / Math.max(content, track));
+    }
+
+    private int thumbTop() {
+        int max = maxScroll();
+        if (max <= 0) {
+            return trackTop();
+        }
+        return trackTop() + (int) ((trackHeight() - thumbHeight()) * scroll / max);
+    }
+
+    private void clampScroll() {
+        scroll = Math.max(0, Math.min(scroll, maxScroll()));
     }
 
     @Override
@@ -84,30 +127,71 @@ public class DdzRulesScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(g, mouseX, mouseY, partialTick);
-        g.drawCenteredString(this.font, Component.literal("斗地主规则"), width / 2, 8, 0xFFFFFF88);
+        // 背景与控件由 super 渲染（含 renderBackground），自定义内容绘制在其上
+        super.render(g, mouseX, mouseY, partialTick);
+        g.fill(0, 0, width, 26, 0x66000000);
+        DdzGui.centeredShadow(g, this.font, width, "斗地主规则", 9, 0xFFFFD700);
         g.enableScissor(0, CONTENT_TOP, width, height - BOTTOM_BAR);
         int y = CONTENT_TOP;
         int viewportBottom = height - BOTTOM_BAR;
         for (String line : lines) {
             int drawY = y - (int) scroll;
             if (drawY >= CONTENT_TOP - LINE_H && drawY < viewportBottom) {
-                g.drawString(this.font, line, 8, drawY, 0xFFDDDDDD);
+                g.drawString(this.font, line, 8, drawY, 0xFFDDDDDD, true);
             }
             y += LINE_H;
         }
         g.disableScissor();
-        g.drawCenteredString(this.font, Component.literal("滚轮滚动查看，Esc 返回"), width / 2, height - 16, 0xFF888888);
-        super.render(g, mouseX, mouseY, partialTick);
+        // 滚动条（内容超出一屏时显示）
+        int sbX = width - SCROLLBAR_RIGHT;
+        int max = maxScroll();
+        if (max > 0) {
+            g.fill(sbX, trackTop(), sbX + SCROLLBAR_W, trackBottom(), 0x33000000); // 轨道
+            g.fill(sbX, thumbTop(), sbX + SCROLLBAR_W, thumbTop() + thumbHeight(), 0xCCFFFFFF); // 滑块
+        }
+        DdzGui.centeredShadow(g, this.font, width, "滚轮滚动 / 拖拽滚动条，Esc 返回", height - 16, 0xFF888888);
     }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        int contentHeight = lines.size() * LINE_H;
-        int viewport = height - BOTTOM_BAR - CONTENT_TOP;
-        int maxScroll = Math.max(0, contentHeight - viewport);
         scroll -= (float) verticalAmount * 10;
-        scroll = Math.max(0, Math.min(scroll, maxScroll));
+        clampScroll();
         return true;
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == 0 && mouseX >= width - SCROLLBAR_RIGHT && mouseX <= width - SCROLLBAR_RIGHT + SCROLLBAR_W) {
+            int top = thumbTop();
+            if (mouseY >= top && mouseY <= top + thumbHeight()) {
+                draggingScrollbar = true;
+                dragOffset = mouseY - top;
+                return true;
+            }
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (draggingScrollbar && button == 0) {
+            int usable = trackHeight() - thumbHeight();
+            if (usable > 0) {
+                double pos = mouseY - trackTop() - dragOffset;
+                scroll = (float) (maxScroll() * pos / usable);
+                clampScroll();
+            }
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (draggingScrollbar && button == 0) {
+            draggingScrollbar = false;
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 }

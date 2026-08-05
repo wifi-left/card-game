@@ -1,5 +1,6 @@
 package io.wifi.cards.doudizhu.gui;
 
+import com.mojang.authlib.GameProfile;
 import io.wifi.cards.doudizhu.card.DdzCard;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
 import io.wifi.cards.doudizhu.network.DdzPackets.CallScoreC2S;
@@ -11,15 +12,18 @@ import io.wifi.cards.doudizhu.rule.DdzAutoPlay;
 import io.wifi.cards.doudizhu.rule.DdzPlayResult;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * 游戏桌面界面（第一轮文字化牌面）：
@@ -31,16 +35,16 @@ import java.util.Set;
  * </ul>
  */
 public class DdzGameScreen extends Screen {
-    private static final int CARD_W = 26;
-    private static final int CARD_H = 38;
-    private static final int CARD_GAP = 22;
-    private static final int SELECT_OFFSET = 10;
+    // 牌面尺寸：固定 34x50，重叠 14px 布局（GAP=20），地主 20 张也能在常见窗口宽度内放下
+    private static final int CARD_W = 34;
+    private static final int CARD_H = 50;
+    private static final int CARD_GAP = 20;
+    private static final int SELECT_OFFSET = 12;
 
     private final Set<Integer> selected = new HashSet<>();
     private final List<Button> actionButtons = new ArrayList<>();
     private int buttonSignature = -1;
-    private int countdown;
-    private int lastCountdownSeat = -1;
+    private int countdown = 15;
 
     public DdzGameScreen() {
         super(Component.literal("斗地主"));
@@ -57,13 +61,18 @@ public class DdzGameScreen extends Screen {
     public void tick() {
         super.tick();
         DdzClientState s = DdzClientState.INSTANCE;
-        // 座位切换（或开局）时重置本地倒计时
-        if (s.currentSeat != lastCountdownSeat) {
-            lastCountdownSeat = s.currentSeat;
-            countdown = s.turnSeconds;
+        // 用服务端下发的截止游戏刻计算剩余秒数：客户端 level.getGameTime() 与服务端同步，
+        // 倒计时不受本地帧率/网络延迟影响
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level != null && s.turnEndGameTime > 0) {
+            long remainingTicks = s.turnEndGameTime - mc.level.getGameTime();
+            countdown = (int) Math.max(0, (remainingTicks + 19) / 20); // 向上取整
         }
-        if (countdown > 0) {
-            countdown--;
+        // 服务端拒绝了最近一次出牌：清空选中，便于玩家重新选牌
+        if (s.playRejected) {
+            s.playRejected = false;
+            selected.clear();
+            buttonSignature = -1;
         }
         // 阶段/轮到谁/托管/选牌变化时重建按钮
         int signature = (s.phase.ordinal() * 100 + (s.currentSeat + 1) * 10 + (s.myTrust ? 1 : 0)) * 2
@@ -197,30 +206,70 @@ public class DdzGameScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(g, mouseX, mouseY, partialTick);
+        // 背景与控件由 super 渲染（含 renderBackground），自定义内容绘制在其上
+        super.render(g, mouseX, mouseY, partialTick);
         drawTopInfo(g);
         drawCenter(g);
         drawHand(g);
-        super.render(g, mouseX, mouseY, partialTick);
     }
 
     private void drawTopInfo(GuiGraphics g) {
         DdzClientState s = DdzClientState.INSTANCE;
         int leftSeat = (s.mySeat + 1) % 3;
         int rightSeat = (s.mySeat + 2) % 3;
-        for (int side = 0; side < 2; side++) {
-            int seat = side == 0 ? leftSeat : rightSeat;
-            String text = nameLine(seat);
-            int color = s.currentSeat == seat ? 0xFFFFFF55 : 0xFFFFFFFF;
-            if (side == 0) {
-                g.drawString(this.font, Component.literal(text), 8, 8, color);
-            } else {
-                g.drawString(this.font, Component.literal(text), width - this.font.width(text) - 8, 8, color);
-            }
-        }
+        // 顶部信息条（含玩家头颅）
+        g.fill(0, 0, width, 54, 0x66000000);
+        // 左侧：左对手（上）+ 自己（下），带头颅
+        drawHead(g, s.playerUuids[leftSeat], 6, 6, 16);
+        g.drawString(this.font, nameLine(leftSeat), 26, 9,
+                s.currentSeat == leftSeat ? 0xFFFFFF55 : 0xFFFFFFFF, true);
+        drawHead(g, s.playerUuids[s.mySeat], 6, 32, 16);
         String me = "你" + (s.mySeat == s.landlordSeat ? "（地主）" : "") + "：" + s.hand.size() + " 张"
                 + (s.myTrust ? "（托管中）" : "");
-        g.drawString(this.font, Component.literal(me), 8, 26, 0xFFFFFFFF);
+        g.drawString(this.font, me, 26, 35, 0xFFFFFFFF, true);
+        // 右侧：右对手，带头颅
+        drawHead(g, s.playerUuids[rightSeat], width - 22, 6, 16);
+        String rightText = nameLine(rightSeat);
+        g.drawString(this.font, rightText, width - this.font.width(rightText) - 26, 9,
+                s.currentSeat == rightSeat ? 0xFFFFFF55 : 0xFFFFFFFF, true);
+        // 顶部正中央：当前阶段 + 轮到谁/倒计时
+        DdzGui.centeredShadow(g, this.font, width, phaseText(), 13, 0xFFFFD700);
+        if (s.phase == DdzGamePhase.CALLING || s.phase == DdzGamePhase.ROBBING || s.phase == DdzGamePhase.PLAYING) {
+            String turnText = s.isMyTurn()
+                    ? "轮到你（剩余 " + Math.max(0, countdown) + " 秒）"
+                    : "轮到 " + s.nameOf(s.currentSeat) + "（剩余 " + Math.max(0, countdown) + " 秒）";
+            DdzGui.centeredShadow(g, this.font, width, turnText, 29,
+                    s.isMyTurn() ? 0xFFFFFF55 : 0xFFAAAAAA);
+        }
+    }
+
+    /** 当前阶段标题（顶部正中央显示）。 */
+    private String phaseText() {
+        DdzClientState s = DdzClientState.INSTANCE;
+        return switch (s.phase) {
+            case WAITING -> "等待游戏开始…";
+            case DEALING -> "发牌中…";
+            case CALLING -> "叫分阶段" + (s.callMaxScore > 0 ? "（当前最高 " + s.callMaxScore + " 分）" : "");
+            case ROBBING -> "抢地主阶段（连续不抢 " + s.consecutivePasses + "/2，当前倍数 ×" + s.multiplier + "）";
+            case PLAYING -> "出牌阶段（倍数 ×" + s.multiplier + "，底分 " + s.baseScore + "）";
+            case SETTLED -> "本局结束";
+        };
+    }
+
+    /** 渲染玩家头颅（皮肤头部区域 8x8 像素放大）。uuidStr 为空（假人/未知）时跳过。 */
+    private void drawHead(GuiGraphics g, String uuidStr, int x, int y, int size) {
+        if (uuidStr == null || uuidStr.isEmpty()) {
+            return;
+        }
+        try {
+            Minecraft mc = Minecraft.getInstance();
+            ResourceLocation skin = mc.getSkinManager()
+                    .getInsecureSkin(new GameProfile(UUID.fromString(uuidStr), ""))
+                    .texture();
+            g.blit(skin, x, y, size, size, 8, 8, 8, 8, 64, 64);
+        } catch (IllegalArgumentException ignored) {
+            // 非法 UUID（理论不会发生）→ 跳过头像
+        }
     }
 
     private String nameLine(int seat) {
@@ -231,23 +280,12 @@ public class DdzGameScreen extends Screen {
     private void drawCenter(GuiGraphics g) {
         DdzClientState s = DdzClientState.INSTANCE;
         int cx = width / 2;
-        String phaseText = switch (s.phase) {
-            case WAITING -> "等待游戏开始…";
-            case DEALING -> "发牌中…";
-            case CALLING -> "叫分阶段" + (s.callMaxScore > 0 ? "（当前最高 " + s.callMaxScore + " 分）" : "");
-            case ROBBING -> "抢地主阶段（连续不抢 " + s.consecutivePasses + "/2，当前倍数 ×" + s.multiplier + "）";
-            case PLAYING -> "出牌阶段（倍数 ×" + s.multiplier + "，底分 " + s.baseScore + "）";
-            case SETTLED -> "本局结束";
-        };
-        g.drawCenteredString(this.font, Component.literal(phaseText), cx, 8, 0xFFFFFFFF);
-
-        if (s.phase == DdzGamePhase.CALLING || s.phase == DdzGamePhase.ROBBING || s.phase == DdzGamePhase.PLAYING) {
-            String turnText = s.isMyTurn()
-                    ? "轮到你（剩余 " + Math.max(0, countdown) + " 秒）"
-                    : "轮到 " + s.nameOf(s.currentSeat) + "（剩余 " + Math.max(0, countdown) + " 秒）";
-            g.drawCenteredString(this.font, Component.literal(turnText), cx, 22,
-                    s.isMyTurn() ? 0xFFFFFF55 : 0xFFAAAAAA);
-        }
+        // 中央信息面板：位于顶部信息条（0~54）下方，并预留右侧按钮区（小窗口自动收窄），
+        // 所有中央文本在面板内居中，避免与按钮/顶部信息重叠
+        int panelW = Math.max(40, Math.min(240, width - 210));
+        int panelX = Math.max(8, cx - panelW / 2);
+        int panelBottom = 150;
+        g.fill(panelX, 58, panelX + panelW, panelBottom, 0x55000000);
 
         // 最近一次表态
         String actionText = null;
@@ -259,18 +297,21 @@ public class DdzGameScreen extends Screen {
             actionText = s.lastPassName + " 不出";
         }
         if (actionText != null) {
-            g.drawCenteredString(this.font, Component.literal(actionText), cx, 40, 0xFFFFD700);
+            DdzGui.centeredShadow(g, this.font, panelX + panelW, actionText, 62, 0xFFFFD700);
         }
 
         // 上一手出牌
         if (!s.lastPlayCards.isEmpty() && s.lastPlayType != null) {
             String label = s.lastPlayName + " 出了 " + s.lastPlayType.displayName();
-            g.drawCenteredString(this.font, Component.literal(label), cx, 60, 0xFFFFFFFF);
+            DdzGui.centeredShadow(g, this.font, panelX + panelW, label, 80, 0xFFFFFFFF);
             int n = s.lastPlayCards.size();
-            int totalW = 20 * n - 4;
-            int x0 = (width - totalW) / 2;
+            // 宽牌型（如 20 张飞机带翅膀）动态缩小牌宽并按需重叠，保证不溢出面板
+            int cardW = Math.max(8, Math.min(24, (panelW - 16) / n));
+            int gap = Math.max(2, cardW - 4);
+            int totalW = cardW + (n - 1) * gap;
+            int x0 = panelX + Math.max(2, (panelW - totalW) / 2);
             for (int i = 0; i < n; i++) {
-                drawCard(g, s.lastPlayCards.get(i), x0 + i * 20, 72, 20, 30);
+                drawCard(g, s.lastPlayCards.get(i), x0 + i * gap, 92, cardW, Math.max(14, cardW + 10));
             }
         }
 
@@ -280,7 +321,7 @@ public class DdzGameScreen extends Screen {
             for (DdzCard c : s.bottomCards) {
                 sb.append(c.display()).append(' ');
             }
-            g.drawCenteredString(this.font, Component.literal(sb.toString()), cx, 110, 0xFFFFFF88);
+            DdzGui.centeredShadow(g, this.font, panelX + panelW, sb.toString(), 132, 0xFFFFFF88);
         }
     }
 
@@ -298,11 +339,15 @@ public class DdzGameScreen extends Screen {
             DdzCard c = hand.get(i);
             int cx = x0 + i * CARD_GAP;
             int cy = selected.contains(c.id()) ? y - SELECT_OFFSET : y;
+            if (selected.contains(c.id())) {
+                // 选中牌金色描边高亮
+                g.fill(cx - 1, cy - 1, cx + CARD_W + 1, cy + CARD_H + 1, 0xFFFFD700);
+            }
             drawCard(g, c, cx, cy, CARD_W, CARD_H);
         }
     }
 
-    /** 绘制一张牌（文字化：色块 + 点数/花色文字，花牌金色）。 */
+    /** 绘制一张牌（文字化：色块 + 居中点数/花色文字，花牌金色）。无阴影保证小字号清晰。 */
     public static void drawCard(GuiGraphics g, DdzCard card, int x, int y, int w, int h) {
         int bg;
         if (card.isFlower()) {
@@ -315,6 +360,8 @@ public class DdzGameScreen extends Screen {
         g.fill(x, y, x + w, y + h, 0xFF000000);      // 黑色描边
         g.fill(x + 1, y + 1, x + w - 1, y + h - 1, bg);
         int color = card.isFlower() ? 0xFF7A4E00 : (card.isRed() ? 0xFFD00000 : 0xFF111111);
-        g.drawString(Minecraft.getInstance().font, card.display(), x + 3, y + 3, color);
+        Font font = Minecraft.getInstance().font;
+        String text = card.display();
+        g.drawString(font, text, x + Math.max(2, (w - font.width(text)) / 2), y + 3, color, false);
     }
 }

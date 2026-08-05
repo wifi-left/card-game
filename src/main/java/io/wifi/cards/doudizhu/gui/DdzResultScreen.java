@@ -34,17 +34,20 @@ public class DdzResultScreen extends Screen {
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(g, mouseX, mouseY, partialTick);
+        // 背景与控件由 super 渲染（含 renderBackground），自定义内容绘制在其上
+        super.render(g, mouseX, mouseY, partialTick);
         DdzClientState s = DdzClientState.INSTANCE;
-        int cx = width / 2;
+        // 顶部标题条
+        g.fill(0, 0, width, 26, 0x66000000);
+        DdzGui.centeredShadow(g, this.font, width, "本局结算", 9, 0xFFFFD700);
         String title = s.resultLandlordWin ? "地主胜利！" : "农民胜利！";
-        g.drawCenteredString(this.font, Component.literal(title), cx, 40,
+        DdzGui.centeredShadow(g, this.font, width, title, 40,
                 s.resultLandlordWin ? 0xFFFFFF55 : 0xFFFF5555);
-        g.drawCenteredString(this.font, Component.literal("地主：" + s.resultLandlordName), cx, 58, 0xFFFFFFFF);
+        DdzGui.centeredShadow(g, this.font, width, "地主：" + s.resultLandlordName, 58, 0xFFFFFFFF);
         int unit = s.resultBaseScore * s.resultMultiplier;
-        g.drawCenteredString(this.font,
-                Component.literal("底分 " + s.resultBaseScore + " × 倍数 " + s.resultMultiplier + " = " + unit + " 分"),
-                cx, 76, 0xFFFFFFFF);
+        DdzGui.centeredShadow(g, this.font, width,
+                "底分 " + s.resultBaseScore + " × 倍数 " + s.resultMultiplier + " = " + unit + " 分",
+                76, 0xFFFFFFFF);
         for (int i = 0; i < 3; i++) {
             if (s.names[i] == null || s.names[i].isEmpty()) {
                 continue;
@@ -52,9 +55,8 @@ public class DdzResultScreen extends Screen {
             String sign = s.resultDeltas[i] > 0 ? "+" : "";
             String line = s.names[i] + "：" + sign + s.resultDeltas[i] + " 分"
                     + (i == s.landlordSeat ? "（地主）" : "");
-            g.drawCenteredString(this.font, Component.literal(line), cx, 96 + i * 14,
+            DdzGui.centeredShadow(g, this.font, width, line, 96 + i * 14,
                     i == s.mySeat ? 0xFFFFFF55 : 0xFFFFFFFF);
         }
-        super.render(g, mouseX, mouseY, partialTick);
     }
 }

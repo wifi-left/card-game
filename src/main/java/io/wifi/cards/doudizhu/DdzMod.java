@@ -8,7 +8,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 
 /**
  * 斗地主模块初始化（由 io.wifi.cards.CardGameMod 载入）。
- * 注册：网络包、命令、服务端 tick、断线事件。
+ * 注册：网络包、命令、服务端 tick、断线事件、重连兜底。
  */
 public final class DdzMod {
     private DdzMod() {
@@ -20,5 +20,8 @@ public final class DdzMod {
         ServerTickEvents.END_SERVER_TICK.register(DdzMemoryManager.INSTANCE::tick);
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 DdzMemoryManager.INSTANCE.onPlayerDisconnect(handler.getPlayer()));
+        // 重连兜底：进入服务器时若旧房间仍存在则关闭并通知
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                DdzMemoryManager.INSTANCE.onPlayerJoin(handler.getPlayer()));
     }
 }
