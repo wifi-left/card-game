@@ -535,18 +535,26 @@ public class DdzGameScreen extends Screen {
             DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, sb.toString(), 138, 0xFFFFFF88);
         }
 
-        // 明牌：公开地主全部手牌（所有玩家可见，随地主出牌同步移除）
+        // 明牌：公开地主全部手牌（所有玩家可见，随地主出牌同步移除）。
+        // 牌面固定可读宽度横向排列，超出面板宽度自动换行，保证每张牌完整显示
         if (s.revealed && !s.revealedCards.isEmpty()) {
             int n = s.revealedCards.size();
-            int rw = Math.max(8, Math.min(16, (panelW - 8) / n));
-            int rg = Math.max(2, rw - 6);
-            int totalW = rw + (n - 1) * rg;
-            int x0 = panelX + Math.max(2, (panelW - totalW) / 2);
-            int rh = Math.max(14, rw + 6);
-            g.fill(panelX, 154, panelX + panelW, 154 + rh + 12, 0x44000000);
-            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, s.landlordName + " 明牌", 155, 0xFFFFD700);
+            int cardW = 24;
+            int cardH = 20;
+            int gap = 2;
+            int perRow = Math.max(1, (panelW - 8) / (cardW + gap)); // 每行可放张数
+            int rows = (n + perRow - 1) / perRow;
+            int areaTop = 156; // 标题行
+            int areaH = 10 + rows * (cardH + gap) + 4;
+            g.fill(panelX, areaTop - 6, panelX + panelW, areaTop + areaH, 0x44000000);
+            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, s.landlordName + " 明牌", areaTop, 0xFFFFD700);
             for (int i = 0; i < n; i++) {
-                drawCard(g, s.revealedCards.get(i), x0 + i * rg, 165, rw, rh);
+                int row = i / perRow;
+                int col = i % perRow;
+                int totalRowW = perRow * (cardW + gap) - gap;
+                int x0 = panelX + Math.max(0, (panelW - totalRowW) / 2);
+                drawCard(g, s.revealedCards.get(i), x0 + col * (cardW + gap),
+                        areaTop + 12 + row * (cardH + gap), cardW, cardH);
             }
         }
     }
