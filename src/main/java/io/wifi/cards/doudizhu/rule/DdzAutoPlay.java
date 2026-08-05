@@ -3,14 +3,16 @@ package io.wifi.cards.doudizhu.rule;
 import io.wifi.cards.doudizhu.card.DdzCard;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.TreeMap;
 
 /**
  * 托管 / 提示 的出牌策略（服务端托管与客户端"提示"按钮共用）。
- * <p>需要压过上家时按优先级找第一手能出的牌：
- * 王炸 → 炸弹 → 含花牌炸弹 → 同牌型最小可压组合（顺子/连对/飞机可用花牌补位）。
- * 自由出牌时出最小的单牌。所有候选都会经过识别引擎校验（含规则过滤）。</p>
+ * <p>需要压过上家时优先同牌型最小可压，压不住才用炸弹/王炸兜底（不浪费炸弹）；
+ * 自由出牌时整牌型优先（飞机→连对→顺子→三带→三张→对子→单牌），单牌优先孤牌避免拆对。
+ * 所有候选都会经过识别引擎校验（含规则过滤）。</p>
  */
 public final class DdzAutoPlay {
     private DdzAutoPlay() {
@@ -29,25 +31,33 @@ public final class DdzAutoPlay {
             return null;
         }
         List<DdzCard> flower = flowerOf(hand);
-        boolean hasFlower = !flower.isEmpty();
         TreeMap<Integer, List<DdzCard>> byRank = groupByRank(hand);
 
-        // 自由出牌：出最小的单牌
+        // 自由出牌：整牌型优先
         if (target == null) {
-            for (List<DdzCard> cards : byRank.values()) {
-                return listOf(cards.get(0));
-            }
-            return hasFlower ? listOf(flower.get(0)) : null;
+            return findFreePlay(byRank, flower, flowerMode, ruleSet);
         }
 
-        // ① 王炸
+        // ① 同牌型最小可压组合（先同型，压不住再用炸弹级，避免浪费炸弹）
+        List<DdzCard> same = sameType(byRank, flower, target, flowerMode, ruleSet);
+        if (same != null) {
+            return same;
+        }
+        // ② 炸弹级兜底：对面是炸弹级牌型时只能更大炸弹/王炸互压；一般牌型压不住时也炸
+        return findBomb(byRank, flower, target, flowerMode, ruleSet);
+    }
+
+    /** 炸弹级兜底：王炸 → 炸弹 → 软炸弹（从小到大）。 */
+    private static List<DdzCard> findBomb(TreeMap<Integer, List<DdzCard>> byRank, List<DdzCard> flower,
+                                          DdzPlayResult target, boolean flowerMode, DdzRuleSet ruleSet) {
+        // 王炸
         if (byRank.containsKey(16) && byRank.containsKey(17)) {
             List<DdzCard> picked = listOf(byRank.get(16).get(0), byRank.get(17).get(0));
             if (playable(picked, target, flowerMode, ruleSet)) {
                 return picked;
             }
         }
-        // ② 炸弹（从小到大）
+        // 炸弹（从小到大）
         for (List<DdzCard> cards : byRank.values()) {
             if (cards.size() >= 4) {
                 List<DdzCard> picked = cards.subList(0, 4);
@@ -56,8 +66,8 @@ public final class DdzAutoPlay {
                 }
             }
         }
-        // ③ 含花牌炸弹：花牌 + 三张同值（从小到大）
-        if (hasFlower) {
+        // 软炸弹：花牌 + 三张同值（从小到大；走到这里说明花牌未被同型候选占用）
+        if (!flower.isEmpty()) {
             for (List<DdzCard> cards : byRank.values()) {
                 if (cards.size() >= 3) {
                     List<DdzCard> picked = listOf(flower.get(0), cards.get(0), cards.get(1), cards.get(2));
@@ -67,12 +77,220 @@ public final class DdzAutoPlay {
                 }
             }
         }
-        // ④ 对面是炸弹级牌型且已无更小的炸弹可压
-        if (target.type.isBombLike()) {
+        return null;
+    }
+
+    /**
+     * 自由出牌：整牌型优先（消耗多张牌快速清手牌），单牌优先孤牌不拆对。
+     * 顺序：飞机带翅 → 裸飞机 → 连对 → 顺子 → 三带一 → 三带二 → 三张 → 对子 → 单牌。
+     */
+    private static List<DdzCard> findFreePlay(TreeMap<Integer, List<DdzCard>> byRank, List<DdzCard> flower,
+                                              boolean flowerMode, DdzRuleSet ruleSet) {
+        List<DdzCard> cand;
+        cand = freePlaneWinged(byRank, flowerMode, ruleSet);
+        if (cand != null) {
+            return cand;
+        }
+        cand = freePlane(byRank);
+        if (cand != null) {
+            return cand;
+        }
+        cand = freeDoubleStraight(byRank);
+        if (cand != null) {
+            return cand;
+        }
+        cand = freeStraight(byRank);
+        if (cand != null) {
+            return cand;
+        }
+        cand = freeTripleWithOne(byRank);
+        if (cand != null) {
+            return cand;
+        }
+        cand = freeTripleWithPair(byRank, flowerMode, ruleSet);
+        if (cand != null) {
+            return cand;
+        }
+        cand = freeTriple(byRank);
+        if (cand != null) {
+            return cand;
+        }
+        cand = freePair(byRank);
+        if (cand != null) {
+            return cand;
+        }
+        return freeSingle(byRank, flower);
+    }
+
+    /** 最小 5 张顺子（起点最低优先）。 */
+    private static List<DdzCard> freeStraight(TreeMap<Integer, List<DdzCard>> byRank) {
+        for (int start = 3; start <= 14 - 5 + 1; start++) {
+            List<DdzCard> cand = new ArrayList<>(5);
+            boolean ok = true;
+            for (int r = start; r < start + 5; r++) {
+                List<DdzCard> cs = byRank.get(r);
+                if (cs == null) {
+                    ok = false;
+                    break;
+                }
+                cand.add(cs.get(0));
+            }
+            if (ok) {
+                return cand;
+            }
+        }
+        return null;
+    }
+
+    /** 最小 3 连对（起点最低优先）。 */
+    private static List<DdzCard> freeDoubleStraight(TreeMap<Integer, List<DdzCard>> byRank) {
+        for (int start = 3; start <= 14 - 3 + 1; start++) {
+            List<DdzCard> cand = new ArrayList<>(6);
+            boolean ok = true;
+            for (int r = start; r < start + 3; r++) {
+                List<DdzCard> cs = byRank.get(r);
+                if (cs == null || cs.size() < 2) {
+                    ok = false;
+                    break;
+                }
+                cand.addAll(cs.subList(0, 2));
+            }
+            if (ok) {
+                return cand;
+            }
+        }
+        return null;
+    }
+
+    /** 最小 2 组裸飞机（起点最低优先）。 */
+    private static List<DdzCard> freePlane(TreeMap<Integer, List<DdzCard>> byRank) {
+        for (int start = 3; start <= 14 - 2 + 1; start++) {
+            List<DdzCard> cand = new ArrayList<>(6);
+            boolean ok = true;
+            for (int r = start; r < start + 2; r++) {
+                List<DdzCard> cs = byRank.get(r);
+                if (cs == null || cs.size() < 3) {
+                    ok = false;
+                    break;
+                }
+                cand.addAll(cs.subList(0, 3));
+            }
+            if (ok) {
+                return cand;
+            }
+        }
+        return null;
+    }
+
+    /** 飞机带翅膀：最小 2 组机身 + 同数量单牌（或对子，标准规则）。 */
+    private static List<DdzCard> freePlaneWinged(TreeMap<Integer, List<DdzCard>> byRank,
+                                                 boolean flowerMode, DdzRuleSet ruleSet) {
+        // 带单牌翅膀（所有规则允许）
+        for (int start = 3; start <= 14 - 2 + 1; start++) {
+            List<DdzCard> base = new ArrayList<>(6);
+            boolean ok = true;
+            for (int r = start; r < start + 2; r++) {
+                List<DdzCard> cs = byRank.get(r);
+                if (cs == null || cs.size() < 3) {
+                    ok = false;
+                    break;
+                }
+                base.addAll(cs.subList(0, 3));
+            }
+            if (!ok) {
+                continue;
+            }
+            List<DdzCard> wings = smallestSingles(byRank, start, start + 1, 2, null);
+            if (wings != null) {
+                return concat(base, wings);
+            }
+        }
+        // 带对子翅膀（仅标准规则）
+        if (ruleSet.allows(DdzCardType.PLANE_WITH_PAIRS, flowerMode)) {
+            for (int start = 3; start <= 14 - 2 + 1; start++) {
+                List<DdzCard> base = new ArrayList<>(6);
+                boolean ok = true;
+                for (int r = start; r < start + 2; r++) {
+                    List<DdzCard> cs = byRank.get(r);
+                    if (cs == null || cs.size() < 3) {
+                        ok = false;
+                        break;
+                    }
+                    base.addAll(cs.subList(0, 3));
+                }
+                if (!ok) {
+                    continue;
+                }
+                List<DdzCard> wings = smallestPairs(byRank, start, start + 1, 2, null);
+                if (wings != null) {
+                    return concat(base, wings);
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 三带一：最小三张 + 最小单牌踢脚。 */
+    private static List<DdzCard> freeTripleWithOne(TreeMap<Integer, List<DdzCard>> byRank) {
+        for (var e : byRank.entrySet()) {
+            if (e.getValue().size() >= 3) {
+                List<DdzCard> kicker = smallestKicker(byRank, e.getKey(), null);
+                if (kicker != null) {
+                    return concat(e.getValue().subList(0, 3), kicker);
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 三带二：最小三张 + 最小对子（仅标准规则）。 */
+    private static List<DdzCard> freeTripleWithPair(TreeMap<Integer, List<DdzCard>> byRank,
+                                                    boolean flowerMode, DdzRuleSet ruleSet) {
+        if (!ruleSet.allows(DdzCardType.TRIPLE_WITH_PAIR, flowerMode)) {
             return null;
         }
-        // ⑤ 同牌型最小可压组合
-        return sameType(byRank, flower, target, flowerMode, ruleSet);
+        for (var e : byRank.entrySet()) {
+            if (e.getValue().size() >= 3) {
+                List<DdzCard> pair = smallestPair(byRank, e.getKey());
+                if (pair != null) {
+                    return concat(e.getValue().subList(0, 3), pair);
+                }
+            }
+        }
+        return null;
+    }
+
+    /** 最小三张。 */
+    private static List<DdzCard> freeTriple(TreeMap<Integer, List<DdzCard>> byRank) {
+        for (var e : byRank.entrySet()) {
+            if (e.getValue().size() >= 3) {
+                return e.getValue().subList(0, 3);
+            }
+        }
+        return null;
+    }
+
+    /** 最小对子。 */
+    private static List<DdzCard> freePair(TreeMap<Integer, List<DdzCard>> byRank) {
+        for (var e : byRank.entrySet()) {
+            if (e.getValue().size() >= 2) {
+                return e.getValue().subList(0, 2);
+            }
+        }
+        return null;
+    }
+
+    /** 最小单牌：孤牌优先（不拆对子/三张/炸弹），无孤牌才拆最小牌组，最后花牌。 */
+    private static List<DdzCard> freeSingle(TreeMap<Integer, List<DdzCard>> byRank, List<DdzCard> flower) {
+        for (var e : byRank.entrySet()) {
+            if (e.getValue().size() == 1) {
+                return listOf(e.getValue().get(0));
+            }
+        }
+        for (var e : byRank.entrySet()) {
+            return listOf(e.getValue().get(0));
+        }
+        return flower.isEmpty() ? null : listOf(flower.get(0));
     }
 
     private static List<DdzCard> sameType(TreeMap<Integer, List<DdzCard>> byRank, List<DdzCard> flower, DdzPlayResult target,
@@ -83,6 +301,12 @@ public final class DdzAutoPlay {
         int hi;
         switch (target.type) {
             case SINGLE -> {
+                // 优先孤牌（不拆对子/三张/炸弹），无孤牌才拆最小的
+                for (var e : byRank.entrySet()) {
+                    if (e.getKey() > target.key && e.getValue().size() == 1) {
+                        return listOf(e.getValue().get(0));
+                    }
+                }
                 for (var e : byRank.entrySet()) {
                     if (e.getKey() > target.key) {
                         return listOf(e.getValue().get(0));
@@ -364,8 +588,13 @@ public final class DdzAutoPlay {
         return flower;
     }
 
-    /** 最小的单牌作为三带一的"带牌"；excludeRank 为三张的牌值。flower 可为 null。 */
+    /** 最小的单牌作为三带一的"带牌"；excludeRank 为三张的牌值。优先孤牌不拆对。flower 可为 null。 */
     private static List<DdzCard> smallestKicker(TreeMap<Integer, List<DdzCard>> byRank, int excludeRank, DdzCard flower) {
+        for (var e : byRank.entrySet()) {
+            if (e.getKey() != excludeRank && e.getValue().size() == 1) {
+                return listOf(e.getValue().get(0));
+            }
+        }
         for (var e : byRank.entrySet()) {
             if (e.getKey() != excludeRank) {
                 return listOf(e.getValue().get(0));
@@ -386,11 +615,13 @@ public final class DdzAutoPlay {
 
     /**
      * 取 need 张"单牌翅膀"（牌值不落在 [excludeLo, excludeHi] 区间内），从小到大。
-     * flower 非 null 时可用花牌补最后一张。
+     * 优先孤牌（不拆对子），不足再拆；flower 非 null 时可用花牌补最后一张。
      */
     private static List<DdzCard> smallestSingles(TreeMap<Integer, List<DdzCard>> byRank, int excludeLo, int excludeHi,
                                               int need, DdzCard flower) {
         List<DdzCard> result = new ArrayList<>(need);
+        Set<Integer> used = new HashSet<>();
+        // 第一遍：孤牌优先
         for (var e : byRank.entrySet()) {
             if (e.getKey() >= excludeLo && e.getKey() <= excludeHi) {
                 continue;
@@ -398,7 +629,22 @@ public final class DdzAutoPlay {
             if (result.size() >= need) {
                 break;
             }
-            result.add(e.getValue().get(0));
+            if (e.getValue().size() == 1) {
+                result.add(e.getValue().get(0));
+                used.add(e.getKey());
+            }
+        }
+        // 第二遍：任意牌组补足（不重复取已用牌组，可拆对子）
+        for (var e : byRank.entrySet()) {
+            if (e.getKey() >= excludeLo && e.getKey() <= excludeHi) {
+                continue;
+            }
+            if (result.size() >= need) {
+                break;
+            }
+            if (!used.contains(e.getKey())) {
+                result.add(e.getValue().get(0));
+            }
         }
         if (result.size() < need && flower != null) {
             result.add(flower);

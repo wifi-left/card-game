@@ -53,12 +53,48 @@ class DdzAutoPlayTest {
     }
 
     @Test
-    void bombPriorityOverSameType() {
-        // 手牌 {3, 8×4}，目标 单5：按优先级先出炸弹
+    void sameTypeBeforeBomb() {
+        // 手牌 {3, 8×4}，目标 单4：先同型压制（拆单 8），不浪费炸弹
         List<DdzCard> play = find(c(0, 20, 21, 22, 23), target(4));
+        assertNotNull(play);
+        assertEquals(1, play.size());
+        assertEquals(8, play.get(0).rankValue());
+    }
+
+    @Test
+    void bombAsLastResort() {
+        // 手牌 {3, 8×4}，目标 单2：同型压不住（3/8 < 2），炸弹兜底
+        List<DdzCard> play = find(c(0, 20, 21, 22, 23), target(52));
         assertNotNull(play);
         assertEquals(4, play.size());
         assertEquals(8, play.get(0).rankValue());
+    }
+
+    @Test
+    void freePlayPrefersStraight() {
+        // 手牌 {3,4,5,6,7,9}：自由出牌优先出 5 张顺子
+        List<DdzCard> play = find(c(0, 4, 8, 12, 16, 32), null);
+        assertNotNull(play);
+        assertEquals(5, play.size());
+        assertEquals(3, play.get(0).rankValue());
+    }
+
+    @Test
+    void freePlayPrefersPairOverSplitting() {
+        // 手牌 {3,3,4}：自由出牌先出对 3，不拆对出单牌
+        List<DdzCard> play = find(c(0, 1, 4), null);
+        assertNotNull(play);
+        assertEquals(2, play.size());
+        assertEquals(3, play.get(0).rankValue());
+    }
+
+    @Test
+    void freePlayUsesSingleOnly() {
+        // 手牌 {3,5}：无整牌型，出最小孤牌 3
+        List<DdzCard> play = find(c(0, 8), null);
+        assertNotNull(play);
+        assertEquals(1, play.size());
+        assertEquals(3, play.get(0).rankValue());
     }
 
     @Test
