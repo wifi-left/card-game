@@ -19,9 +19,22 @@ public class DdzChatScreen extends ChatScreen {
         this.parent = parent;
     }
 
+    /** 打开聊天：保留原版输入框初始化，并接管背景音乐（打牌界面 removed 已停，这里恢复）。 */
     @Override
-    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        if (parent != null) {
+    protected void init() {
+        super.init();
+        DdzGameScreen.playBgm();
+    }
+
+    /** 关闭聊天（回到打牌界面，相同实例不会重新 init）：恢复背景音乐。 */
+    @Override
+    public void removed() {
+        DdzGameScreen.playBgm();
+        super.removed();
+    }
+
+    @Override
+    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {        if (parent != null) {
             // 背景：打牌界面（聊天历史由下方 ChatComponent 渲染，打牌界面本身不绘制聊天区）
             parent.render(g, 0, 0, partialTick);
             // 原版聊天内容：历史消息 + 输入框（不画虚化背景）

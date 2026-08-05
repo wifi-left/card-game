@@ -76,6 +76,9 @@ public final class DdzSounds {
     public static final SoundEvent CALL_3 = reg("ddz_call_3");
     public static final SoundEvent ROB = reg("ddz_rob");
 
+    /** 打牌界面背景音乐（循环播放，音量 0.3）。 */
+    public static final SoundEvent BGM = reg("ddz_bgm");
+
     private static SoundEvent reg(String name) {
         ResourceLocation id = ResourceLocation.fromNamespaceAndPath(NS, name);
         return Registry.register(BuiltInRegistries.SOUND_EVENT, id, SoundEvent.createVariableRangeEvent(id));

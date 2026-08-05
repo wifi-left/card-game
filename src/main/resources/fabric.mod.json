@@ -5,7 +5,7 @@
   "name": "Wifi Card Games",
   "description": "多人卡牌小游戏合集 —— 目前包含斗地主（经典 / 花牌万能牌模式）",
   "authors": [
-    "wifi"
+    "wifi_left"
   ],
   "license": "CC-BY-NC-4.0",
   "environment": "*",

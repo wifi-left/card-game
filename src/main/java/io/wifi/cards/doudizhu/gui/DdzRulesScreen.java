@@ -85,6 +85,19 @@ public class DdzRulesScreen extends Screen {
         buildLines();
         addRenderableWidget(Button.builder(Component.literal("返回"), b -> this.onClose())
                 .bounds(width / 2 - 40, height - BOTTOM_BAR + 4, 80, 20).build());
+        // 从打牌界面打开时接管背景音乐（打牌界面 removed 已停，这里恢复）
+        if (parent != null) {
+            DdzGameScreen.playBgm();
+        }
+    }
+
+    /** 关闭时：有父级（打牌界面）则恢复背景音乐（相同实例不会重新 init）。 */
+    @Override
+    public void removed() {
+        if (parent != null) {
+            DdzGameScreen.playBgm();
+        }
+        super.removed();
     }
 
     /** 返回：有父级（打牌界面）则回到父级，否则回大厅。 */

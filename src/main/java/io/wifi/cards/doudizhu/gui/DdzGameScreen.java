@@ -13,14 +13,19 @@ import io.wifi.cards.doudizhu.network.DdzPackets.RobActionC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.ToggleTrustC2S;
 import io.wifi.cards.doudizhu.rule.DdzAutoPlay;
 import io.wifi.cards.doudizhu.rule.DdzPlayResult;
+import io.wifi.cards.doudizhu.sound.DdzSounds;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.RandomSource;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -68,6 +73,42 @@ public class DdzGameScreen extends Screen {
             ClientPlayNetworking.send(new HistoryC2S());
             Minecraft.getInstance().setScreen(new DdzHistoryScreen(DdzGameScreen.this));
         }).bounds(72, height - 26, 60, 20).build());
+        // 背景音乐：进入打牌界面时循环播放（音量 0.3）
+        playBgm();
+    }
+
+    @Override
+    public void removed() {
+        stopBgm(); // 离开打牌界面（大厅/结算/聊天等子界面由各自 init 接管恢复）
+        super.removed();
+    }
+
+    // ---------------- 背景音乐（循环，音量 0.3） ----------------
+
+    private static SimpleSoundInstance bgm;
+
+    /** 开始循环播放背景音乐（幂等：已在播放则跳过）。 */
+    public static void playBgm() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.getSoundManager() == null) {
+            return;
+        }
+        if (bgm == null) {
+            bgm = new SimpleSoundInstance(DdzSounds.BGM.getLocation(), SoundSource.MASTER,
+                    0.3F, 1.0F, RandomSource.create(), true, 0,
+                    SoundInstance.Attenuation.NONE, 0.0D, 0.0D, 0.0D, true);
+        }
+        if (!mc.getSoundManager().isActive(bgm)) {
+            mc.getSoundManager().play(bgm);
+        }
+    }
+
+    /** 停止背景音乐（幂等）。 */
+    public static void stopBgm() {
+        Minecraft mc = Minecraft.getInstance();
+        if (bgm != null && mc.getSoundManager() != null) {
+            mc.getSoundManager().stop(bgm);
+        }
     }
 
     @Override
