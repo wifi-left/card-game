@@ -56,25 +56,25 @@
   "ddz_card_q": {
     "subtitle": "斗地主：单张 Q",
     "sounds": [
-      "wifi_card_games:doudizhu/0010_q"
+      "wifi_card_games:doudizhu/010_q"
     ]
   },
   "ddz_card_k": {
     "subtitle": "斗地主：单张 K",
     "sounds": [
-      "wifi_card_games:doudizhu/0011_k"
+      "wifi_card_games:doudizhu/011_k"
     ]
   },
   "ddz_card_a": {
     "subtitle": "斗地主：单张 A",
     "sounds": [
-      "wifi_card_games:doudizhu/0012_a"
+      "wifi_card_games:doudizhu/012_a"
     ]
   },
   "ddz_card_2": {
     "subtitle": "斗地主：单张 2",
     "sounds": [
-      "wifi_card_games:doudizhu/0013_2"
+      "wifi_card_games:doudizhu/013_2"
     ]
   },
   "ddz_card_sjoker": {
