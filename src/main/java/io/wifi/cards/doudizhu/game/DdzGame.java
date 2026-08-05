@@ -354,6 +354,10 @@ public class DdzGame {
         room.sendToSeat(seat, new TrustStateS2C(enabled));
         if (enabled && seat == currentSeat && isActivePhase()) {
             scheduleAutoAct(seat);
+        } else if (!enabled && pendingAutoAct && pendingAutoActSeat == seat) {
+            // 取消托管：撤销已安排的自动行动，避免 2 秒后仍被自动出牌
+            pendingAutoAct = false;
+            pendingAutoActSeat = -1;
         }
     }
 
@@ -375,6 +379,11 @@ public class DdzGame {
             return;
         }
         players[seat].setTrusted(false);
+        // 重连恢复手动：撤销该座位已安排的自动行动
+        if (pendingAutoAct && pendingAutoActSeat == seat) {
+            pendingAutoAct = false;
+            pendingAutoActSeat = -1;
+        }
     }
 
     /** 地主选择明牌：公开全部手牌给所有玩家（仅地主出第一手牌前有效）。 */
