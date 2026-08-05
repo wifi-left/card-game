@@ -14,10 +14,10 @@ import java.util.TreeMap;
  * <p>无花牌：频次统计 + 连续性校验（经典规则）。</p>
  * <p>含花牌（万能牌）：</p>
  * <ol>
- *   <li>特殊牌型优先：花牌+三张同值=软炸弹（等于炸弹）</li>
+ *   <li>特殊牌型优先：花牌+三张同值=含花牌炸弹（等于炸弹）</li>
  *   <li>花牌单出=单牌（大王值）</li>
  *   <li>枚举花牌替换值（3~大王）套用经典识别，记录全部合法解读</li>
- *   <li>解读按优先级排序：王炸 &gt; 炸弹/软炸弹 &gt; 一般牌型（同优先级按关键值从大到小）</li>
+ *   <li>解读按优先级排序：王炸 &gt; 炸弹/含花牌炸弹 &gt; 一般牌型（同优先级按关键值从大到小）</li>
  * </ol>
  * <p>不存在"三王炸"（花牌 + 大小王无法组成任何合法牌型）。
  * 是否允许三带二 / 飞机带对子 / 四带两对由 {@link DdzRuleSet} 决定（花牌模式恒禁三带二）。</p>
@@ -59,7 +59,7 @@ public final class DdzCardTypeRecognizer {
             return results; // 一副牌只有一张花牌
         }
 
-        // ① 软炸弹：花牌 + 三张同值
+        // ① 含花牌炸弹：花牌 + 三张同值
         if (cards.size() == 4) {
             int tripleRank = tripleRank(plain);
             if (tripleRank > 0) {
@@ -89,7 +89,7 @@ public final class DdzCardTypeRecognizer {
             unique.putIfAbsent(r.type.name() + ":" + r.key, r);
         }
         results = new ArrayList<>(unique.values());
-        // 按优先级排序：等级高的在前，同等级关键值大的在前（稳定排序保证软炸弹先于炸弹）
+        // 按优先级排序：等级高的在前，同等级关键值大的在前（稳定排序保证含花牌炸弹先于炸弹）
         results.sort(Comparator.comparingInt((DdzPlayResult r) -> -r.type.level())
                 .thenComparingInt(r -> -r.key));
         return filter(results, flowerMode, ruleSet);

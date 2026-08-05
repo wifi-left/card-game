@@ -9,7 +9,7 @@ import java.util.TreeMap;
 /**
  * 托管 / 提示 的出牌策略（服务端托管与客户端"提示"按钮共用）。
  * <p>需要压过上家时按优先级找第一手能出的牌：
- * 王炸 → 炸弹 → 软炸弹 → 同牌型最小可压组合（顺子/连对/飞机可用花牌补位）。
+ * 王炸 → 炸弹 → 含花牌炸弹 → 同牌型最小可压组合（顺子/连对/飞机可用花牌补位）。
  * 自由出牌时出最小的单牌。所有候选都会经过识别引擎校验（含规则过滤）。</p>
  */
 public final class DdzAutoPlay {
@@ -56,7 +56,7 @@ public final class DdzAutoPlay {
                 }
             }
         }
-        // ③ 软炸弹：花牌 + 三张同值（从小到大）
+        // ③ 含花牌炸弹：花牌 + 三张同值（从小到大）
         if (hasFlower) {
             for (List<DdzCard> cards : byRank.values()) {
                 if (cards.size() >= 3) {

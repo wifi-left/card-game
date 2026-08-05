@@ -37,7 +37,7 @@ import java.util.UUID;
  * <p>流程：发牌 → 叫分（不叫/1/2/3，须更高）→ 有人叫 3 进入抢地主（循环抢，连续 2 人不抢终止）
  * 或无人叫 3 取最高分者 → 出牌（地主先出，两 Pass 后自由出牌）→ 结算。</p>
  * <p>托管：主动开启 / 超时（15 秒）/ 断线自动触发；调试假人可自动托管行动。
- * 倍数 = 底分阶段倍数 × 2^(炸弹/王炸/软炸弹出现次数)。
+ * 倍数 = 底分阶段倍数 × 2^(炸弹/王炸/含花牌炸弹出现次数)。
  * 出牌校验按房间规则集（标准/民间）与花牌模式过滤禁用的牌型（如花牌模式的三带二）。
  * 玩家断线自动托管续玩，重连时由 DdzMemoryManager 替换连接引用并同步快照（ReconnectS2C）。</p>
  */
@@ -286,7 +286,7 @@ public class DdzGame {
         }
         p.hand().removeAll(cards);
         if (chosen.type.isBombLike()) {
-            multiplier *= 2; // 炸弹/软炸弹/王炸当场翻倍
+            multiplier *= 2; // 炸弹/含花牌炸弹/王炸当场翻倍
         }
         lastPlay = chosen;
         lastPlaySeat = p.seat();

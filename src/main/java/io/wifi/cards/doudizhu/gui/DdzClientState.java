@@ -72,8 +72,8 @@ public final class DdzClientState {
     public boolean revealed;
     /** 明牌显示的地主手牌（出牌时同步移除）。 */
     public final List<DdzCard> revealedCards = new ArrayList<>();
-    /** 一手出牌记录（主界面渲染最近两手历史用）。 */
-    public record PlayEntry(int seat, String name, List<DdzCard> cards, DdzCardType type, int key) {
+    /** 一手出牌/跳过记录（主界面渲染最近两手历史用；pass=true 表示不出）。 */
+    public record PlayEntry(int seat, String name, List<DdzCard> cards, DdzCardType type, int key, boolean pass) {
     }
     /** 本局最近两手出牌（最新在前，主界面中央渲染）。 */
     public final List<PlayEntry> lastPlays = new ArrayList<>();
@@ -227,7 +227,7 @@ public final class DdzClientState {
         this.lastPlays.clear();
         if (payload.lastPlaySeat() >= 0) {
             this.lastPlays.add(new PlayEntry(payload.lastPlaySeat(), payload.lastPlayName(),
-                    DdzCard.byIds(payload.lastPlayCards()), safeType(payload.lastPlayType()), payload.lastPlayKey()));
+                    DdzCard.byIds(payload.lastPlayCards()), safeType(payload.lastPlayType()), payload.lastPlayKey(), false));
         }
         this.historyLines.clear();
         Minecraft mc = Minecraft.getInstance();
@@ -250,6 +250,8 @@ public final class DdzClientState {
         this.lastCallName = payload.playerName();
         this.lastCallScore = payload.score();
         this.callMaxScore = payload.maxScore();
+        // 语音：叫 1/2/3 分
+        DdzSoundPlayer.playCall(payload.score());
         if (payload.score() == 3) {
             // 叫 3 分触发抢地主阶段
             this.phase = DdzGamePhase.ROBBING;
@@ -264,6 +266,10 @@ public final class DdzClientState {
         this.lastRob = payload.rob();
         this.multiplier = payload.multiplier();
         this.consecutivePasses = payload.consecutivePasses();
+        // 语音：抢地主
+        if (payload.rob()) {
+            DdzSoundPlayer.playRob();
+        }
     }
 
     public void onLandlord(LandlordS2C payload) {
@@ -312,10 +318,12 @@ public final class DdzClientState {
         }
         // 历史出牌（主界面渲染最近两手，最新在前）
         lastPlays.add(0, new PlayEntry(payload.seat(), payload.playerName(),
-                DdzCard.byIds(payload.cardIds()), safeType(payload.typeOrdinal()), payload.keyValue()));
+                DdzCard.byIds(payload.cardIds()), safeType(payload.typeOrdinal()), payload.keyValue(), false));
         while (lastPlays.size() > 2) {
             lastPlays.remove(lastPlays.size() - 1);
         }
+        // 语音：按牌型/点数播报
+        DdzSoundPlayer.playPlay(safeType(payload.typeOrdinal()), lastPlayCards);
     }
 
     /** 明牌广播：地主公开全部手牌。 */
@@ -342,6 +350,14 @@ public final class DdzClientState {
     public void onPass(PassBroadcastS2C payload) {
         this.lastPassName = payload.playerName();
         this.remaining = toIntArray(payload.remainingCounts());
+        // 不出（跳过）也计入历史（主界面渲染最近两手；当前座位即 pass 玩家）
+        lastPlays.add(0, new PlayEntry(this.currentSeat, payload.playerName(),
+                new ArrayList<>(), null, 0, true));
+        while (lastPlays.size() > 2) {
+            lastPlays.remove(lastPlays.size() - 1);
+        }
+        // 语音：不出
+        DdzSoundPlayer.playPass();
     }
 
     public void onTurn(TurnS2C payload) {

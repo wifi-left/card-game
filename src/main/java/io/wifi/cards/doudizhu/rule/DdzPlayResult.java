@@ -34,7 +34,7 @@ public final class DdzPlayResult {
         }
         switch (myLevel) {
             case 2 -> {
-                // 炸弹/软炸弹互压：比牌点
+                // 炸弹/含花牌炸弹互压：比牌点
                 return this.key > other.key;
             }
             case 3 -> {

@@ -444,11 +444,16 @@ public class DdzGameScreen extends Screen {
             DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, actionText, 62, 0xFFFFD700);
         }
 
-        // 最近两手历史出牌（最新在前；第 1 张在上、第 2 张在下）
+        // 最近两手历史（出牌/不出，最新在前；第 1 张在上、第 2 张在下）
         List<DdzClientState.PlayEntry> plays = s.lastPlays;
         for (int i = 0; i < Math.min(2, plays.size()); i++) {
             DdzClientState.PlayEntry e = plays.get(i);
             int labelY = i == 0 ? 74 : 106;
+            if (e.pass()) {
+                // 不出（跳过）：只渲染文本行，不占牌行位置（与出牌行保持同一行高节奏）
+                DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, e.name() + " 不出", labelY, 0xFFFFD700);
+                continue;
+            }
             int cardY = labelY + 10;
             String label = e.name() + " 出了 " + (e.type() != null ? e.type().displayName() : "");
             DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, label, labelY, 0xFFFFFFFF);

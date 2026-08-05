@@ -121,7 +121,7 @@ public class DdzRulesScreen extends Screen {
         lines.add("");
         lines.add("【花牌模式（万能牌）】55 张牌、底牌 4 张。");
         lines.add("花牌可当作任意一张牌（3~大王）参与组合；");
-        lines.add("花牌 + 三张同值 = 软炸弹（等于炸弹）；");
+        lines.add("花牌 + 三张同值 = 含花牌炸弹（等于炸弹）；");
         lines.add("花牌模式不允许三带二（四带二、飞机带翅膀、裸飞机均允许）。");
         lines.add("");
         lines.add("【流程】发牌后随机开始叫分：不叫/1/2/3（须更高）。");
@@ -132,7 +132,7 @@ public class DdzRulesScreen extends Screen {
         lines.add("地主先出牌，轮到你可压牌或不出；");
         lines.add("另外两家都不出后，上一家可自由出任意牌型。");
         lines.add("");
-        lines.add("【结算】底分 × 倍数：炸弹/火箭/软炸弹当场倍数×2。");
+        lines.add("【结算】底分 × 倍数：炸弹/火箭/含花牌炸弹当场倍数×2。");
         lines.add("地主胜：地主 +2×底分×倍数，农民各 -底分×倍数；");
         lines.add("地主败则相反。分数仅本局展示，不保存。");
     }

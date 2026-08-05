@@ -26,6 +26,11 @@ class DdzCardTypeRecognizerTest {
         return list;
     }
 
+    /** 直接用牌对象构造（r() 返回的牌）。 */
+    private static List<DdzCard> cards(DdzCard... cs) {
+        return new ArrayList<>(java.util.Arrays.asList(cs));
+    }
+
     /** 牌值 v（3~17）对应的一张牌；16/17 返回小王/大王。 */
     private static DdzCard r(int v) {
         if (v == 16) {
@@ -203,7 +208,7 @@ class DdzCardTypeRecognizerTest {
         assertNotNull(p);
         assertEquals(DdzCardType.SOFT_BOMB, p.type);
         assertEquals(8, p.key);
-        // 软炸弹可压一般牌型与更小的炸弹，等于普通炸弹
+        // 含花牌炸弹可压一般牌型与更小的炸弹，等于普通炸弹
         assertTrue(p.canBeat(recognize(c(0, 1, 2, 4, 5)))); // 压三带二
         assertTrue(p.canBeat(recognize(c(0, 1, 2, 3))));    // 压 3 炸
         assertFalse(p.canBeat(recognize(c(20, 21, 22, 23)))); // 同值 8 炸不可压
@@ -265,7 +270,7 @@ class DdzCardTypeRecognizerTest {
 
     @Test
     void flowerBeatsAnyNonBomb() {
-        // F+888 压 三带一(6)：软炸弹解读直接压
+        // F+888 压 三带一(6)：含花牌炸弹解读直接压
         DdzPlayResult target = recognize(c(12, 13, 14, 8));
         assertNotNull(target);
         assertEquals(DdzCardType.TRIPLE_WITH_ONE, target.type);
@@ -281,7 +286,7 @@ class DdzCardTypeRecognizerTest {
 
     @Test
     void flowerFreePlayPicksHighestPriority() {
-        // 自由出牌 F+888 → 软炸弹（优先级最高的解读）
+        // 自由出牌 F+888 → 含花牌炸弹（优先级最高的解读）
         DdzPlayResult p = DdzCardTypeRecognizer.bestAgainst(c(54, 20, 21, 22), null);
         assertNotNull(p);
         assertEquals(DdzCardType.SOFT_BOMB, p.type);
@@ -323,5 +328,87 @@ class DdzCardTypeRecognizerTest {
         List<DdzCard> pws = c(0, 1, 2, 4, 5, 6, 8, 12);
         assertEquals(DdzCardType.PLANE_WITH_SINGLES, recognize(pws).type);
         assertFalse(DdzCardTypeRecognizer.recognize(pws, true, DdzRuleSet.FOLK).isEmpty());
+    }
+
+    // ---------- 连对 / 飞机（用户反馈：667788、66778899、666777888 等） ----------
+
+    @Test
+    void doubleStraightThreePairs() {
+        DdzPlayResult p = recognize(cards(
+                r(6), r(6), r(7), r(7), r(8), r(8))); // 667788
+        assertNotNull(p);
+        assertEquals(DdzCardType.DOUBLE_STRAIGHT, p.type);
+        assertEquals(8, p.key);
+    }
+
+    @Test
+    void doubleStraightFourPairs() {
+        DdzPlayResult p = recognize(cards(
+                r(6), r(6), r(7), r(7), r(8), r(8), r(9), r(9))); // 66778899
+        assertNotNull(p);
+        assertEquals(DdzCardType.DOUBLE_STRAIGHT, p.type);
+        assertEquals(9, p.key);
+    }
+
+    @Test
+    void doubleStraightFivePairs() {
+        DdzPlayResult p = recognize(cards(
+                r(6), r(6), r(7), r(7), r(8), r(8), r(9), r(9), r(10), r(10))); // 66778899TT
+        assertNotNull(p);
+        assertEquals(DdzCardType.DOUBLE_STRAIGHT, p.type);
+        assertEquals(10, p.key);
+    }
+
+    @Test
+    void planeBareThreeGroups() {
+        DdzPlayResult p = recognize(cards(
+                r(6), r(6), r(6), r(7), r(7), r(7), r(8), r(8), r(8))); // 666777888
+        assertNotNull(p);
+        assertEquals(DdzCardType.PLANE, p.type);
+        assertEquals(8, p.key);
+    }
+
+    @Test
+    void planeBareFourGroups() {
+        DdzPlayResult p = recognize(cards(
+                r(6), r(6), r(6), r(7), r(7), r(7), r(8), r(8), r(8), r(9), r(9), r(9))); // 666777888999
+        assertNotNull(p);
+        assertEquals(DdzCardType.PLANE, p.type);
+        assertEquals(9, p.key);
+    }
+
+    // ---------- 连对 / 飞机压制（canBeat） ----------
+
+    @Test
+    void doubleStraightBeats() {
+        // 667788 压 556677
+        DdzPlayResult a = recognize(cards(r(6), r(6), r(7), r(7), r(8), r(8)));
+        DdzPlayResult b = recognize(cards(r(5), r(5), r(6), r(6), r(7), r(7)));
+        assertNotNull(a);
+        assertNotNull(b);
+        assertTrue(a.canBeat(b));
+        assertFalse(b.canBeat(a));
+    }
+
+    @Test
+    void planeBeats() {
+        // 666777888 压 555666777
+        DdzPlayResult a = recognize(cards(r(6), r(6), r(6), r(7), r(7), r(7), r(8), r(8), r(8)));
+        DdzPlayResult b = recognize(cards(r(5), r(5), r(5), r(6), r(6), r(6), r(7), r(7), r(7)));
+        assertNotNull(a);
+        assertNotNull(b);
+        assertTrue(a.canBeat(b));
+        assertFalse(b.canBeat(a));
+    }
+
+    @Test
+    void doubleStraightLengthMismatch() {
+        // 66778899（4 对）不能压 556677（3 对）：张数不同
+        DdzPlayResult a = recognize(cards(r(6), r(6), r(7), r(7), r(8), r(8), r(9), r(9)));
+        DdzPlayResult b = recognize(cards(r(5), r(5), r(6), r(6), r(7), r(7)));
+        assertNotNull(a);
+        assertNotNull(b);
+        assertFalse(a.canBeat(b));
+        assertFalse(b.canBeat(a));
     }
 }
