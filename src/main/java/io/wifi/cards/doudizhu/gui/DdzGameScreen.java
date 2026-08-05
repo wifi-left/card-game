@@ -1,6 +1,5 @@
 package io.wifi.cards.doudizhu.gui;
 
-import com.mojang.authlib.GameProfile;
 import io.wifi.cards.doudizhu.card.DdzCard;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
 import io.wifi.cards.doudizhu.network.DdzPackets.CallScoreC2S;
@@ -10,6 +9,7 @@ import io.wifi.cards.doudizhu.network.DdzPackets.PassC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.PlayCardsC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.RevealC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.RobActionC2S;
+import io.wifi.cards.doudizhu.network.DdzPackets.SpectateLeaveC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.ToggleTrustC2S;
 import io.wifi.cards.doudizhu.rule.DdzAutoPlay;
 import io.wifi.cards.doudizhu.rule.DdzPlayResult;
@@ -19,7 +19,10 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.network.chat.Component;
@@ -65,11 +68,17 @@ public class DdzGameScreen extends Screen {
         super(Component.literal("斗地主"));
     }
 
+    /** 旁观模式：服务端以 mySeat=-1 表示只读旁观（无手牌、无操作权）。 */
+    private boolean isSpectator() {
+        return DdzClientState.INSTANCE.mySeat < 0;
+    }
+
     @Override
     protected void init() {
         // 左下角：规则 / 出牌历史（子界面返回时回到本打牌界面，并渲染本界面为背景）
-        addRenderableWidget(Button.builder(Component.literal("规则"), b ->
-                        Minecraft.getInstance().setScreen(new DdzRulesScreen(DdzGameScreen.this)))
+        addRenderableWidget(Button
+                .builder(Component.literal("规则"),
+                        b -> Minecraft.getInstance().setScreen(new DdzRulesScreen(DdzGameScreen.this)))
                 .bounds(8, height - 26, 60, 20).build());
         addRenderableWidget(Button.builder(Component.literal("历史"), b -> {
             ClientPlayNetworking.send(new HistoryC2S());
@@ -182,9 +191,10 @@ public class DdzGameScreen extends Screen {
             selected.clear();
             buttonSignature = -1;
         }
-        // 阶段/轮到谁/托管/明牌/选牌变化时重建按钮
-        int signature = (s.phase.ordinal() * 100 + (s.currentSeat + 1) * 10 + (s.myTrust ? 1 : 0)) * 2
-                + (selected.isEmpty() ? 0 : 1) + (s.revealed ? 1000 : 0);
+        // 阶段/轮到谁/托管/明牌/选牌变化时重建按钮（旁观模式按钮恒定，用独立签名区分）
+        int signature = isSpectator() ? -50000
+                : (s.phase.ordinal() * 100 + (s.currentSeat + 1) * 10 + (s.myTrust ? 1 : 0)) * 2
+                        + (selected.isEmpty() ? 0 : 1) + (s.revealed ? 1000 : 0);
         if (signature != buttonSignature) {
             buttonSignature = signature;
             rebuildActionButtons();
@@ -199,6 +209,11 @@ public class DdzGameScreen extends Screen {
         DdzClientState s = DdzClientState.INSTANCE;
         int x = width - 100;
         int y = height - 150;
+        // 旁观模式：只读观看，仅提供「退出旁观」（服务端清理旁观关系并回到大厅）
+        if (isSpectator()) {
+            actionButtons.add(button(x, y, "退出旁观", b -> sendUnspectate(), true));
+            return;
+        }
         // 常驻行：退出游戏 + 托管（整局可用，随时可退出/取消托管）
         if (s.phase == DdzGamePhase.CALLING || s.phase == DdzGamePhase.ROBBING || s.phase == DdzGamePhase.PLAYING) {
             actionButtons.add(button(x - 95, y - 26, "退出", b -> sendLeave(), true));
@@ -289,6 +304,11 @@ public class DdzGameScreen extends Screen {
     /** 退出游戏：座位由服务端转机器人托管，本客户端回到大厅。 */
     private void sendLeave() {
         ClientPlayNetworking.send(new LeaveRoomC2S());
+    }
+
+    /** 退出旁观：服务端清理旁观关系并下发房间关闭消息，回到大厅。 */
+    private void sendUnspectate() {
+        ClientPlayNetworking.send(new SpectateLeaveC2S());
     }
 
     /** 提示：复用服务端托管引擎，选出一手可压的牌。 */
@@ -414,10 +434,14 @@ public class DdzGameScreen extends Screen {
 
     private void drawTopInfo(GuiGraphics g) {
         DdzClientState s = DdzClientState.INSTANCE;
-        int leftSeat = (s.mySeat + 1) % 3;
-        int rightSeat = (s.mySeat + 2) % 3;
         // 顶部信息条（含玩家头颅与牌背）
         g.fill(0, 0, width, 54, 0x66000000);
+        if (isSpectator()) {
+            drawSpectatorTop(g, s);
+            return;
+        }
+        int leftSeat = (s.mySeat + 1) % 3;
+        int rightSeat = (s.mySeat + 2) % 3;
         // 左侧：左对手（上：头像+牌背叠+名字）+ 自己（下：头像+名字）
         drawHead(g, s.playerUuids[leftSeat], 6, 6, 16);
         drawCardBacks(g, 24, 9, s.countOf(leftSeat));
@@ -441,6 +465,34 @@ public class DdzGameScreen extends Screen {
                     : "轮到 " + s.nameOf(s.currentSeat) + "（剩余 " + Math.max(0, countdown) + " 秒）";
             DdzGui.centeredShadow(g, this.font, width, turnText, 29,
                     s.isMyTurn() ? 0xFFFFFF55 : 0xFFAAAAAA);
+        }
+    }
+
+    /** 旁观模式顶部：三名玩家按座位 0 左 / 1 中 / 2 右 展示，阶段/轮到信息在下两行（无"自己"的手牌）。 */
+    private void drawSpectatorTop(GuiGraphics g, DdzClientState s) {
+        // 座位 0：左（头像 + 牌背叠 + 名字）
+        drawHead(g, s.playerUuids[0], 6, 6, 16);
+        drawCardBacks(g, 24, 9, s.countOf(0));
+        g.drawString(this.font, nameLine(0), 46, 11,
+                s.currentSeat == 0 ? 0xFFFFFF55 : 0xFFFFFFFF, true);
+        // 座位 1：中（头像居中，名字与牌背叠在其右侧）
+        drawHead(g, s.playerUuids[1], width / 2 - 8, 6, 16);
+        drawCardBacks(g, width / 2 + 10, 9, s.countOf(1));
+        String midText = nameLine(1);
+        g.drawString(this.font, midText, width / 2 - this.font.width(midText) / 2, 11,
+                s.currentSeat == 1 ? 0xFFFFFF55 : 0xFFFFFFFF, true);
+        // 座位 2：右（头像 + 牌背叠 + 名字右对齐）
+        drawHead(g, s.playerUuids[2], width - 22, 6, 16);
+        drawCardBacks(g, width - 42, 9, s.countOf(2));
+        String rightText = nameLine(2);
+        g.drawString(this.font, rightText, width - this.font.width(rightText) - 46, 11,
+                s.currentSeat == 2 ? 0xFFFFFF55 : 0xFFFFFFFF, true);
+        // 左侧标注旁观状态；中央为阶段 + 轮到谁/倒计时
+        g.drawString(this.font, "旁观中", 6, 32, 0xFFAAAAAA, true);
+        DdzGui.centeredShadow(g, this.font, width, phaseText(), 29, 0xFFFFD700);
+        if (s.phase == DdzGamePhase.CALLING || s.phase == DdzGamePhase.ROBBING || s.phase == DdzGamePhase.PLAYING) {
+            String turnText = "轮到 " + s.nameOf(s.currentSeat) + "（剩余 " + Math.max(0, countdown) + " 秒）";
+            DdzGui.centeredShadow(g, this.font, width, turnText, 45, 0xFFAAAAAA);
         }
     }
 
@@ -473,17 +525,30 @@ public class DdzGameScreen extends Screen {
         };
     }
 
-    /** 渲染玩家头颅（皮肤头部区域 8x8 像素放大）。uuidStr 为空（假人/未知）时跳过。 */
+    /**
+     * 渲染玩家头颅：通过 tab 列表的 PlayerInfo 获取皮肤纹理，
+     * 用 PlayerFaceRenderer 绘制脸部区域（8x8 放大到目标尺寸）。
+     * uuidStr 为空（假人/未知）、玩家不在 tab 列表或皮肤缺失时跳过。
+     */
     private void drawHead(GuiGraphics g, String uuidStr, int x, int y, int size) {
         if (uuidStr == null || uuidStr.isEmpty()) {
             return;
         }
         try {
             Minecraft mc = Minecraft.getInstance();
-            ResourceLocation skin = mc.getSkinManager()
-                    .getInsecureSkin(new GameProfile(UUID.fromString(uuidStr), ""))
-                    .texture();
-            g.blit(skin, x, y, size, size, 8, 8, 8, 8, 64, 64);
+            ClientPacketListener connection = mc.getConnection();
+            if (connection == null) {
+                return;
+            }
+            PlayerInfo info = connection.getPlayerInfo(UUID.fromString(uuidStr));
+            if (info == null) {
+                return;
+            }
+            ResourceLocation skin = info.getSkin().texture();
+            if (skin == null) {
+                return;
+            }
+            PlayerFaceRenderer.draw(g, skin, x, y, size);
         } catch (IllegalArgumentException ignored) {
             // 非法 UUID（理论不会发生）→ 跳过头像
         }

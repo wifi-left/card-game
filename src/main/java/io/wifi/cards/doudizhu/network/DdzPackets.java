@@ -37,6 +37,8 @@ public final class DdzPackets {
     public static final ResourceLocation NEXT_GAME = id("next_game");
     public static final ResourceLocation REVEAL_ACTION = id("reveal_action");
     public static final ResourceLocation HISTORY_REQUEST = id("history_request");
+    public static final ResourceLocation SPECTATE = id("spectate");
+    public static final ResourceLocation SPECTATE_LEAVE = id("spectate_leave");
 
     // ---------------- S2C ----------------
 
@@ -527,6 +529,33 @@ public final class DdzPackets {
         }
     }
 
+    /** 请求旁观房间（C2S）：点击「点击旁观」消息触发。 */
+    public record SpectateC2S(String roomCode) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<SpectateC2S> TYPE = new CustomPacketPayload.Type<>(SPECTATE);
+        public static final StreamCodec<FriendlyByteBuf, SpectateC2S> CODEC = StreamCodec.of(
+                (buf, value) -> buf.writeUtf(value.roomCode()),
+                buf -> new SpectateC2S(buf.readUtf()));
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    /** 退出旁观（C2S）。 */
+    public record SpectateLeaveC2S() implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<SpectateLeaveC2S> TYPE = new CustomPacketPayload.Type<>(SPECTATE_LEAVE);
+        public static final StreamCodec<FriendlyByteBuf, SpectateLeaveC2S> CODEC = StreamCodec.of(
+                (buf, value) -> {
+                },
+                buf -> new SpectateLeaveC2S());
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
     /** 出牌历史（S2C）：并行数组（最新在前）。types/cards 与 names 等长；"不出"行 typeName="不出"、cardsText 为空。 */
     public record HistoryS2C(int[] seats, String[] names, String[] types, String[] cards) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<HistoryS2C> TYPE = new CustomPacketPayload.Type<>(HISTORY);
@@ -564,6 +593,8 @@ public final class DdzPackets {
         PayloadTypeRegistry.playC2S().register(NextGameC2S.TYPE, NextGameC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(RevealC2S.TYPE, RevealC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(HistoryC2S.TYPE, HistoryC2S.CODEC);
+        PayloadTypeRegistry.playC2S().register(SpectateC2S.TYPE, SpectateC2S.CODEC);
+        PayloadTypeRegistry.playC2S().register(SpectateLeaveC2S.TYPE, SpectateLeaveC2S.CODEC);
 
         PayloadTypeRegistry.playS2C().register(RoomStateS2C.TYPE, RoomStateS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(GameStartS2C.TYPE, GameStartS2C.CODEC);
@@ -590,33 +621,40 @@ public final class DdzPackets {
 
     private static void registerServerReceivers() {
         DdzMemoryManager m = DdzMemoryManager.INSTANCE;
-        ServerPlayNetworking.registerGlobalReceiver(CreateRoomC2S.TYPE, (payload, ctx) -> {
+        // 所有 C2S 处理统一调度到服务器主线程执行：Fabric 接收器运行在 netty 线程，
+        // 直接修改房间/对局共享状态会与主线程 tick 产生竞态（members/size/spectators 非线程安全）。
+        // ctx.player() 引用在 execute 后依然有效（断线由 isConnected 兜底）。
+        ServerPlayNetworking.registerGlobalReceiver(CreateRoomC2S.TYPE, (payload, ctx) -> ctx.server().execute(() -> {
             // 防御：规则集序号越界（恶意客户端可发送任意 byte）时回退标准规则；机器人数量钳制 0~2
             byte rs = payload.ruleSet();
             DdzRuleSet ruleSet = rs >= 0 && rs < DdzRuleSet.values().length
                     ? DdzRuleSet.values()[rs] : DdzRuleSet.STANDARD;
             m.createRoom(ctx.server(), ctx.player(), payload.flowerMode(), ruleSet, payload.announce(),
                     Math.max(0, Math.min(payload.botCount(), 2)));
-        });
+        }));
         ServerPlayNetworking.registerGlobalReceiver(JoinRoomC2S.TYPE, (payload, ctx) ->
-                m.joinRoom(ctx.player(), payload.roomCode()));
+                ctx.server().execute(() -> m.joinRoom(ctx.player(), payload.roomCode())));
         ServerPlayNetworking.registerGlobalReceiver(LeaveRoomC2S.TYPE, (payload, ctx) ->
-                m.leaveRoom(ctx.player()));
+                ctx.server().execute(() -> m.leaveRoom(ctx.player())));
         ServerPlayNetworking.registerGlobalReceiver(CallScoreC2S.TYPE, (payload, ctx) ->
-                m.onCall(ctx.player(), payload.score()));
+                ctx.server().execute(() -> m.onCall(ctx.player(), payload.score())));
         ServerPlayNetworking.registerGlobalReceiver(RobActionC2S.TYPE, (payload, ctx) ->
-                m.onRob(ctx.player(), payload.rob()));
+                ctx.server().execute(() -> m.onRob(ctx.player(), payload.rob())));
         ServerPlayNetworking.registerGlobalReceiver(PlayCardsC2S.TYPE, (payload, ctx) ->
-                m.onPlayCards(ctx.player(), payload.cardIds()));
+                ctx.server().execute(() -> m.onPlayCards(ctx.player(), payload.cardIds())));
         ServerPlayNetworking.registerGlobalReceiver(PassC2S.TYPE, (payload, ctx) ->
-                m.onPass(ctx.player()));
+                ctx.server().execute(() -> m.onPass(ctx.player())));
         ServerPlayNetworking.registerGlobalReceiver(ToggleTrustC2S.TYPE, (payload, ctx) ->
-                m.setTrust(ctx.player(), payload.enabled()));
+                ctx.server().execute(() -> m.setTrust(ctx.player(), payload.enabled())));
         ServerPlayNetworking.registerGlobalReceiver(NextGameC2S.TYPE, (payload, ctx) ->
-                m.nextGame(ctx.player()));
+                ctx.server().execute(() -> m.nextGame(ctx.player())));
         ServerPlayNetworking.registerGlobalReceiver(RevealC2S.TYPE, (payload, ctx) ->
-                m.onReveal(ctx.player()));
+                ctx.server().execute(() -> m.onReveal(ctx.player())));
         ServerPlayNetworking.registerGlobalReceiver(HistoryC2S.TYPE, (payload, ctx) ->
-                m.onHistoryRequest(ctx.player()));
+                ctx.server().execute(() -> m.onHistoryRequest(ctx.player())));
+        ServerPlayNetworking.registerGlobalReceiver(SpectateC2S.TYPE, (payload, ctx) ->
+                ctx.server().execute(() -> m.spectate(ctx.player(), payload.roomCode())));
+        ServerPlayNetworking.registerGlobalReceiver(SpectateLeaveC2S.TYPE, (payload, ctx) ->
+                ctx.server().execute(() -> m.leaveSpectate(ctx.player())));
     }
 }

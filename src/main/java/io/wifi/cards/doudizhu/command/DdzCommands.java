@@ -50,6 +50,11 @@ public final class DdzCommands {
                                     .executes(ctx -> invite(ctx.getSource(), EntityArgument.getPlayer(ctx, "player")))))
                     .then(Commands.literal("leave")
                             .executes(ctx -> leave(ctx.getSource())))
+                    .then(Commands.literal("spectate")
+                            .then(Commands.argument("code", StringArgumentType.word())
+                                    .executes(ctx -> spectate(ctx.getSource(), StringArgumentType.getString(ctx, "code")))))
+                    .then(Commands.literal("unspectate")
+                            .executes(ctx -> unspectate(ctx.getSource())))
                     .then(Commands.literal("debug").requires(src -> src.hasPermission(2))
                             .then(Commands.literal("bots")
                                     .then(Commands.argument("count", IntegerArgumentType.integer(1, 2))
@@ -134,6 +139,25 @@ public final class DdzCommands {
     private static int accept(CommandSourceStack source, String code) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         DdzMemoryManager.INSTANCE.joinRoom(player, code);
+        return 1;
+    }
+
+    /** 旁观房间：/doudizhu spectate <房间码>（对局开始后的只读观看）。 */
+    private static int spectate(CommandSourceStack source, String code) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        String error = DdzMemoryManager.INSTANCE.spectate(player, code);
+        if (error != null) {
+            source.sendFailure(Component.literal(error));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("正在旁观房间 " + code + "，输入 /doudizhu unspectate 退出旁观"), false);
+        return 1;
+    }
+
+    /** 退出旁观：/doudizhu unspectate。 */
+    private static int unspectate(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        DdzMemoryManager.INSTANCE.leaveSpectate(player);
         return 1;
     }
 

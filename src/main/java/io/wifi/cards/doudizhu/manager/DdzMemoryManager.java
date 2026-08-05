@@ -41,6 +41,8 @@ public final class DdzMemoryManager {
 
     private final Map<String, DdzRoom> rooms = new ConcurrentHashMap<>();
     private final Map<UUID, String> playerRoomIds = new ConcurrentHashMap<>();
+    /** 旁观者所属房间映射（旁观只读观看，不占座位、无成员会话）。 */
+    private final Map<UUID, String> spectatorRoomIds = new ConcurrentHashMap<>();
 
     private DdzMemoryManager() {
     }
@@ -48,6 +50,8 @@ public final class DdzMemoryManager {
     // ---------------- 房间操作 ----------------
 
     public void createRoom(MinecraftServer server, ServerPlayer player, boolean flowerMode, DdzRuleSet ruleSet, boolean announce, int botCount) {
+        // 先退出旁观状态（旁观者建房/入房自动退出旁观）
+        leaveSpectateInternal(player);
         if (currentRoom(player) != null) {
             error(player, "你已经在房间里了");
             return;
@@ -83,6 +87,8 @@ public final class DdzMemoryManager {
     }
 
     public void joinRoom(ServerPlayer player, String code) {
+        // 先退出旁观状态（旁观者建房/入房自动退出旁观）
+        leaveSpectateInternal(player);
         // 防御：房间码长度上限（房间码固定 5 位，杜绝超长输入）
         if (code == null || code.length() > 16) {
             error(player, "房间码无效");
@@ -116,11 +122,17 @@ public final class DdzMemoryManager {
     /**
      * 离开房间/退出游戏：
      * <ul>
+     *   <li>旁观中：退出旁观（不占成员座位，不影响对局）</li>
      *   <li>等待/结算中：正常离开（不满 3 人解散房间）</li>
      *   <li>对局中：退出游戏，座位转机器人托管，对局继续；房间已无真人则关闭房间</li>
      * </ul>
      */
     public void leaveRoom(ServerPlayer player) {
+        // 旁观者：/doudizhu leave 等同退出旁观
+        if (spectatorRoomIds.containsKey(player.getUUID())) {
+            leaveSpectate(player);
+            return;
+        }
         DdzRoom room = currentRoom(player);
         if (room == null) {
             error(player, "你不在任何房间里");
@@ -185,6 +197,11 @@ public final class DdzMemoryManager {
                 error(player, "出牌数量异常");
                 return;
             }
+            // 防御：空数组不允许（"不出"必须走 PassC2S，防止伪装）
+            if (cardIds.length == 0) {
+                error(player, "请选择要出的牌");
+                return;
+            }
             // 防御：过滤越界 id（恶意客户端可能发送非法值导致数组越界）；
             // 非法 id 不在任何玩家手牌中，后续 containsAll 校验会拒绝本次出牌
             List<DdzCard> cards = new ArrayList<>(cardIds.length);
@@ -216,6 +233,15 @@ public final class DdzMemoryManager {
         DdzRoom room = currentRoom(player);
         if (room != null && room.game != null) {
             room.game.sendHistory(room.seatOf(player));
+            return;
+        }
+        // 旁观者：按其旁观房间下发历史
+        String specId = spectatorRoomIds.get(player.getUUID());
+        if (specId != null) {
+            DdzRoom specRoom = rooms.get(specId);
+            if (specRoom != null && specRoom.game != null) {
+                specRoom.game.sendHistoryToSpectator(player);
+            }
         }
     }
 
@@ -233,6 +259,15 @@ public final class DdzMemoryManager {
      * 等待/结算中 → 视为离开（不满 3 人解散）。
      */
     public void onPlayerDisconnect(ServerPlayer player) {
+        // 旁观者：清理旁观关系后直接返回（无成员会话）
+        String specId = spectatorRoomIds.remove(player.getUUID());
+        if (specId != null) {
+            DdzRoom specRoom = rooms.get(specId);
+            if (specRoom != null) {
+                specRoom.removeSpectator(player);
+            }
+            return;
+        }
         DdzRoom room = currentRoom(player);
         if (room == null) {
             playerRoomIds.remove(player.getUUID());
@@ -379,7 +414,64 @@ public final class DdzMemoryManager {
         }
         rooms.clear();
         playerRoomIds.clear();
+        spectatorRoomIds.clear(); // 旁观关系随房间一并清空
         return count;
+    }
+
+    // ---------------- 旁观（对局开始后只读观看） ----------------
+
+    /** 请求旁观房间；返回错误信息或 null。 */
+    public String spectate(ServerPlayer player, String code) {
+        if (code == null || code.length() > 16) {
+            return "房间码无效";
+        }
+        DdzRoom room = rooms.get(code.toUpperCase().trim());
+        if (room == null) {
+            return "房间不存在：" + code;
+        }
+        DdzGamePhase phase = room.phase();
+        if (phase == DdzGamePhase.WAITING) {
+            return "游戏尚未开始，无法旁观";
+        }
+        if (phase == DdzGamePhase.SETTLED) {
+            return "本局已结束，无法旁观";
+        }
+        if (currentRoom(player) != null) {
+            return "你已在房间中，无法旁观";
+        }
+        if (spectatorRoomIds.containsKey(player.getUUID())) {
+            return "你已在旁观其他房间";
+        }
+        room.addSpectator(player);
+        spectatorRoomIds.put(player.getUUID(), room.id);
+        room.broadcastState(); // 名字/状态同步（含旁观者 mySeat=-1）
+        room.game.syncToSpectator(player);
+        return null;
+    }
+
+    /** 退出旁观。 */
+    public void leaveSpectate(ServerPlayer player) {
+        String roomId = spectatorRoomIds.remove(player.getUUID());
+        if (roomId == null) {
+            error(player, "你不在旁观任何房间");
+            return;
+        }
+        DdzRoom room = rooms.get(roomId);
+        if (room != null) {
+            room.removeSpectator(player);
+        }
+        ServerPlayNetworking.send(player, new RoomClosedS2C("已退出旁观"));
+    }
+
+    /** 进入/加入房间前自动退出旁观（避免同时旁观与对局）。 */
+    private void leaveSpectateInternal(ServerPlayer player) {
+        String roomId = spectatorRoomIds.remove(player.getUUID());
+        if (roomId != null) {
+            DdzRoom room = rooms.get(roomId);
+            if (room != null) {
+                room.removeSpectator(player);
+            }
+        }
     }
 
     /**
@@ -388,6 +480,8 @@ public final class DdzMemoryManager {
      * @return 错误消息；null 表示成功
      */
     public String forceJoin(ServerPlayer target, String roomCode) {
+        // 先退出旁观状态（强制入房同样要求退出旁观）
+        leaveSpectateInternal(target);
         DdzRoom room = rooms.get(roomCode.toUpperCase().trim());
         if (room == null) {
             return "房间不存在：" + roomCode;
@@ -415,6 +509,15 @@ public final class DdzMemoryManager {
     private void startGame(DdzRoom room) {
         room.game = new DdzGame(room);
         room.game.start();
+        // 全服广播：房间已开始，其他玩家可点击旁观
+        ServerPlayer host = room.members[0];
+        if (host != null && host.getServer() != null) {
+            Component msg = Component.literal("房间【" + room.id + "】已开始，")
+                    .append(Component.literal("【点击旁观】").withStyle(style -> style
+                            .withColor(ChatFormatting.GREEN)
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/doudizhu spectate " + room.id))));
+            host.getServer().getPlayerList().broadcastSystemMessage(msg, false);
+        }
     }
 
     /** 将玩家移出房间；不满 3 人时解散房间并通知剩余玩家。 */
@@ -447,6 +550,9 @@ public final class DdzMemoryManager {
             if (member != null) {
                 playerRoomIds.remove(member.getUUID());
             }
+        }
+        for (ServerPlayer sp : room.spectators) {
+            spectatorRoomIds.remove(sp.getUUID());
         }
     }
 

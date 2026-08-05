@@ -140,6 +140,7 @@ public class DdzGame {
             DdzPlayer p = players[i];
             p.hand().clear();
             p.setLandlord(false);
+            p.setTrusted(false); // 新局重置托管：上局托管状态不得残留到下一局
             for (int j = 0; j < 17; j++) {
                 p.hand().add(deck.get(i * 17 + j));
             }
@@ -625,6 +626,44 @@ public class DdzGame {
     /** 向指定座位下发本局出牌历史（HistoryC2S 请求响应）。 */
     public void sendHistory(int seat) {
         room.sendToSeat(seat, new HistoryS2C(
+                historySeats.stream().mapToInt(Integer::intValue).toArray(),
+                historyNames.toArray(new String[0]),
+                historyTypes.toArray(new String[0]),
+                historyCards.toArray(new String[0])));
+    }
+
+    /** 向旁观者发送当前对局完整快照（无手牌：hand 为空数组，mySeat=-1 由客户端结合 RoomState 判定）。 */
+    public void syncToSpectator(ServerPlayer spectator) {
+        DdzPlayResult lp = lastPlay;
+        room.sendToSpectator(spectator, new ReconnectS2C(
+                (byte) phase.ordinal(),
+                new int[0],
+                (byte) maxScore,
+                (byte) currentSeat,
+                turnEndGameTime,
+                multiplier,
+                (byte) consecutivePasses,
+                (byte) baseScore,
+                (byte) landlordSeat,
+                landlordSeat >= 0 ? players[landlordSeat].name() : "",
+                ids(bottomCards),
+                (byte) (lp == null ? -1 : lastPlaySeat),
+                lp == null ? "" : players[lastPlaySeat].name(),
+                lp == null ? new int[0] : ids(lp.cards),
+                lp == null ? (byte) -1 : (byte) lp.type.ordinal(),
+                lp == null ? 0 : lp.key,
+                remainingCounts()));
+        // 已明牌时补发明牌快照（旁观者同样可见地主手牌）
+        if (revealed) {
+            room.sendToSpectator(spectator, new RevealS2C((byte) landlordSeat, ids(players[landlordSeat].hand())));
+        }
+        // 补发本局出牌历史，旁观者可直接打开历史界面
+        sendHistoryToSpectator(spectator);
+    }
+
+    /** 向旁观者下发本局出牌历史。 */
+    public void sendHistoryToSpectator(ServerPlayer spectator) {
+        room.sendToSpectator(spectator, new HistoryS2C(
                 historySeats.stream().mapToInt(Integer::intValue).toArray(),
                 historyNames.toArray(new String[0]),
                 historyTypes.toArray(new String[0]),

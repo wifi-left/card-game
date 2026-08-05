@@ -157,6 +157,7 @@ public final class DdzClientState {
 
     public void onGameStart(GameStartS2C payload) {
         this.mySeat = payload.mySeat();
+        this.myTrust = false; // 新局重置托管（服务端 start() 同步重置）
         this.hand.clear();
         for (int id : payload.hand()) {
             hand.add(DdzCard.byId(id));

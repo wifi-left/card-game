@@ -9,6 +9,8 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -29,11 +31,23 @@ public class DdzRoom {
     public DdzGame game;
     /** 结算完成时刻（毫秒），用于空闲房间自动销毁。 */
     public long settledAtMillis = -1;
+    /** 旁观者（对局开始后可旁观，只读观看，不占座位）。 */
+    public final List<ServerPlayer> spectators = new ArrayList<>();
 
     public DdzRoom(String id, boolean flowerMode, DdzRuleSet ruleSet) {
         this.id = id;
         this.flowerMode = flowerMode;
         this.ruleSet = ruleSet;
+    }
+
+    public void addSpectator(ServerPlayer player) {
+        if (!spectators.contains(player)) {
+            spectators.add(player);
+        }
+    }
+
+    public void removeSpectator(ServerPlayer player) {
+        spectators.remove(player);
     }
 
     public boolean isBot(int seat) {
@@ -177,7 +191,7 @@ public class DdzRoom {
         return true;
     }
 
-    /** 同步房间状态给每个成员（mySeat 按接收者区分）。 */
+    /** 同步房间状态给每个成员（mySeat 按接收者区分）与旁观者（mySeat=-1）。 */
     public void broadcastState() {
         String[] names = new String[3];
         String[] uuids = new String[3];
@@ -192,6 +206,12 @@ public class DdzRoom {
         for (int i = 0; i < size; i++) {
             sendToSeat(i, new RoomStateS2C(id, flowerMode, phaseOrdinal, ruleSetOrdinal, (byte) i, names, uuids, conn));
         }
+        for (ServerPlayer sp : spectators) {
+            if (isConnected(sp)) {
+                ServerPlayNetworking.send(sp, new RoomStateS2C(id, flowerMode, phaseOrdinal, ruleSetOrdinal,
+                        (byte) -1, names, uuids, conn));
+            }
+        }
     }
 
     public void broadcast(CustomPacketPayload payload) {
@@ -199,6 +219,11 @@ public class DdzRoom {
             ServerPlayer p = members[i];
             if (isConnected(p, payload)) {
                 ServerPlayNetworking.send(p, payload);
+            }
+        }
+        for (ServerPlayer sp : spectators) {
+            if (isConnected(sp, payload)) {
+                ServerPlayNetworking.send(sp, payload);
             }
         }
     }
@@ -209,6 +234,13 @@ public class DdzRoom {
             if (isConnected(p, payload)) {
                 ServerPlayNetworking.send(p, payload);
             }
+        }
+    }
+
+    /** 单独发给指定旁观者。 */
+    public void sendToSpectator(ServerPlayer spectator, CustomPacketPayload payload) {
+        if (isConnected(spectator, payload)) {
+            ServerPlayNetworking.send(spectator, payload);
         }
     }
 
