@@ -419,6 +419,13 @@ public final class DdzClientState {
             playRejected = true;
         }
         chat(message);
+        // 状态自愈：服务端查无本玩家的房间/旁观记录（如断线重进后本地残留旁观 UI，
+        // 而服务端已清理旁观关系或房间已销毁）→ 强制回大厅，避免卡死在旁观界面
+        if (inRoom() && (message.contains("你不在任何房间里") || message.contains("你不在旁观任何房间"))) {
+            reset();
+            Minecraft mc = Minecraft.getInstance();
+            mc.setScreen(new DdzLobbyScreen());
+        }
     }
 
     /** 显示一条消息到聊天栏。 */

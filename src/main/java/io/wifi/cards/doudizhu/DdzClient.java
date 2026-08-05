@@ -54,9 +54,13 @@ public final class DdzClient {
     /**
      * 离开服务器/世界（断线、退出地图、切换服务器）时清空本地房间缓存：
      * 断开时收不到服务端 RoomClosedS2C，不清空会导致重进后残留旧房间状态。
+     * JOIN 同步清理作为兜底：无论退出时发生了什么（踢出/服务器关闭/断线未触发清理），
+     * 重进服务器后本地状态一律从零开始，再随服务端包重建。
      */
     private static void registerDisconnectCleanup() {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
+                client.execute(DdzClientState.INSTANCE::clearAll));
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) ->
                 client.execute(DdzClientState.INSTANCE::clearAll));
     }
 

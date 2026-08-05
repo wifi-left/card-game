@@ -12,6 +12,8 @@ import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +30,8 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class DdzMemoryManager {
     public static final DdzMemoryManager INSTANCE = new DdzMemoryManager();
+
+    private static final Logger LOGGER = LoggerFactory.getLogger("wifi-card-games");
 
     /** 结算后无人操作，保留的 tick 数（60 秒）。 */
     private static final long SETTLED_KEEP_MS = 60_000;
@@ -336,7 +340,15 @@ public final class DdzMemoryManager {
     public void tick(MinecraftServer server) {
         for (DdzRoom room : new ArrayList<>(rooms.values())) {
             if (room.game != null) {
-                room.game.tick();
+                try {
+                    room.game.tick();
+                } catch (Throwable t) {
+                    // 防御：单个房间状态机异常（理论由托管引擎等触发）不得崩溃整个服务器——
+                    // 记录日志并关闭该房间，其余房间继续正常运行
+                    LOGGER.error("斗地主房间 {} tick 异常，房间已关闭", room.id, t);
+                    destroyRoom(room, "房间状态异常，已关闭");
+                    continue;
+                }
             }
             // 全部座位为机器人（真人全部退出转托管，或开局即全机器人）：
             // 无在位真人游玩，结束本局并关闭房间。手动托管（座位仍为真人）不在此列。
