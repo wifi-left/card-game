@@ -1,0 +1,113 @@
+package io.wifi.cards.doudizhu.gui;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 规则介绍界面：玩法、牌型、大小、花牌模式差异、流程与结算说明。
+ * 内容超出一屏时可滚动查看（滚轮），Esc 或"返回"按钮退出。
+ */
+public class DdzRulesScreen extends Screen {
+    private static final int CONTENT_TOP = 30;
+    private static final int LINE_H = 10;
+    private static final int BOTTOM_BAR = 30;
+
+    private final List<String> lines = new ArrayList<>();
+    private float scroll;
+
+    public DdzRulesScreen() {
+        super(Component.literal("斗地主规则"));
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
+
+    @Override
+    protected void init() {
+        buildLines();
+        addRenderableWidget(Button.builder(Component.literal("返回"), b ->
+                Minecraft.getInstance().setScreen(new DdzLobbyScreen()))
+                .bounds(width / 2 - 40, height - BOTTOM_BAR + 4, 80, 20).build());
+    }
+
+    private void buildLines() {
+        lines.add("【玩法】3 人对局：地主 20 张（含 3 张底牌），农民各 17 张。");
+        lines.add("地主单独对抗两名农民，先出完手牌的一方获胜。");
+        lines.add("");
+        lines.add("【大小】3<4<5<6<7<8<9<10<J<Q<K<A<2<小王<大王");
+        lines.add("");
+        lines.add("【牌型】（标准规则）");
+        lines.add("· 单牌 / 对子 / 三张");
+        lines.add("· 三带一：333+5（比三张部分）");
+        lines.add("· 三带二：333+55（民间规则无此牌型）");
+        lines.add("· 顺子：5 张起连续，不含 2 与王，最大 10JQKA");
+        lines.add("· 连对：3 对起连续，不含 2");
+        lines.add("· 飞机：2 组起连续三张，不含 2（如 333444）");
+        lines.add("· 飞机带翅膀：飞机 + 同数量单牌或对子（民间规则仅单牌）");
+        lines.add("· 四带二：4 张 + 两张单牌，或 4 张 + 一对/两对（民间规则仅两张单牌）");
+        lines.add("· 炸弹：4 张同值；火箭：大小王（全场最大）");
+        lines.add("· 不存在“三王炸”牌型");
+        lines.add("");
+        lines.add("【规则集】创建房间时选择，本局生效：");
+        lines.add("· 标准规则：三带二、飞机带对子、四带两对均允许");
+        lines.add("· 民间规则：无三带二、无飞机带对子、无四带两对");
+        lines.add("");
+        lines.add("【压制】同牌型且张数相同才可压（比最大牌点）；");
+        lines.add("四带二不可互压；炸弹可压任何一般牌型；");
+        lines.add("火箭 > 炸弹；炸弹互压比点数。");
+        lines.add("");
+        lines.add("【花牌模式（万能牌）】55 张牌、底牌 4 张。");
+        lines.add("花牌可当作任意一张牌（3~大王）参与组合；");
+        lines.add("花牌 + 三张同值 = 软炸弹（等于炸弹）；");
+        lines.add("花牌模式不允许三带二（四带二、飞机带翅膀、裸飞机均允许）。");
+        lines.add("");
+        lines.add("【流程】发牌后随机开始叫分：不叫/1/2/3（须更高）。");
+        lines.add("有人叫 3 分 → 抢地主：轮流抢/不抢，");
+        lines.add("连续 2 人不抢即终止，底分固定 3 分；");
+        lines.add("无人叫 3 分则最高分者当地主（底分 1 或 2 分），");
+        lines.add("全不叫则重新发牌。");
+        lines.add("地主先出牌，轮到你可压牌或不出；");
+        lines.add("另外两家都不出后，上一家可自由出任意牌型。");
+        lines.add("");
+        lines.add("【结算】底分 × 倍数：炸弹/火箭/软炸弹当场倍数×2。");
+        lines.add("地主胜：地主 +2×底分×倍数，农民各 -底分×倍数；");
+        lines.add("地主败则相反。分数仅本局展示，不保存。");
+    }
+
+    @Override
+    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        this.renderBackground(g, mouseX, mouseY, partialTick);
+        g.drawCenteredString(this.font, Component.literal("斗地主规则"), width / 2, 8, 0xFFFFFF88);
+        g.enableScissor(0, CONTENT_TOP, width, height - BOTTOM_BAR);
+        int y = CONTENT_TOP;
+        int viewportBottom = height - BOTTOM_BAR;
+        for (String line : lines) {
+            int drawY = y - (int) scroll;
+            if (drawY >= CONTENT_TOP - LINE_H && drawY < viewportBottom) {
+                g.drawString(this.font, line, 8, drawY, 0xFFDDDDDD);
+            }
+            y += LINE_H;
+        }
+        g.disableScissor();
+        g.drawCenteredString(this.font, Component.literal("滚轮滚动查看，Esc 返回"), width / 2, height - 16, 0xFF888888);
+        super.render(g, mouseX, mouseY, partialTick);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        int contentHeight = lines.size() * LINE_H;
+        int viewport = height - BOTTOM_BAR - CONTENT_TOP;
+        int maxScroll = Math.max(0, contentHeight - viewport);
+        scroll -= (float) verticalAmount * 10;
+        scroll = Math.max(0, Math.min(scroll, maxScroll));
+        return true;
+    }
+}

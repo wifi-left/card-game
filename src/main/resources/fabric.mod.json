@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "wifi-card-games",
+  "version": "${version}",
+  "name": "Wifi Card Games",
+  "description": "多人卡牌小游戏合集 —— 目前包含斗地主（经典 / 花牌万能牌模式）",
+  "authors": [
+    "wifi"
+  ],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "io.wifi.cards.CardGameMod"
+    ],
+    "client": [
+      "io.wifi.cards.CardGameModClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

@@ -1,0 +1,60 @@
+package io.wifi.cards.doudizhu.gui;
+
+import io.wifi.cards.doudizhu.network.DdzPackets.LeaveRoomC2S;
+import io.wifi.cards.doudizhu.network.DdzPackets.NextGameC2S;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+
+/**
+ * 结算界面：显示胜负、分数明细（底分 × 倍数），可选择再来一局（房间不散重开）或返回大厅。
+ */
+public class DdzResultScreen extends Screen {
+    public DdzResultScreen() {
+        super(Component.literal("本局结算"));
+    }
+
+    @Override
+    public boolean isPauseScreen() {
+        return false;
+    }
+
+    @Override
+    protected void init() {
+        int cx = width / 2;
+        addRenderableWidget(Button.builder(Component.literal("再来一局"), b ->
+                ClientPlayNetworking.send(new NextGameC2S()))
+                .bounds(cx - 120, height / 2 + 44, 110, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("返回大厅"), b ->
+                ClientPlayNetworking.send(new LeaveRoomC2S()))
+                .bounds(cx + 10, height / 2 + 44, 110, 20).build());
+    }
+
+    @Override
+    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        this.renderBackground(g, mouseX, mouseY, partialTick);
+        DdzClientState s = DdzClientState.INSTANCE;
+        int cx = width / 2;
+        String title = s.resultLandlordWin ? "地主胜利！" : "农民胜利！";
+        g.drawCenteredString(this.font, Component.literal(title), cx, 40,
+                s.resultLandlordWin ? 0xFFFFFF55 : 0xFFFF5555);
+        g.drawCenteredString(this.font, Component.literal("地主：" + s.resultLandlordName), cx, 58, 0xFFFFFFFF);
+        int unit = s.resultBaseScore * s.resultMultiplier;
+        g.drawCenteredString(this.font,
+                Component.literal("底分 " + s.resultBaseScore + " × 倍数 " + s.resultMultiplier + " = " + unit + " 分"),
+                cx, 76, 0xFFFFFFFF);
+        for (int i = 0; i < 3; i++) {
+            if (s.names[i] == null || s.names[i].isEmpty()) {
+                continue;
+            }
+            String sign = s.resultDeltas[i] > 0 ? "+" : "";
+            String line = s.names[i] + "：" + sign + s.resultDeltas[i] + " 分"
+                    + (i == s.landlordSeat ? "（地主）" : "");
+            g.drawCenteredString(this.font, Component.literal(line), cx, 96 + i * 14,
+                    i == s.mySeat ? 0xFFFFFF55 : 0xFFFFFFFF);
+        }
+        super.render(g, mouseX, mouseY, partialTick);
+    }
+}
