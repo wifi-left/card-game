@@ -139,6 +139,13 @@ public class DdzGameScreen extends Screen {
     /** 待打开聊天框（延迟到 tick 执行，避免同按键的字符事件被新聊天框接收）。 */
     private boolean openChatPending;
 
+    /** 关闭牌局界面（Esc）：提示可通过命令/点击重新打开。 */
+    @Override
+    public void onClose() {
+        DdzClientState.chatReopenHint("关闭牌局界面");
+        super.onClose();
+    }
+
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         Minecraft mc = Minecraft.getInstance();

@@ -17,7 +17,9 @@ import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TrustStateS2C;
 import io.wifi.cards.doudizhu.rule.DdzCardType;
 import io.wifi.cards.doudizhu.rule.DdzRuleSet;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
@@ -408,6 +410,22 @@ public final class DdzClientState {
         if (mc.player != null) {
             mc.gui.getChat().addMessage(Component.literal("[斗地主] " + message));
         }
+    }
+
+    /**
+     * 关闭界面提示：输入命令或点击可点击文本重新打开。
+     * 例：已关闭大厅，输入 /doudizhu 或点击 [/doudizhu] 重新打开
+     */
+    public static void chatReopenHint(String closedDesc) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        mc.gui.getChat().addMessage(Component.literal("[斗地主] 已" + closedDesc + "，输入 /doudizhu 或点击")
+                .append(Component.literal(" [/doudizhu]").withStyle(style -> style
+                        .withColor(ChatFormatting.GREEN)
+                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/doudizhu"))))
+                .append(Component.literal(" 重新打开")));
     }
 
     /** 清空全部本地状态（离开服务器/世界时调用，避免房间缓存残留影响下次进入）。 */

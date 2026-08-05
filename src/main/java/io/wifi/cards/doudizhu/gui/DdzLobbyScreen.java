@@ -45,6 +45,15 @@ public class DdzLobbyScreen extends Screen {
     public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
     }
 
+    /** 关闭大厅（Esc）：等待玩家中关闭时提示可通过命令/点击重新打开。 */
+    @Override
+    public void onClose() {
+        if (DdzClientState.INSTANCE.inRoom()) {
+            DdzClientState.chatReopenHint("关闭大厅");
+        }
+        super.onClose();
+    }
+
     // ---------------- 内容区布局（两列紧凑 + 滚轮滚动兜底） ----------------
 
     /** 内容区顶部 y（随滚动偏移）。 */
