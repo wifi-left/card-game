@@ -421,8 +421,8 @@ public final class DdzClientState {
         if (mc.player == null) {
             return;
         }
-        mc.gui.getChat().addMessage(Component.literal("[斗地主] 已" + closedDesc + "，输入 /doudizhu 或")
-                .append(Component.literal(" [点击此处]").withStyle(style -> style
+        mc.gui.getChat().addMessage(Component.literal("[斗地主] 已" + closedDesc + "，输入 /doudizhu 或 ")
+                .append(Component.literal("[点击此处]").withStyle(style -> style
                         .withColor(ChatFormatting.GREEN)
                         .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/doudizhu"))))
                 .append(Component.literal(" 重新打开")));
