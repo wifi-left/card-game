@@ -13,6 +13,7 @@ import io.wifi.cards.doudizhu.network.DdzPackets.ReconnectS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RevealS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RobBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomStateS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.SpectatorHandsS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TrustStateS2C;
 import io.wifi.cards.doudizhu.rule.DdzCardType;
@@ -84,6 +85,8 @@ public final class DdzClientState {
     }
     /** 本局完整出牌历史（历史界面，由 HistoryS2C 下发填充）。 */
     public final List<HistoryLine> historyLines = new ArrayList<>();
+    /** 三家完整手牌（仅旁观模式填充：SpectatorHandsS2C 透视视角，[0]=座位0…）。 */
+    public final List<List<DdzCard>> spectatorHands = new ArrayList<>(3);
 
     // ---- 结算 ----
     public String resultLandlordName = "";
@@ -188,6 +191,7 @@ public final class DdzClientState {
         this.revealedCards.clear();
         this.lastPlays.clear();
         this.historyLines.clear();
+        this.spectatorHands.clear(); // 新局/入房：清空旁观透视快照（防残留旧局数据）
         Minecraft mc = Minecraft.getInstance();
         if (!(mc.screen instanceof DdzGameScreen)) {
             mc.setScreen(new DdzGameScreen());
@@ -351,6 +355,17 @@ public final class DdzClientState {
         }
     }
 
+    /** 三家完整手牌下发（仅旁观者收到）：透视视角，随时覆盖为最新快照。 */
+    public void onSpectatorHands(SpectatorHandsS2C payload) {
+        this.spectatorHands.clear();
+        this.spectatorHands.add(DdzCard.byIds(payload.hand0()));
+        this.spectatorHands.add(DdzCard.byIds(payload.hand1()));
+        this.spectatorHands.add(DdzCard.byIds(payload.hand2()));
+        for (List<DdzCard> h : this.spectatorHands) {
+            DdzCard.sortByRank(h);
+        }
+    }
+
     public void onPass(PassBroadcastS2C payload) {
         this.lastPassName = payload.playerName();
         this.remaining = toIntArray(payload.remainingCounts());
@@ -471,6 +486,7 @@ public final class DdzClientState {
         revealedCards.clear();
         lastPlays.clear();
         historyLines.clear();
+        spectatorHands.clear();
         resultLandlordName = "";
         resultLandlordWin = false;
         resultBaseScore = 1;

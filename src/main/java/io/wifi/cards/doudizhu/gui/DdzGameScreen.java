@@ -430,6 +430,9 @@ public class DdzGameScreen extends Screen {
         drawTopInfo(g);
         drawCenter(g);
         drawHand(g);
+        if (isSpectator()) {
+            drawSpectatorHands(g); // 旁观透视：底部显示三家完整手牌
+        }
     }
 
     private void drawTopInfo(GuiGraphics g) {
@@ -616,8 +619,8 @@ public class DdzGameScreen extends Screen {
         }
 
         // 明牌：公开地主全部手牌（所有玩家可见，随地主出牌同步移除）。
-        // 牌面固定可读宽度横向排列，超出面板宽度自动换行，保证每张牌完整显示
-        if (s.revealed && !s.revealedCards.isEmpty()) {
+        // 旁观者不重复绘制——底部全景手牌已含地主牌
+        if (!isSpectator() && s.revealed && !s.revealedCards.isEmpty()) {
             int n = s.revealedCards.size();
             int cardW = 24;
             int cardH = 20;
@@ -658,6 +661,34 @@ public class DdzGameScreen extends Screen {
                 g.fill(cx - 1, cy - 1, cx + CARD_W + 1, cy + CARD_H + 1, 0xFFFFD700);
             }
             drawCard(g, c, cx, cy, CARD_W, CARD_H);
+        }
+    }
+
+    /**
+     * 旁观透视：底部三行显示三家完整手牌（座位 0/1/2 自上而下），
+     * 牌面小卡横排自适应宽度，出牌时随服务端快照实时更新。
+     */
+    private void drawSpectatorHands(GuiGraphics g) {
+        DdzClientState s = DdzClientState.INSTANCE;
+        if (s.spectatorHands.size() < 3) {
+            return; // 尚未收到三家手牌快照
+        }
+        int rowH = 22;
+        int y = height - 8 - 3 * rowH;
+        for (int seat = 0; seat < 3; seat++) {
+            List<DdzCard> hand = s.spectatorHands.get(seat);
+            String label = s.nameOf(seat) + "：";
+            int labelW = this.font.width(label);
+            g.drawString(this.font, label, 8, y + 3, 0xFFFFFF88, true);
+            int available = Math.max(20, width - 20 - labelW);
+            int n = Math.max(1, hand.size());
+            int cardW = Math.max(7, Math.min(20, (available - (n - 1) * 2) / n));
+            int x = 8 + labelW;
+            for (DdzCard c : hand) {
+                drawCard(g, c, x, y, cardW, rowH - 2);
+                x += cardW + 2;
+            }
+            y += rowH;
         }
     }
 

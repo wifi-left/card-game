@@ -17,6 +17,7 @@ import io.wifi.cards.doudizhu.network.DdzPackets.RevealS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RobBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomClosedS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomStateS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.SpectatorHandsS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TrustStateS2C;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -93,6 +94,8 @@ public final class DdzClient {
                 ctx.client().execute(() -> state.onTrustState(payload)));
         ClientPlayNetworking.registerGlobalReceiver(HistoryS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> state.onHistory(payload)));
+        ClientPlayNetworking.registerGlobalReceiver(SpectatorHandsS2C.TYPE, (payload, ctx) ->
+                ctx.client().execute(() -> state.onSpectatorHands(payload)));
         // 服务端命令 /doudizhu 触发：在主线程打开大厅
         ClientPlayNetworking.registerGlobalReceiver(OpenLobbyS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> Minecraft.getInstance().setScreen(new DdzLobbyScreen())));

@@ -18,6 +18,7 @@ import io.wifi.cards.doudizhu.network.DdzPackets.ReconnectS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RevealS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TrustStateS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RobBroadcastS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.SpectatorHandsS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
 import io.wifi.cards.doudizhu.rule.DdzAutoPlay;
 import io.wifi.cards.doudizhu.rule.DdzCardTypeRecognizer;
@@ -172,6 +173,8 @@ public class DdzGame {
         for (ServerPlayer sp : room.spectators) {
             room.sendToSpectator(sp, new GameStartS2C((byte) -1, new int[0], (byte) callSeat, (byte) bottomCards.size()));
         }
+        // 旁观者：同步三家完整手牌（透视视角）
+        sendHandsToSpectators();
         turn(callSeat);
     }
 
@@ -356,6 +359,8 @@ public class DdzGame {
         addHistory(p.seat(), p.name(), chosen.type.displayName(), cardsText(cards));
         room.broadcast(new PlayBroadcastS2C((byte) p.seat(), p.name(), ids(cards),
                 (byte) chosen.type.ordinal(), chosen.key, multiplier, remainingCounts()));
+        // 旁观者：出牌后同步三家手牌（透视视角实时更新）
+        sendHandsToSpectators();
         if (p.hand().isEmpty()) {
             settle(p.seat());
             return true;
@@ -567,6 +572,8 @@ public class DdzGame {
         DdzCard.sortByRank(landlord.hand());
         room.broadcast(new LandlordS2C((byte) landlordSeat, landlord.name(), ids(bottomCards),
                 (byte) baseScore, multiplier));
+        // 旁观者：地主并入底牌后同步三家手牌
+        sendHandsToSpectators();
         lastPlay = null;
         lastPlaySeat = -1;
         passCount = 0;
@@ -590,6 +597,8 @@ public class DdzGame {
         resultDeltas = deltas;
         room.broadcast(new GameResultS2C((byte) landlordSeat, players[landlordSeat].name(), landlordWin,
                 (byte) baseScore, multiplier, deltas));
+        // 旁观者：结算时同步各家剩余手牌（透视视角看残局）
+        sendHandsToSpectators();
         room.settledAtMillis = System.currentTimeMillis();
     }
 
@@ -662,8 +671,18 @@ public class DdzGame {
         if (revealed) {
             room.sendToSpectator(spectator, new RevealS2C((byte) landlordSeat, ids(players[landlordSeat].hand())));
         }
+        // 旁观者：同步三家完整手牌（透视视角）
+        sendHandsToSpectators();
         // 补发本局出牌历史，旁观者可直接打开历史界面
         sendHistoryToSpectator(spectator);
+    }
+
+    /** 向旁观者下发三家完整手牌（透视视角；加入/出牌/定地主/新局/结算时同步）。 */
+    private void sendHandsToSpectators() {
+        for (ServerPlayer sp : room.spectators) {
+            room.sendToSpectator(sp, new SpectatorHandsS2C(
+                    ids(players[0].hand()), ids(players[1].hand()), ids(players[2].hand())));
+        }
     }
 
     /** 向旁观者下发本局出牌历史。 */

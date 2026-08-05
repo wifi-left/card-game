@@ -58,6 +58,7 @@ public final class DdzPackets {
     public static final ResourceLocation REVEAL = id("reveal");
     public static final ResourceLocation TRUST_STATE = id("trust_state");
     public static final ResourceLocation HISTORY = id("history");
+    public static final ResourceLocation SPECTATOR_HANDS = id("spectator_hands");
 
     // ---------------- Payload 定义 ----------------
 
@@ -578,6 +579,23 @@ public final class DdzPackets {
         }
     }
 
+    /** 三家完整手牌（S2C，仅发给旁观者）：旁观者透视视角，随时同步三家手牌。 */
+    public record SpectatorHandsS2C(int[] hand0, int[] hand1, int[] hand2) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<SpectatorHandsS2C> TYPE = new CustomPacketPayload.Type<>(SPECTATOR_HANDS);
+        public static final StreamCodec<FriendlyByteBuf, SpectatorHandsS2C> CODEC = StreamCodec.of(
+                (buf, value) -> {
+                    buf.writeVarIntArray(value.hand0());
+                    buf.writeVarIntArray(value.hand1());
+                    buf.writeVarIntArray(value.hand2());
+                },
+                buf -> new SpectatorHandsS2C(buf.readVarIntArray(), buf.readVarIntArray(), buf.readVarIntArray()));
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
     // ---------------- 注册 ----------------
 
     /** 注册全部 payload 类型 + 服务端接收器（主入口调用，客户端也会执行此方法）。 */
@@ -612,6 +630,7 @@ public final class DdzPackets {
         PayloadTypeRegistry.playS2C().register(RevealS2C.TYPE, RevealS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(TrustStateS2C.TYPE, TrustStateS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(HistoryS2C.TYPE, HistoryS2C.CODEC);
+        PayloadTypeRegistry.playS2C().register(SpectatorHandsS2C.TYPE, SpectatorHandsS2C.CODEC);
 
         registerServerReceivers();
     }
