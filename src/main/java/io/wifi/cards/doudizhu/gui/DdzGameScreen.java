@@ -95,7 +95,7 @@ public class DdzGameScreen extends Screen {
         }
         if (bgm == null) {
             bgm = new SimpleSoundInstance(DdzSounds.BGM.getLocation(), SoundSource.MASTER,
-                    0.3F, 1.0F, RandomSource.create(), true, 0,
+                    0.6F, 1.0F, RandomSource.create(), true, 0,
                     SoundInstance.Attenuation.NONE, 0.0D, 0.0D, 0.0D, true);
         }
         if (!mc.getSoundManager().isActive(bgm)) {
