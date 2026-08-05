@@ -222,7 +222,9 @@ public class DdzGame {
         return seat >= 0 && seat < 3 && players[seat].trusted();
     }
 
-    /** 所有座位是否都处于自动行动状态（托管或机器人）。全自动时对局无人游玩，由管理器结束房间。 */
+    /** 所有座位是否都处于自动行动状态（托管或机器人）。
+     *  仅用于「全不叫时随机定地主」防无限递归；游戏是否结束由 DdzRoom.allBot 判定
+     *  （手动托管的真人座位不算"无人"，不结束）。 */
     public boolean allAuto() {
         for (int i = 0; i < 3; i++) {
             if (!players[i].trusted() && !(botAuto && room.isBot(i))) {

@@ -127,6 +127,16 @@ public class DdzRoom {
         botNames[seat] = name.isEmpty() ? "机器人" : name + "（托管）";
     }
 
+    /** 是否所有座位都是机器人（含退出游戏转机器人托管的座位），即房间内无在位真人。 */
+    public boolean allBot() {
+        for (int i = 0; i < size; i++) {
+            if (botNames[i] == null) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** 是否还有真人玩家（机器人座位不算；退出/断线托管后座位已转机器人）。 */
     public boolean hasRealPlayer() {
         for (int i = 0; i < size; i++) {

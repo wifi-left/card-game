@@ -286,10 +286,11 @@ public final class DdzMemoryManager {
             if (room.game != null) {
                 room.game.tick();
             }
-            // 全员托管/机器人：无人游玩，结束本局并关闭房间（覆盖开局/中途/退出等所有路径）
-            if (room.game != null && room.game.allAuto()
+            // 全部座位为机器人（真人全部退出转托管，或开局即全机器人）：
+            // 无在位真人游玩，结束本局并关闭房间。手动托管（座位仍为真人）不在此列。
+            if (room.game != null && room.allBot()
                     && room.phase() != DdzGamePhase.WAITING && room.phase() != DdzGamePhase.SETTLED) {
-                destroyRoom(room, "全员托管/机器人，本局结束");
+                destroyRoom(room, "房间内已无真人玩家，本局结束");
                 continue;
             }
             if (room.game != null && room.allDisconnected()

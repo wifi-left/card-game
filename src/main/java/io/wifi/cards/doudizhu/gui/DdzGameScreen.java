@@ -136,13 +136,16 @@ public class DdzGameScreen extends Screen {
     public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
     }
 
+    /** 待打开聊天框（延迟到 tick 执行，避免同按键的字符事件被新聊天框接收）。 */
+    private boolean openChatPending;
+
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         Minecraft mc = Minecraft.getInstance();
         // 按聊天绑定键（原版 options.keyChat，默认 T）打开聊天框；
-        // 关闭/发送后由 DdzChatScreen 切回本界面
+        // 延迟到 tick 打开：立即打开会把本次按键的 charTyped 字符（如 't'）打进输入框
         if (mc.options.keyChat.matches(keyCode, scanCode)) {
-            mc.setScreen(new DdzChatScreen(this));
+            openChatPending = true;
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
@@ -153,6 +156,11 @@ public class DdzGameScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
+        // 延迟打开聊天框（等本次按键的字符事件处理完毕，避免 't' 等字符进入输入框）
+        if (openChatPending) {
+            openChatPending = false;
+            Minecraft.getInstance().setScreen(new DdzChatScreen(this));
+        }
         DdzClientState s = DdzClientState.INSTANCE;
         // 用服务端下发的截止游戏刻计算剩余秒数：客户端 level.getGameTime() 与服务端同步，
         // 倒计时不受本地帧率/网络延迟影响
