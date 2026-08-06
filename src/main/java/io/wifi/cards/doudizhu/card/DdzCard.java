@@ -70,9 +70,9 @@ public final class DdzCard {
         return ALL[53];
     }
 
-    /** 按牌值从大到小排序手牌（符合斗地主习惯：从左往右大牌在前）；花牌恒排最后。 */
+    /** 按牌值从小到大排序手牌：3 4 5 ... K A 2 小王 大王 花（花牌恒排最后）。 */
     public static void sortByRank(List<DdzCard> hand) {
-        hand.sort(Comparator.comparingInt((DdzCard c) -> c.isFlower() ? -1 : -c.rankValue())
+        hand.sort(Comparator.comparingInt((DdzCard c) -> c.isFlower() ? 99 : c.rankValue())
                 .thenComparingInt(c -> c.suit().ordinal()));
     }
 
