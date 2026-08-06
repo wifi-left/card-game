@@ -97,16 +97,26 @@ public class BoardLobbyScreen extends Screen {
         }
     }
 
-    // ---------------- 内容区布局（两列紧凑 + 滚轮滚动兜底） ----------------
+    // ---------------- 内容区布局（创建区 + 房间列表区，滚轮滚动兜底） ----------------
 
     /** 内容区顶部 y（随滚动偏移）。 */
     private int contentTop() {
         return Math.max(50, (height - 180) / 2) + (int) scroll;
     }
 
+    /** 房间列表区顶部 y（创建区下方，含标题空间）。 */
+    private int listTop() {
+        return contentTop() + 118;
+    }
+
+    /** 列表区可显示的行数（按窗口高度）。 */
+    private int listMaxRows() {
+        return Math.max(1, (height - listTop() - 20) / 22);
+    }
+
     /** 内容区底部 y（房间列表末行 + 边距）。 */
     private int contentBottom() {
-        return contentTop() + 250;
+        return listTop() + 9 * 22;
     }
 
     /** 内容超高时允许的滚动量（0 = 无需滚动）。 */
@@ -160,16 +170,16 @@ public class BoardLobbyScreen extends Screen {
             addRenderableWidget(Button.builder(Component.literal(mark(selected == BoardGameType.GO, "围棋")),
                     b -> selectGame(BoardGameType.GO))
                     .bounds(lx + 108, top, 50, 20).build());
-            // 围棋尺寸（仅选围棋时显示）
+            // 围棋尺寸（仅选围棋时显示；选中的以 ▶ 标记，两按钮对齐左列宽 160）
             if (selected == BoardGameType.GO) {
-                addRenderableWidget(Button.builder(Component.literal("尺寸：9 路"), b -> {
+                addRenderableWidget(Button.builder(Component.literal(goSize == 9 ? "▶ 9 路" : "9 路"), b -> {
                     goSize = 9;
                     rebuild();
-                }).bounds(lx, top + 24, 75, 20).build());
-                addRenderableWidget(Button.builder(Component.literal("尺寸：19 路"), b -> {
+                }).bounds(lx, top + 24, 78, 20).build());
+                addRenderableWidget(Button.builder(Component.literal(goSize == 19 ? "▶ 19 路" : "19 路"), b -> {
                     goSize = 19;
                     rebuild();
-                }).bounds(lx + 79, top + 24, 85, 20).build());
+                }).bounds(lx + 82, top + 24, 78, 20).build());
             }
             addRenderableWidget(Button.builder(Component.literal("公布房间：" + (announce ? "开" : "关")), b -> {
                 announce = !announce;
@@ -199,32 +209,25 @@ public class BoardLobbyScreen extends Screen {
             addRenderableWidget(Button.builder(Component.literal("规则介绍"), b ->
                     Minecraft.getInstance().setScreen(new BoardRulesScreen(BoardLobbyScreen.this)))
                     .bounds(rx, top + 72, 160, 20).build());
-            // 房间列表（等待中可加入 / 对局中可旁观）；起始 y 在提示区（top+92..116）之下，防重叠
+            // 房间列表（等待中可加入 / 对局中可旁观）：行 = 左侧操作按钮 + 右侧文本（render 绘制）
             List<BoardClientState.RoomEntry> list = s.roomList;
-            if (!list.isEmpty()) {
-                int ly = top + 122;
-                int maxRows = Math.max(1, (height - ly - 20) / 22);
-                for (int i = 0; i < Math.min(list.size(), maxRows); i++) {
-                    BoardClientState.RoomEntry e = list.get(i);
-                    int y = ly + i * 22;
-                    // 行文本截断到按钮宽度内（按钮 228 宽，留边距防溢出）
-                    String line = font.plainSubstrByWidth(e.line(), 212);
-                    addRenderableWidget(Button.builder(Component.literal(e.code()), b ->
+            int ly = listTop();
+            int maxRows = listMaxRows();
+            for (int i = 0; i < Math.min(list.size(), maxRows); i++) {
+                BoardClientState.RoomEntry e = list.get(i);
+                int y = ly + i * 22;
+                if (e.status() == 0) {
+                    addRenderableWidget(Button.builder(Component.literal("加入"), b ->
                                     ClientPlayNetworking.send(new JoinRoomC2S(e.code())))
-                            .bounds(lx, y, 62, 20).build());
-                    if (e.status() == 0) {
-                        addRenderableWidget(Button.builder(Component.literal(line), b ->
-                                        ClientPlayNetworking.send(new JoinRoomC2S(e.code())))
-                                .bounds(lx + 66, y, 228, 20).build());
-                    } else if (e.status() == 1) {
-                        addRenderableWidget(Button.builder(Component.literal(line + " [旁观]"), b ->
-                                        ClientPlayNetworking.send(new SpectateC2S(e.code())))
-                                .bounds(lx + 66, y, 228, 20).build());
-                    } else {
-                        addRenderableWidget(Button.builder(Component.literal(line + "（已结束）"), b -> {
-                                })
-                                .bounds(lx + 66, y, 228, 20).build()).active = false;
-                    }
+                            .bounds(lx, y, 54, 20).build());
+                } else if (e.status() == 1) {
+                    addRenderableWidget(Button.builder(Component.literal("旁观"), b ->
+                                    ClientPlayNetworking.send(new SpectateC2S(e.code())))
+                            .bounds(lx, y, 54, 20).build());
+                } else {
+                    addRenderableWidget(Button.builder(Component.literal("已结束"), b -> {
+                            })
+                            .bounds(lx, y, 54, 20).build()).active = false;
                 }
             }
         } else {
@@ -255,27 +258,50 @@ public class BoardLobbyScreen extends Screen {
         BoardGui.centeredShadow(g, this.font, width, "棋类大厅", 9, 0xFFFFD700);
         if (!s.inRoom()) {
             int top = contentTop();
-            // 提示区半透明黑底
-            g.fill(cx - 180, top + 92, cx + 180, top + 116, 0x55000000);
-            BoardGui.centeredShadow(g, this.font, width, "创建房间邀请好友一起玩，或输入房间码加入", top + 98, 0xFFAAAAAA);
-            BoardGui.centeredShadow(g, this.font, width, "提示：房主可用 /cardgames invite <玩家名> 邀请；对局中房间可在下方列表旁观", top + 110, 0xFF777777);
+            int lx = cx - 172;
+            // 创建区：金色区块标题 + 半透明背景（控件在 super.render 已绘制，此处画底）
+            BoardGui.centeredShadowAt(g, this.font, lx, "创建房间", top - 12, 0xFFFFD700);
+            g.fill(cx - 180, top - 4, cx + 180, top + 96, 0x44000000);
+            // 房间列表区：标题（含数量）+ 半透明背景 + 行文本（房间码金色 / 信息灰色）
+            int ly = listTop();
+            int maxRows = listMaxRows();
+            List<BoardClientState.RoomEntry> list = s.roomList;
+            int shown = Math.min(list.size(), maxRows);
+            int listBottom = ly + shown * 22 + 8;
+            BoardGui.centeredShadowAt(g, this.font, cx - 172, "房间列表（" + list.size() + " 个）", ly - 12, 0xFFFFD700);
+            g.fill(cx - 180, ly - 4, cx + 180, listBottom, 0x44000000);
+            if (list.isEmpty()) {
+                BoardGui.centeredShadow(g, this.font, width, "暂无房间，创建第一个房间吧", ly + 10, 0xFF888888);
+            } else {
+                for (int i = 0; i < shown; i++) {
+                    BoardClientState.RoomEntry e = list.get(i);
+                    int y = ly + i * 22;
+                    g.drawString(this.font, e.code(), lx + 60, y + 5, 0xFFFFD700, true);
+                    g.drawString(this.font, font.plainSubstrByWidth(e.line(), 228), lx + 118, y + 5, 0xFFDDDDDD, true);
+                }
+                if (list.size() > maxRows) {
+                    BoardGui.centeredShadow(g, this.font, width, "滚动滚轮查看全部房间", listBottom - 12, 0xFF888888);
+                }
+            }
             if (maxScroll() > 0) {
                 BoardGui.centeredShadow(g, this.font, width, "内容超出屏幕，滚动滚轮查看", height - 14, 0xFF888888);
             }
         } else {
             // 房间信息区半透明黑底
-            g.fill(cx - 200, 30, cx + 200, 120, 0x55000000);
+            g.fill(cx - 200, 30, cx + 200, 124, 0x55000000);
+            BoardGui.centeredShadow(g, this.font, width, "等待房间（满 2 人自动开始）", 34, 0xFFFFD700);
             BoardGui.centeredShadow(g, this.font, width,
-                    "房间 " + s.roomCode + "（" + s.gameType.displayName + sizeText() + "）", 34, 0xFFFFFF88);
-            BoardGui.centeredShadow(g, this.font, width, "玩家 " + s.roomSize() + " / 2", 50, 0xFFFFFFFF);
+                    "房间 " + s.roomCode + "（" + s.gameType.displayName + sizeText() + "）", 50, 0xFFFFFF88);
+            BoardGui.centeredShadow(g, this.font, width, "玩家 " + s.roomSize() + " / 2", 64, 0xFFFFFFFF);
             for (int i = 0; i < 2; i++) {
                 String line = (i == s.mySeat ? "▶ " : "  ") + (i + 1) + ". "
                         + (s.names[i] == null || s.names[i].isEmpty() ? "等待加入…" : s.names[i])
                         + "（" + s.sideName(i) + "方）";
-                BoardGui.centeredShadow(g, this.font, width, line, 68 + i * 14,
+                BoardGui.centeredShadow(g, this.font, width, line, 80 + i * 14,
                         i == s.mySeat ? 0xFFFFFF55 : 0xFFFFFFFF);
             }
-            BoardGui.centeredShadow(g, this.font, width, "满 2 人自动开始", 102, 0xFFAAAAAA);
+            BoardGui.centeredShadow(g, this.font, width,
+                    "提示：房主可用 /cardgames invite <玩家名> 邀请好友", 114, 0xFFAAAAAA);
         }
     }
 

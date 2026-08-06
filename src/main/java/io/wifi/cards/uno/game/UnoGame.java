@@ -211,13 +211,18 @@ public class UnoGame {
             reject(p, "这张牌不能打：需与当前颜色或点数相同（或使用万能牌）");
             return;
         }
-        UnoColor color = chosenColor;
+        UnoColor color;
         if (card.value().isWild()) {
             if (colorOrdinal < 0 || colorOrdinal >= UnoColor.values().length || !UnoColor.values()[colorOrdinal].isColored()) {
                 reject(p, "请先选择颜色");
                 return;
             }
             color = UnoColor.values()[colorOrdinal];
+        } else {
+            // 普通牌：当前有效颜色更新为所打牌的颜色。
+            // 此前保持旧值导致"同点数换色"（如红 5 上打绿 5）后仍按旧颜色判定，
+            // 顶牌显示绿色却打不出绿牌（canPlay 按旧颜色匹配被拒）
+            color = card.color();
         }
         p.hand().remove(card);
         discard.add(card);

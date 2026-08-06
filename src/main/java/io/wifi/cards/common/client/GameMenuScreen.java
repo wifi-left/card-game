@@ -28,9 +28,16 @@ public class GameMenuScreen extends Screen {
     private static final int ROW_H = 46;
     private static final int LIST_W = 320;
 
+    /** 刷新按钮冷却时长（毫秒）：客户端层防连点刷包；服务端另有 500ms 限频兜底绕过客户端的恶意发包。 */
+    private static final long REFRESH_COOLDOWN_MS = 1000;
+
     private final List<Entry> entries;
     /** 列表滚动偏移（≥0，滚轮向下滚动）。 */
     private float scroll;
+    /** 刷新按钮（冷却中禁用并显示剩余秒数）。 */
+    private Button refreshButton;
+    /** 上次刷新请求时间（毫秒）。 */
+    private long lastRefreshMillis;
 
     public GameMenuScreen(List<Entry> entries) {
         super(Component.literal("小游戏大厅"));
@@ -49,10 +56,33 @@ public class GameMenuScreen extends Screen {
 
     @Override
     protected void init() {
-        // 刷新按钮放标题条内（列表从 y=40 开始，避免窄窗口下与列表重叠、吞掉点击）
-        addRenderableWidget(Button.builder(Component.literal("刷新"), b ->
-                        ClientPlayNetworking.send(new MenuQueryC2S()))
-                .bounds(width - 66, 3, 60, 20).build());
+        // 刷新按钮放标题条内（列表从 y=40 开始，避免窄窗口下与列表重叠、吞掉点击）。
+        // 客户端冷却 + 服务端限频双层防海量请求
+        refreshButton = Button.builder(Component.literal("刷新"), b -> {
+            if (System.currentTimeMillis() - lastRefreshMillis < REFRESH_COOLDOWN_MS) {
+                return; // 冷却中（按钮已禁用，此处双保险）
+            }
+            lastRefreshMillis = System.currentTimeMillis();
+            ClientPlayNetworking.send(new MenuQueryC2S());
+        }).bounds(width - 66, 3, 60, 20).build();
+        addRenderableWidget(refreshButton);
+    }
+
+    /** 每 tick 更新刷新按钮冷却状态：冷却中禁用并显示剩余秒数，结束恢复可点。 */
+    @Override
+    public void tick() {
+        super.tick();
+        if (refreshButton == null) {
+            return;
+        }
+        long remaining = REFRESH_COOLDOWN_MS - (System.currentTimeMillis() - lastRefreshMillis);
+        if (remaining > 0) {
+            refreshButton.active = false;
+            refreshButton.setMessage(Component.literal("刷新(" + ((remaining + 999) / 1000) + "s)"));
+        } else {
+            refreshButton.active = true;
+            refreshButton.setMessage(Component.literal("刷新"));
+        }
     }
 
     /** 关闭菜单（Esc）：若正在某个小游戏中，恢复其界面（防回不去）；否则关闭到桌面。 */

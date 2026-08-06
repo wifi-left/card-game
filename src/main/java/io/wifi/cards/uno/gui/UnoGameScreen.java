@@ -21,6 +21,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.HashSet;
@@ -73,6 +74,8 @@ public class UnoGameScreen extends Screen {
     private int colorCardId = -1;
     /** 旁观者手牌面板滚动偏移（≥0，滚轮在面板上滚动；内容超高时查看全部手牌）。 */
     private float spectatorScroll;
+    /** 待打开聊天框（延迟到 tick 执行，避免同按键的字符事件被新聊天框接收）。 */
+    private boolean openChatPending;
 
     public UnoGameScreen() {
         super(Component.literal("UNO" + (UnoClientState.INSTANCE.debugView ? "（调试）" : "")));
@@ -131,6 +134,18 @@ public class UnoGameScreen extends Screen {
         super.onClose();
     }
 
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        Minecraft mc = Minecraft.getInstance();
+        // 按聊天绑定键（原版 options.keyChat，默认 T）打开聊天框；
+        // 延迟到 tick 打开：立即打开会把本次按键的 charTyped 字符（如 't'）打进输入框
+        if (mc.options.keyChat.matches(keyCode, scanCode)) {
+            openChatPending = true;
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
     /**
      * 被替换为子界面时调用：父类 removed() 会清空全部 widgets（含操作按钮），
      * 返回本界面时因签名未变不会重建 → 强制重置签名，下个 tick 重建按钮。
@@ -155,6 +170,11 @@ public class UnoGameScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
+        // 延迟打开聊天框（等本次按键的字符事件处理完毕，避免 't' 等字符进入输入框）
+        if (openChatPending) {
+            openChatPending = false;
+            Minecraft.getInstance().setScreen(new UnoChatScreen(this));
+        }
         UnoClientState s = UnoClientState.INSTANCE;
         // 用服务端下发的截止游戏刻计算剩余秒数：客户端 level.getGameTime() 与服务端同步，
         // 倒计时不受本地帧率/网络延迟影响
@@ -707,6 +727,15 @@ public class UnoGameScreen extends Screen {
             String event = this.font.plainSubstrByWidth(s.lastEvent, panelW - 12);
             UnoGui.centeredShadowAt(g, this.font, panelX + panelW / 2, event, 64, 0xFFFFFF88);
         }
+        // 当前有效颜色提示：顶牌为普通牌=其颜色；万能牌=出牌者所选颜色。
+        // 颜色文字用 Component + ChatFormatting 着色（与聊天栏颜色一致），
+        // 便于玩家快速判断可出的颜色
+        MutableComponent colorText = Component.literal("当前颜色：").append(
+                Component.literal(s.topColor.isColored() ? s.topColor.displayName() : "无")
+                        .withStyle(UnoGui.chatFormatting(s.topColor)));
+        int colorCx = panelX + panelW / 2;
+        g.drawString(this.font, colorText,
+                Math.max(0, colorCx - this.font.width(colorText) / 2), 80, 0xFFFFFFFF, true);
     }
 
     /** 中央面板宽（与 drawCenter 一致）。 */

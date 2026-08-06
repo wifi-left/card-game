@@ -67,9 +67,22 @@ public class BoardGameScreen extends Screen {
     /** 悬停格（落点预览），-1=无。 */
     private int hoverX = -1;
     private int hoverY = -1;
+    /** 待打开聊天框（延迟到 tick 执行，避免同按键的字符事件被新聊天框接收）。 */
+    private boolean openChatPending;
 
     public BoardGameScreen() {
         super(Component.literal("棋牌对局"));
+    }
+
+    /** 按聊天绑定键（原版 options.keyChat，默认 T）打开聊天框（参考斗地主）。 */
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.options.keyChat.matches(keyCode, scanCode)) {
+            openChatPending = true;
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     /** 旁观模式：服务端以 mySeat=-1 表示只读旁观（无操作权）。 */
@@ -126,6 +139,11 @@ public class BoardGameScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
+        // 延迟打开聊天框（等本次按键的字符事件处理完毕，避免 't' 等字符进入输入框）
+        if (openChatPending) {
+            openChatPending = false;
+            Minecraft.getInstance().setScreen(new BoardChatScreen(this));
+        }
         BoardClientState s = BoardClientState.INSTANCE;
         // 用服务端下发的截止游戏刻计算剩余秒数：客户端 level.getGameTime() 与服务端同步，
         // 倒计时不受本地帧率/网络延迟影响
@@ -347,7 +365,10 @@ public class BoardGameScreen extends Screen {
                 g.fill(sx, sy, sx + 6, sy + 6, 0xFF000000);
             }
         }
-        // 棋子
+        // 棋子（Tesselator 立即绘制）。关键：先 flush GuiGraphics 批处理缓冲——
+        // 棋盘底色/网格线等 fill 是延迟到渲染结束统一提交的，若不 flush，
+        // 棋子先画、棋盘底后提交会覆盖棋子，导致"棋盘可见但看不到棋子"
+        g.flush();
         int stoneR = (int) (CELL * 0.4);
         for (int y = 0; y < size(); y++) {
             for (int x = 0; x < size(); x++) {

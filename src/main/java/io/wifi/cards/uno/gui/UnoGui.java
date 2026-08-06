@@ -2,6 +2,7 @@ package io.wifi.cards.uno.gui;
 
 import io.wifi.cards.uno.card.UnoCard;
 import io.wifi.cards.uno.card.UnoColor;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -56,6 +57,17 @@ public final class UnoGui {
             case GREEN -> 0xFF55FF55;
             case BLUE -> 0xFF55AAFF;
             default -> 0xFFFFFFFF;
+        };
+    }
+
+    /** 颜色的聊天格式（当前颜色等文字着色用，与聊天栏颜色一致；色块绘制仍用 colorHighlight）。 */
+    public static ChatFormatting chatFormatting(UnoColor color) {
+        return switch (color) {
+            case RED -> ChatFormatting.RED;
+            case YELLOW -> ChatFormatting.YELLOW;
+            case GREEN -> ChatFormatting.GREEN;
+            case BLUE -> ChatFormatting.BLUE;
+            default -> ChatFormatting.GRAY;
         };
     }
 

@@ -32,7 +32,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class CommonPackets {
     private static final Logger LOGGER = LoggerFactory.getLogger("wifi-card-games");
 
-    /** 菜单刷新查询时间戳（MenuQueryC2S 频率限制，随断线清理）。 */
+    /** 菜单刷新查询时间戳（服务端限频 500ms：客户端刷新按钮另有 1s 冷却，
+     *  本限频兜底绕过客户端直接发包的恶意客户端，随断线清理）。 */
     private static final Map<UUID, Long> MENU_QUERY_TIMES = new ConcurrentHashMap<>();
 
     private CommonPackets() {
