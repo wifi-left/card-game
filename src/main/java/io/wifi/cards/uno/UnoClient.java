@@ -16,6 +16,7 @@ import io.wifi.cards.uno.network.UnoPackets.PassBroadcastS2C;
 import io.wifi.cards.uno.network.UnoPackets.PlayBroadcastS2C;
 import io.wifi.cards.uno.network.UnoPackets.ReconnectS2C;
 import io.wifi.cards.uno.network.UnoPackets.RoomClosedS2C;
+import io.wifi.cards.uno.network.UnoPackets.RoomListS2C;
 import io.wifi.cards.uno.network.UnoPackets.RoomStateS2C;
 import io.wifi.cards.uno.network.UnoPackets.SpectatorHandsS2C;
 import io.wifi.cards.uno.network.UnoPackets.TrustStateS2C;
@@ -95,6 +96,8 @@ public final class UnoClient {
                 ctx.client().execute(() -> state.onNotice(payload.message())));
         ClientPlayNetworking.registerGlobalReceiver(SpectatorHandsS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> state.onSpectatorHands(payload)));
+        ClientPlayNetworking.registerGlobalReceiver(RoomListS2C.TYPE, (payload, ctx) ->
+                ctx.client().execute(() -> state.onRoomList(payload)));
         // 管理员调试命令 /uno debug spectateui：虚拟旁观数据打开"（调试）"旁观界面
         ClientPlayNetworking.registerGlobalReceiver(DebugSpectatorS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> state.onDebugSpectator(payload)));

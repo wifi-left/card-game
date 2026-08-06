@@ -43,6 +43,7 @@ public final class DdzPackets {
     public static final ResourceLocation HISTORY_REQUEST = id("history_request");
     public static final ResourceLocation SPECTATE = id("spectate");
     public static final ResourceLocation SPECTATE_LEAVE = id("spectate_leave");
+    public static final ResourceLocation LOBBY_QUERY = id("lobby_query");
 
     // ---------------- S2C ----------------
 
@@ -63,6 +64,7 @@ public final class DdzPackets {
     public static final ResourceLocation TRUST_STATE = id("trust_state");
     public static final ResourceLocation HISTORY = id("history");
     public static final ResourceLocation SPECTATOR_HANDS = id("spectator_hands");
+    public static final ResourceLocation ROOM_LIST = id("room_list");
 
     // ---------------- Payload 定义 ----------------
 
@@ -602,6 +604,38 @@ public final class DdzPackets {
 
     // ---------------- 注册 ----------------
 
+    /** 大厅房间列表请求（C2S）：打开大厅时轮询（每 20 tick），服务端回发公开房间列表。 */
+    public record LobbyQueryC2S() implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<LobbyQueryC2S> TYPE = new CustomPacketPayload.Type<>(LOBBY_QUERY);
+        public static final StreamCodec<FriendlyByteBuf, LobbyQueryC2S> CODEC = StreamCodec.of(
+                (buf, value) -> {
+                },
+                buf -> new LobbyQueryC2S());
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    /** 大厅房间列表（S2C）：公开房间的平行数组（codes/lines/statuses 长度一致）。
+     *  status：0=等待中可加入 1=对局中可旁观 2=已结束。 */
+    public record RoomListS2C(String[] codes, String[] lines, byte[] statuses) implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<RoomListS2C> TYPE = new CustomPacketPayload.Type<>(ROOM_LIST);
+        public static final StreamCodec<FriendlyByteBuf, RoomListS2C> CODEC = StreamCodec.of(
+                (buf, value) -> {
+                    writeStrings(buf, value.codes());
+                    writeStrings(buf, value.lines());
+                    buf.writeByteArray(value.statuses());
+                },
+                buf -> new RoomListS2C(readStrings(buf), readStrings(buf), buf.readByteArray()));
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
     /** 注册全部 payload 类型 + 服务端接收器（主入口调用，客户端也会执行此方法）。 */
     public static void register() {
         PayloadTypeRegistry.playC2S().register(CreateRoomC2S.TYPE, CreateRoomC2S.CODEC);
@@ -617,6 +651,7 @@ public final class DdzPackets {
         PayloadTypeRegistry.playC2S().register(HistoryC2S.TYPE, HistoryC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(SpectateC2S.TYPE, SpectateC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(SpectateLeaveC2S.TYPE, SpectateLeaveC2S.CODEC);
+        PayloadTypeRegistry.playC2S().register(LobbyQueryC2S.TYPE, LobbyQueryC2S.CODEC);
 
         PayloadTypeRegistry.playS2C().register(RoomStateS2C.TYPE, RoomStateS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(GameStartS2C.TYPE, GameStartS2C.CODEC);
@@ -635,6 +670,7 @@ public final class DdzPackets {
         PayloadTypeRegistry.playS2C().register(TrustStateS2C.TYPE, TrustStateS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(HistoryS2C.TYPE, HistoryS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(SpectatorHandsS2C.TYPE, SpectatorHandsS2C.CODEC);
+        PayloadTypeRegistry.playS2C().register(RoomListS2C.TYPE, RoomListS2C.CODEC);
 
         registerServerReceivers();
     }
@@ -680,6 +716,8 @@ public final class DdzPackets {
                 ctx.server().execute(() -> guarded(() -> m.spectate(ctx.player(), payload.roomCode()))));
         ServerPlayNetworking.registerGlobalReceiver(SpectateLeaveC2S.TYPE, (payload, ctx) ->
                 ctx.server().execute(() -> guarded(() -> m.leaveSpectate(ctx.player()))));
+        ServerPlayNetworking.registerGlobalReceiver(LobbyQueryC2S.TYPE, (payload, ctx) ->
+                ctx.server().execute(() -> guarded(() -> m.sendRoomList(ctx.player()))));
     }
 
     /** 主线程任务防护：意外异常只记录日志，绝不让服务器崩溃。 */
@@ -689,5 +727,23 @@ public final class DdzPackets {
         } catch (Throwable t) {
             LOGGER.error("处理斗地主网络包异常", t);
         }
+    }
+
+    // ---------------- 序列化辅助 ----------------
+
+    private static void writeStrings(FriendlyByteBuf buf, String[] arr) {
+        buf.writeVarInt(arr.length);
+        for (String s : arr) {
+            buf.writeUtf(s);
+        }
+    }
+
+    private static String[] readStrings(FriendlyByteBuf buf) {
+        int n = buf.readVarInt();
+        String[] arr = new String[n];
+        for (int i = 0; i < n; i++) {
+            arr[i] = buf.readUtf();
+        }
+        return arr;
     }
 }

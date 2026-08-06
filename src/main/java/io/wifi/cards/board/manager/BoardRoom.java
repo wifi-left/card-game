@@ -3,14 +3,12 @@ package io.wifi.cards.board.manager;
 import io.wifi.cards.board.game.BoardGame;
 import io.wifi.cards.board.model.BoardGameType;
 import io.wifi.cards.board.model.BoardPhase;
-import io.wifi.cards.board.network.BoardPackets.NoticeS2C;
 import io.wifi.cards.board.network.BoardPackets.RoomStateS2C;
+import io.wifi.cards.common.Room;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -20,8 +18,7 @@ import java.util.UUID;
  * 调试假人：botNames[seat] 非空表示该座位是假人（members[seat] 为 null），
  * 假人由各游戏状态的托管逻辑自动行动。
  */
-public class BoardRoom {
-    public final String id;
+public class BoardRoom extends Room {
     public final BoardGameType gameType;
     /** 棋盘边长（黑白棋 8 / 五子棋 15 / 围棋 9 或 19）。 */
     public final int size;
@@ -31,25 +28,11 @@ public class BoardRoom {
     /** 成员（真人 + 假人）数量，即座位数。 */
     public int count = 0;
     public BoardGame game;
-    /** 结算完成时刻（毫秒），用于空闲房间自动销毁。 */
-    public long settledAtMillis = -1;
-    /** 旁观者（对局开始后可旁观，只读观看，不占座位）。 */
-    public final List<ServerPlayer> spectators = new ArrayList<>();
 
-    public BoardRoom(String id, BoardGameType gameType, int size) {
-        this.id = id;
+    public BoardRoom(String id, BoardGameType gameType, int size, boolean announce) {
+        super(id, announce);
         this.gameType = gameType;
         this.size = size;
-    }
-
-    public void addSpectator(ServerPlayer player) {
-        if (!spectators.contains(player)) {
-            spectators.add(player);
-        }
-    }
-
-    public void removeSpectator(ServerPlayer player) {
-        spectators.remove(player);
     }
 
     public boolean isBot(int seat) {
@@ -201,7 +184,7 @@ public class BoardRoom {
         for (int i = 0; i < 2; i++) {
             names[i] = seatName(i);
             uuids[i] = members[i] != null ? members[i].getUUID().toString() : "";
-            conn[i] = members[i] != null;
+            conn[i] = members[i] != null && isConnected(members[i]);
         }
         byte phaseOrdinal = (byte) phase().ordinal();
         byte gameTypeOrdinal = (byte) gameType.ordinal();
@@ -244,14 +227,5 @@ public class BoardRoom {
         if (isConnected(spectator, payload)) {
             ServerPlayNetworking.send(spectator, payload);
         }
-    }
-
-    /** 玩家连接是否仍可用（1.21.1 无公开的断线查询方法，用 fabric 的 canSend 判定）。 */
-    public static boolean isConnected(ServerPlayer player, CustomPacketPayload payload) {
-        return player != null && ServerPlayNetworking.canSend(player, payload.type());
-    }
-
-    public static boolean isConnected(ServerPlayer player) {
-        return player != null && ServerPlayNetworking.canSend(player, NoticeS2C.TYPE);
     }
 }

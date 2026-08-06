@@ -14,7 +14,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * 黑白棋对局状态机（8×8，服务端权威）。
+ * 黑白棋对局状态机（6/8/10 等偶数尺寸，服务端权威）。
  * <p>黑方（座位 0）先手；落子后若对方无合法着则自动停一手并继续本方回合
  * （无手动停一手按钮，标准规则）；双方均无合法着时终局数子定胜负。
  * 托管/超时由 {@link OthelloAi} 自动落子。</p>
@@ -26,7 +26,7 @@ public class OthelloGame extends BoardGame {
 
     @Override
     public void start() {
-        byte[] init = OthelloRules.initialBoard();
+        byte[] init = OthelloRules.initialBoard(size);
         System.arraycopy(init, 0, board, 0, init.length);
         over = false;
         winSeat = -1;
@@ -46,7 +46,7 @@ public class OthelloGame extends BoardGame {
             reject(seat, "还没轮到你落子");
             return;
         }
-        if (!OthelloRules.applyMove(board, x, y, colorOf(seat))) {
+        if (!OthelloRules.applyMove(board, size, x, y, colorOf(seat))) {
             reject(seat, "该位置不能落子");
             return;
         }
@@ -64,14 +64,14 @@ public class OthelloGame extends BoardGame {
     /** 落子后推进：对方无合法着 → 自动停一手，本方继续；双方均无着 → 终局数子。 */
     private void advanceAfterMove(int seat) {
         int next = 1 - seat;
-        List<int[]> nextMoves = OthelloRules.legalMoves(board, colorOf(next));
+        List<int[]> nextMoves = OthelloRules.legalMoves(board, size, colorOf(next));
         if (!nextMoves.isEmpty()) {
             turn(next);
             return;
         }
         room.broadcast(new PassBroadcastS2C((byte) next, room.seatName(next)));
         lastAction = room.seatName(next) + " 无棋可下，停一手";
-        if (OthelloRules.legalMoves(board, colorOf(seat)).isEmpty()) {
+        if (OthelloRules.legalMoves(board, size, colorOf(seat)).isEmpty()) {
             finish();
         } else {
             turn(seat); // 本方继续（若本方是托管会再次自动行动）
@@ -94,12 +94,12 @@ public class OthelloGame extends BoardGame {
 
     @Override
     protected void autoAct(int seat) {
-        int[] move = OthelloAi.findMove(board, colorOf(seat));
+        int[] move = OthelloAi.findMove(board, size, colorOf(seat));
         if (move == null) {
             // 托管方无合法着：自动停一手；对方也无着则终局
             room.broadcast(new PassBroadcastS2C((byte) seat, room.seatName(seat)));
             lastAction = room.seatName(seat) + " 无棋可下，停一手";
-            if (OthelloRules.legalMoves(board, colorOf(1 - seat)).isEmpty()) {
+            if (OthelloRules.legalMoves(board, size, colorOf(1 - seat)).isEmpty()) {
                 finish();
             } else {
                 turn(1 - seat);

@@ -43,7 +43,7 @@ public final class BoardCommands {
 
     public static void registerServer() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(Commands.literal("board")
+            dispatcher.register(Commands.literal("chess")
                     .executes(ctx -> openLobby(ctx.getSource()))
                     .then(Commands.literal("accept")
                             .then(Commands.argument("code", StringArgumentType.word())
@@ -276,22 +276,22 @@ public final class BoardCommands {
     private static DebugUiS2C randomDebugUi() {
         BoardGameType[] types = BoardGameType.values();
         BoardGameType type = types[RANDOM.nextInt(types.length)];
-        int size = type == BoardGameType.GO ? (RANDOM.nextBoolean() ? 9 : 19) : type.defaultSize;
+        int size = type.sizeOptions[RANDOM.nextInt(type.sizeOptions.length)];
         byte[] board = new byte[size * size];
         if (type == BoardGameType.OTHELLO) {
-            board = OthelloRules.initialBoard();
+            board = OthelloRules.initialBoard(size);
             byte player = OthelloRules.BLACK;
             for (int i = 0; i < 12; i++) {
-                List<int[]> moves = OthelloRules.legalMoves(board, player);
+                List<int[]> moves = OthelloRules.legalMoves(board, size, player);
                 if (moves.isEmpty()) {
                     player = (byte) (3 - player);
-                    moves = OthelloRules.legalMoves(board, player);
+                    moves = OthelloRules.legalMoves(board, size, player);
                     if (moves.isEmpty()) {
                         break;
                     }
                 }
                 int[] m = moves.get(RANDOM.nextInt(moves.size()));
-                OthelloRules.applyMove(board, m[0], m[1], player);
+                OthelloRules.applyMove(board, size, m[0], m[1], player);
                 player = (byte) (3 - player);
             }
         } else {
@@ -355,10 +355,10 @@ public final class BoardCommands {
                     + room.count + "/2 · " + phaseName(room.phase()))
                     .append(Component.literal(" [显示具体信息]").withStyle(style -> style
                             .withColor(ChatFormatting.GREEN)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/board debug room " + code))))
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/chess debug room " + code))))
                     .append(Component.literal(" [删除房间]").withStyle(style -> style
                             .withColor(ChatFormatting.RED)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/board debug roomdelete " + code))));
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/chess debug roomdelete " + code))));
             source.sendSuccess(() -> line, false);
         }
         return 1;

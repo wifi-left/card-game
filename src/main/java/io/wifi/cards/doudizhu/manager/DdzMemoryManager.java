@@ -7,6 +7,7 @@ import io.wifi.cards.doudizhu.game.DdzGame;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
 import io.wifi.cards.doudizhu.network.DdzPackets.NoticeS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomClosedS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.RoomListS2C;
 import io.wifi.cards.doudizhu.rule.DdzRuleSet;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.ChatFormatting;
@@ -49,6 +50,8 @@ public final class DdzMemoryManager {
     private final Map<UUID, String> playerRoomIds = new ConcurrentHashMap<>();
     /** 旁观者所属房间映射（旁观只读观看，不占座位、无成员会话）。 */
     private final Map<UUID, String> spectatorRoomIds = new ConcurrentHashMap<>();
+    /** 大厅列表查询时间戳（LobbyQueryC2S 频率限制，随断线清理）。 */
+    private final Map<UUID, Long> lobbyQueryTimes = new ConcurrentHashMap<>();
 
     private DdzMemoryManager() {
     }
@@ -74,7 +77,7 @@ public final class DdzMemoryManager {
             error(player, "房间数量已达上限，请稍后再试");
             return;
         }
-        DdzRoom room = new DdzRoom(generateCode(), flowerMode, ruleSet);
+        DdzRoom room = new DdzRoom(generateCode(), flowerMode, ruleSet, announce);
         room.addPlayer(player);
         rooms.put(room.id, room);
         playerRoomIds.put(player.getUUID(), room.id);
@@ -246,6 +249,12 @@ public final class DdzMemoryManager {
                     cards.add(DdzCard.byId(id));
                 }
             }
+            // 防御：过滤后为空（全部非法 id）等价于"不出"，拒绝——
+            // 空数组不允许的语义必须保持，防伪装（"不出"必须走 PassC2S）
+            if (cards.isEmpty()) {
+                error(player, "请选择要出的牌");
+                return;
+            }
             game.onPlay(player, cards);
         }
     }
@@ -295,6 +304,7 @@ public final class DdzMemoryManager {
      * 等待/结算中 → 视为离开（不满 3 人解散）。
      */
     public void onPlayerDisconnect(ServerPlayer player) {
+        lobbyQueryTimes.remove(player.getUUID()); // 清理频率限制记录，防 Map 泄漏
         // 旁观者：清理旁观关系后直接返回（无成员会话）
         String specId = spectatorRoomIds.remove(player.getUUID());
         if (specId != null) {
@@ -313,7 +323,9 @@ public final class DdzMemoryManager {
         if (phase == DdzGamePhase.WAITING || phase == DdzGamePhase.SETTLED) {
             removeFromRoom(player, room, true);
         } else {
+            // 对局中掉线：座位转机器人托管，对局继续；广播状态让其余玩家看到离线标记
             room.game.onPlayerDisconnect(room.seatOf(player));
+            room.broadcastState();
         }
     }
 
@@ -332,12 +344,15 @@ public final class DdzMemoryManager {
             return;
         }
         DdzGamePhase phase = room.phase();
-        if (phase == DdzGamePhase.WAITING || phase == DdzGamePhase.SETTLED) {
-            // 等待/结算中断线已按离开处理（会话已清除），理论不会到达；防御性兜底关闭房间
+        if (phase == DdzGamePhase.WAITING) {
+            // 等待中断线已按离开处理（会话已清除），理论不会到达；防御性兜底关闭房间
             room.broadcast(new RoomClosedS2C(player.getGameProfile().getName() + " 重连发现旧房间，房间已关闭"));
             destroyRoomInternal(room);
             return;
         }
+        // 对局中（PLAYING）掉线托管续玩、或对局已结算（SETTLED）后重连：
+        // 会话仍有效，正常替换连接引用并同步快照（SETTLED 重连可看结算结果，
+        // 房间本可保留至 60 秒空闲销毁——不能销毁房间把其他成员一起踢回大厅）
         int seat = room.replacePlayerByUuid(player.getUUID(), player);
         if (seat < 0) {
             // 找不到对应座位（理论不会发生）→ 防御性关闭房间
@@ -437,6 +452,40 @@ public final class DdzMemoryManager {
     /** 按房间码查找房间（管理命令用），不存在返回 null。 */
     public DdzRoom roomByCode(String code) {
         return rooms.get(cleanCode(code));
+    }
+
+    /** 大厅房间列表下发（LobbyQueryC2S 响应）：仅公开房间（创建时"公布房间"开启）。
+     *  等待中可加入 / 对局中可旁观 / 已结束仅展示。
+     *  带频率限制（最小间隔 500ms/玩家）：恶意客户端高频刷包会占用服务端主线程与带宽。 */
+    public void sendRoomList(ServerPlayer player) {
+        long now = System.currentTimeMillis();
+        Long last = lobbyQueryTimes.get(player.getUUID());
+        if (last != null && now - last < 500) {
+            return;
+        }
+        lobbyQueryTimes.put(player.getUUID(), now);
+        List<DdzRoom> list = new ArrayList<>();
+        for (DdzRoom r : roomSnapshot()) {
+            if (r.announce) {
+                list.add(r);
+            }
+        }
+        String[] codes = new String[list.size()];
+        String[] lines = new String[list.size()];
+        byte[] statuses = new byte[list.size()];
+        for (int i = 0; i < list.size(); i++) {
+            DdzRoom r = list.get(i);
+            codes[i] = r.id;
+            String phaseText = switch (r.phase()) {
+                case WAITING -> "等待中";
+                case SETTLED -> "已结束";
+                default -> "对局中";
+            };
+            lines[i] = (r.flowerMode ? "花牌" : "经典") + " · 玩家 " + r.size + "/3 · " + phaseText;
+            statuses[i] = (byte) (r.phase() == DdzGamePhase.WAITING ? 0
+                    : r.phase() == DdzGamePhase.SETTLED ? 2 : 1);
+        }
+        ServerPlayNetworking.send(player, new RoomListS2C(codes, lines, statuses));
     }
 
     /** 删除指定房间（通知成员后销毁）；返回错误信息或 null。 */
@@ -634,7 +683,7 @@ public final class DdzMemoryManager {
 
     /** 房间码规范化：去掉本游戏前缀（兼容 "DZ-XXXXX" 完整码与裸码 "XXXXX" 两种输入）。 */
     private static String cleanCode(String code) {
-        String norm = code.toUpperCase().trim();
+        String norm = code == null ? "" : code.toUpperCase().trim();
         return norm.startsWith(GameRegistry.PREFIX_DOUDIZHU + "-") ? norm.substring(3) : norm;
     }
 

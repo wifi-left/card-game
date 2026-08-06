@@ -1,16 +1,14 @@
 package io.wifi.cards.doudizhu.manager;
 
+import io.wifi.cards.common.Room;
 import io.wifi.cards.doudizhu.game.DdzGame;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
-import io.wifi.cards.doudizhu.network.DdzPackets.NoticeS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomStateS2C;
 import io.wifi.cards.doudizhu.rule.DdzRuleSet;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -20,8 +18,7 @@ import java.util.UUID;
  * 调试假人：botNames[seat] 非空表示该座位是假人（members[seat] 为 null），
  * 假人由 DdzGame 的托管逻辑自动行动。
  */
-public class DdzRoom {
-    public final String id;
+public class DdzRoom extends Room {
     public final boolean flowerMode;
     public final DdzRuleSet ruleSet;
     public final ServerPlayer[] members = new ServerPlayer[3];
@@ -29,25 +26,11 @@ public class DdzRoom {
     public final String[] botNames = new String[3];
     public int size = 0;
     public DdzGame game;
-    /** 结算完成时刻（毫秒），用于空闲房间自动销毁。 */
-    public long settledAtMillis = -1;
-    /** 旁观者（对局开始后可旁观，只读观看，不占座位）。 */
-    public final List<ServerPlayer> spectators = new ArrayList<>();
 
-    public DdzRoom(String id, boolean flowerMode, DdzRuleSet ruleSet) {
-        this.id = id;
+    public DdzRoom(String id, boolean flowerMode, DdzRuleSet ruleSet, boolean announce) {
+        super(id, announce);
         this.flowerMode = flowerMode;
         this.ruleSet = ruleSet;
-    }
-
-    public void addSpectator(ServerPlayer player) {
-        if (!spectators.contains(player)) {
-            spectators.add(player);
-        }
-    }
-
-    public void removeSpectator(ServerPlayer player) {
-        spectators.remove(player);
     }
 
     public boolean isBot(int seat) {
@@ -212,7 +195,7 @@ public class DdzRoom {
         for (int i = 0; i < 3; i++) {
             names[i] = seatName(i);
             uuids[i] = members[i] != null ? members[i].getUUID().toString() : "";
-            conn[i] = members[i] != null;
+            conn[i] = members[i] != null && isConnected(members[i]);
         }
         byte phaseOrdinal = (byte) phase().ordinal();
         byte ruleSetOrdinal = (byte) ruleSet.ordinal();
@@ -255,14 +238,5 @@ public class DdzRoom {
         if (isConnected(spectator, payload)) {
             ServerPlayNetworking.send(spectator, payload);
         }
-    }
-
-    /** 玩家连接是否仍可用（1.21.1 无公开的断线查询方法，用 fabric 的 canSend 判定）。 */
-    public static boolean isConnected(ServerPlayer player, CustomPacketPayload payload) {
-        return player != null && ServerPlayNetworking.canSend(player, payload.type());
-    }
-
-    public static boolean isConnected(ServerPlayer player) {
-        return player != null && ServerPlayNetworking.canSend(player, NoticeS2C.TYPE);
     }
 }

@@ -18,7 +18,7 @@ public final class GameRegistry {
 
     public static final String GAME_DOUDIZHU = "doudizhu";
     public static final String GAME_UNO = "uno";
-    public static final String GAME_BOARD = "board";
+    public static final String GAME_BOARD = "chess";
 
     // ---- 房间码前缀（统一格式：前缀-5位码） ----
 

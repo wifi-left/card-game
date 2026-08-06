@@ -1,6 +1,7 @@
 package io.wifi.cards.board.gui;
 
 import io.wifi.cards.common.GameRegistry;
+import io.wifi.cards.common.client.AbstractLobbyScreen;
 import io.wifi.cards.common.client.GameClientSession;
 import io.wifi.cards.board.model.BoardGameType;
 import io.wifi.cards.board.model.BoardPhase;
@@ -60,10 +61,8 @@ public final class BoardClientState implements GameClientSession {
     public byte resultReason;
 
     // ---- 大厅房间列表 ----
-    /** 一条大厅房间条目。status：0=等待中可加入 1=对局中可旁观 2=已结束。 */
-    public record RoomEntry(String code, String line, byte status) {
-    }
-    public final List<RoomEntry> roomList = new ArrayList<>();
+    /** 大厅房间列表（由 RoomListS2C 填充，仅公开房间；条目类型见 AbstractLobbyScreen.RoomEntry）。 */
+    public final List<AbstractLobbyScreen.RoomEntry> roomList = new ArrayList<>();
 
     /** 调试旁观模式（/board debug ui）：无真实房间的随机虚拟对局，仅供 UI 检查；
      *  任何真实服务端状态包到达时清除（见各 onXxx 入口）。 */
@@ -265,7 +264,7 @@ public final class BoardClientState implements GameClientSession {
         byte[] statuses = payload.statuses();
         int n = Math.min(codes.length, Math.min(lines.length, statuses.length));
         for (int i = 0; i < n; i++) {
-            roomList.add(new RoomEntry(codes[i], lines[i], statuses[i]));
+            roomList.add(new AbstractLobbyScreen.RoomEntry(codes[i], lines[i], statuses[i]));
         }
         if (Minecraft.getInstance().screen instanceof BoardLobbyScreen lobby) {
             lobby.onRoomListChanged();
@@ -316,7 +315,7 @@ public final class BoardClientState implements GameClientSession {
         if (mc.player == null) {
             return;
         }
-        mc.gui.getChat().addMessage(Component.literal("[棋牌] 已" + closedDesc + "，输入 /board 或 ")
+        mc.gui.getChat().addMessage(Component.literal("[棋牌] 已" + closedDesc + "，输入 /chess 或 ")
                 .append(Component.literal("[点击此处]").withStyle(style -> style
                         .withColor(ChatFormatting.GREEN)
                         .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/board"))))

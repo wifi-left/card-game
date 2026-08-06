@@ -1,4 +1,4 @@
-package io.wifi.cards.doudizhu.gui;
+package io.wifi.cards.common.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -7,14 +7,16 @@ import net.minecraft.client.gui.screens.Screen;
 
 /**
  * 打牌界面内的聊天屏（纯客户端）：原版聊天框的子类。
- * <p>原版 ChatScreen 在 Esc / 发送消息后会直接 <code>setScreen(null)</code>（回到游戏 HUD），
+ * <p>
+ * 原版 ChatScreen 在 Esc / 发送消息后会直接 <code>setScreen(null)</code>（回到游戏 HUD），
  * 这里覆盖 keyPressed 的 Esc/Enter 分支，关掉聊天框后回到打开前的打牌界面；
- * 背景渲染打牌界面（聊天历史由本类自行渲染，避免与打牌界面常驻聊天区重复）。</p>
+ * 背景渲染打牌界面（聊天历史由本类自行渲染，避免与打牌界面常驻聊天区重复）。
+ * </p>
  */
-public class DdzChatScreen extends ChatScreen {
+public class CardGameChatScreen extends ChatScreen {
     private final Screen parent;
 
-    public DdzChatScreen(Screen parent) {
+    public CardGameChatScreen(Screen parent) {
         super("");
         this.parent = parent;
     }
@@ -26,18 +28,12 @@ public class DdzChatScreen extends ChatScreen {
     }
 
     @Override
-    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {        if (parent != null) {
+    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        if (parent != null) {
             // 背景：打牌界面（聊天历史由下方 ChatComponent 渲染，打牌界面本身不绘制聊天区）
             parent.render(g, 0, 0, partialTick);
-            // 原版聊天内容：历史消息 + 输入框（不画虚化背景）
-            Minecraft mc = Minecraft.getInstance();
-            mc.gui.getChat().render(g, mc.gui.getGuiTicks(), mouseX, mouseY, true);
-            g.fill(2, height - 14, width - 2, height - 2,
-                    mc.options.getBackgroundColor(Integer.MIN_VALUE));
-            this.input.render(g, mouseX, mouseY, partialTick);
-        } else {
-            super.render(g, mouseX, mouseY, partialTick);
         }
+        super.render(g, mouseX, mouseY, partialTick);
     }
 
     @Override

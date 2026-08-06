@@ -1,40 +1,44 @@
 package io.wifi.cards.uno.gui;
 
 import io.wifi.cards.common.GameRegistry;
-import io.wifi.cards.common.client.GameMenuClient;
-import io.wifi.cards.common.network.CommonPackets.MenuQueryC2S;
+import io.wifi.cards.common.client.AbstractLobbyScreen;
+import io.wifi.cards.common.client.LobbyPrefs;
 import io.wifi.cards.uno.network.UnoPackets.CreateRoomC2S;
 import io.wifi.cards.uno.network.UnoPackets.JoinRoomC2S;
 import io.wifi.cards.uno.network.UnoPackets.LeaveRoomC2S;
+import io.wifi.cards.uno.network.UnoPackets.LobbyQueryC2S;
+import io.wifi.cards.uno.network.UnoPackets.SpectateC2S;
 import io.wifi.cards.uno.network.UnoPackets.StartGameC2S;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
+import java.util.List;
+
 /**
- * 大厅界面：
+ * UNO 大厅界面（继承 {@link AbstractLobbyScreen}，共享标题条/主菜单/房间列表/复制/滚动）：
  * <ul>
- *   <li>未在房间：选择是否公布房间到聊天栏、创建房间（可带 0~3 个机器人）、
- *       输入房间码加入</li>
+ *   <li>未在房间：选择是否公布房间到聊天栏、创建房间（可带 0~9 个机器人）、
+ *       输入房间码加入、公开房间列表（可加入/旁观/复制房间码）</li>
  *   <li>已在房间（等待中）：显示房间码/成员列表（最多 10 人），
- *       房主（座位 0）可点"开始游戏"（至少 2 人），其余玩家等待；可离开</li>
+ *       房主（座位 0）可点"开始游戏"（至少 2 人），其余玩家等待；可离开（点击房间码可复制）；
+ *       成员多时房间信息区可滚动</li>
  * </ul>
  */
-public class UnoLobbyScreen extends Screen {
+public class UnoLobbyScreen extends AbstractLobbyScreen {
     /** 创建房间时是否公布到聊天栏（全服玩家可点击加入）。 */
     private boolean announce = true;
-    /** 创建房间时加入的机器人数量（0~3 补位）。 */
+    /** 创建房间时加入的机器人数量（0~9 补位）。 */
     private int botCount;
-    private EditBox codeBox;
-    /** 内容区滚动偏移（≤0，小窗口内容超高时滚轮上移）。 */
-    private float scroll;
 
     public UnoLobbyScreen() {
-        super(Component.literal("UNO 大厅"));
+        super("UNO 大厅");
+        // 记住上次开房间的选项（客户端 config 持久化），下次打开默认选中
+        announce = LobbyPrefs.getBool(GameRegistry.GAME_UNO, "announce", true);
+        botCount = Math.max(0, Math.min(LobbyPrefs.getInt(GameRegistry.GAME_UNO, "botCount", 0), 9));
     }
 
     @Override
@@ -47,35 +51,85 @@ public class UnoLobbyScreen extends Screen {
     public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
     }
 
-    /** 关闭大厅（Esc）：等待玩家中关闭时提示可通过命令/点击重新打开；
-     *  从菜单进入本大厅后关闭时，若其它游戏有进行中的会话则恢复其界面。 */
+    // ---------------- 基类钩子 ----------------
+
     @Override
-    public void onClose() {
-        if (GameMenuClient.tryRestoreOtherSession(GameRegistry.GAME_UNO)) {
-            return;
-        }
-        if (UnoClientState.INSTANCE.inRoom()) {
-            UnoClientState.chatReopenHint("关闭大厅");
-        }
-        super.onClose();
+    protected String gameId() {
+        return GameRegistry.GAME_UNO;
     }
 
-    // ---------------- 内容区布局（两列紧凑 + 滚轮滚动兜底） ----------------
+    @Override
+    protected boolean inRoomState() {
+        return UnoClientState.INSTANCE.inRoom();
+    }
 
-    /** 内容区顶部 y（随滚动偏移）。 */
-    private int contentTop() {
+    @Override
+    protected String lobbyTitle() {
+        return "UNO 大厅";
+    }
+
+    @Override
+    protected int contentTop() {
         return Math.max(50, (height - 160) / 2) + (int) scroll;
     }
 
-    /** 内容区底部 y（提示文本末行 + 边距）。 */
-    private int contentBottom() {
-        return contentTop() + 124;
+    @Override
+    protected void sendRoomQuery() {
+        ClientPlayNetworking.send(new LobbyQueryC2S());
     }
 
-    /** 内容超高时允许的滚动量（0 = 无需滚动）。 */
-    private int maxScroll() {
-        return Math.max(0, contentBottom() - (height - 30));
+    @Override
+    protected List<? extends RoomEntry> lobbyRoomList() {
+        return UnoClientState.INSTANCE.roomList;
     }
+
+    @Override
+    protected void joinRoom(String code) {
+        ClientPlayNetworking.send(new JoinRoomC2S(code));
+    }
+
+    @Override
+    protected void spectateRoom(String code) {
+        ClientPlayNetworking.send(new SpectateC2S(code));
+    }
+
+    @Override
+    protected void lobbyChat(String message) {
+        UnoClientState.chat(message);
+    }
+
+    @Override
+    protected String currentRoomCode() {
+        return UnoClientState.INSTANCE.roomCode;
+    }
+
+    @Override
+    protected int[] roomInfoCodeRect() {
+        if (!inRoomState()) {
+            return null;
+        }
+        // 房间信息区"房间 XXX"行（y = roomTop+4，行高 9，放宽点击区）
+        return new int[]{width / 2 - 200, roomTop(), width / 2 + 200, roomTop() + 18};
+    }
+
+    @Override
+    protected void reopenHint() {
+        UnoClientState.chatReopenHint("关闭大厅");
+    }
+
+    /** 房间操作按钮（离开房间）区底部 y："关闭界面"按钮放在其下方（随房间区滚动）。 */
+    @Override
+    protected int roomActionBottomY() {
+        return roomTop() + roomInfoH() + 8 + 52;
+    }
+
+    /** 房间视图内容超高时同样可滚动（成员多的小窗口）。 */
+    @Override
+    protected int scrollLimit() {
+        return inRoomState() ? roomMaxScroll() : maxScroll();
+    }
+
+    // ---------------- 房间信息区布局（成员多时滚动） ----------------
 
     /** 房间信息区顶部 y（随滚动偏移）。 */
     private int roomTop() {
@@ -88,9 +142,9 @@ public class UnoLobbyScreen extends Screen {
         return 30 + s.names.size() * 14 + 16;
     }
 
-    /** 房间内容区底部（信息面板 + 开始/离开按钮行）。 */
+    /** 房间内容区底部（信息面板 + 开始/离开/关闭界面按钮行）。 */
     private int roomBottom() {
-        return roomTop() + roomInfoH() + 8 + 48;
+        return roomTop() + roomInfoH() + 8 + 72;
     }
 
     /** 房间内容超高时允许的滚动量（0 = 无需滚动）。 */
@@ -98,52 +152,30 @@ public class UnoLobbyScreen extends Screen {
         return Math.max(0, roomBottom() - (height - 30));
     }
 
-    /** 滚动后重建全部控件（位置随 contentTop/roomTop 变化）。 */
-    private void rebuild() {
-        // 保留输入框内容（滚动重建会重新创建 EditBox，直接重建会清空已输入的房间码）
-        String prevCode = codeBox != null ? codeBox.getValue() : "";
-        clearWidgets();
-        init();
-        if (codeBox != null && !prevCode.isEmpty()) {
-            codeBox.setValue(prevCode);
-        }
-    }
+    // ---------------- 内容区控件 ----------------
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        UnoClientState s = UnoClientState.INSTANCE;
-        int limit = s.inRoom() ? roomMaxScroll() : maxScroll();
-        if (limit > 0) {
-            scroll -= (float) verticalAmount * 10;
-            scroll = Math.max(-limit, Math.min(0, scroll));
-            rebuild();
-            return true;
-        }
-        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
-    }
-
-    @Override
-    protected void init() {
-        clearWidgets(); // 滚动重建时防重复添加
+    protected void buildContent() {
         UnoClientState s = UnoClientState.INSTANCE;
         int cx = width / 2;
-        // 返回小游戏菜单（发刷新请求，服务端回发菜单数据打开菜单界面）
-        addRenderableWidget(Button.builder(Component.literal("主菜单"), b ->
-                        ClientPlayNetworking.send(new MenuQueryC2S()))
-                .bounds(width - 110, 32, 100, 20).build());
         if (!s.inRoom()) {
-            // 两列紧凑布局：左列选项（公布/机器人），右列操作（创建/输入框/加入）
+            // 两列对称布局：左右各 3 个控件（左：公布/机器人/规则介绍，右：创建/输入框/加入）
             int top = contentTop();
             int lx = cx - 172;
             int rx = cx + 12;
             addRenderableWidget(Button.builder(Component.literal("公布房间：" + (announce ? "开" : "关")), b -> {
                 announce = !announce;
+                LobbyPrefs.set(GameRegistry.GAME_UNO, "announce", announce);
                 b.setMessage(Component.literal("公布房间：" + (announce ? "开" : "关")));
             }).bounds(lx, top, 160, 20).build());
             addRenderableWidget(Button.builder(Component.literal("机器人：" + (botCount == 0 ? "关" : botCount + " 个")), b -> {
-                botCount = (botCount + 1) % 4; // 关 → 1 个 → 2 个 → 3 个
+                botCount = (botCount + 1) % 10; // 关 → 1~9 个（房间最多 10 人）
+                LobbyPrefs.set(GameRegistry.GAME_UNO, "botCount", botCount);
                 b.setMessage(Component.literal("机器人：" + (botCount == 0 ? "关" : botCount + " 个")));
             }).bounds(lx, top + 24, 160, 20).build());
+            addRenderableWidget(Button.builder(Component.literal("规则介绍"), b ->
+                    Minecraft.getInstance().setScreen(new UnoRulesScreen()))
+                    .bounds(lx, top + 48, 160, 20).build());
             addRenderableWidget(Button.builder(Component.literal("创建房间"), b ->
                     ClientPlayNetworking.send(new CreateRoomC2S(announce, (byte) botCount)))
                     .bounds(rx, top, 160, 20).build());
@@ -154,9 +186,6 @@ public class UnoLobbyScreen extends Screen {
             addRenderableWidget(Button.builder(Component.literal("加入房间"), b ->
                     ClientPlayNetworking.send(new JoinRoomC2S(codeBox.getValue().trim().toUpperCase())))
                     .bounds(rx, top + 48, 160, 20).build());
-            addRenderableWidget(Button.builder(Component.literal("规则介绍"), b ->
-                    Minecraft.getInstance().setScreen(new UnoRulesScreen()))
-                    .bounds(rx, top + 72, 160, 20).build());
         } else {
             // 房主（座位 0）开始游戏（至少 2 人）；其余玩家等待提示。
             // 按钮位于成员列表下方（随滚动偏移），小窗口下列表超高时可滚动查看
@@ -174,24 +203,25 @@ public class UnoLobbyScreen extends Screen {
         }
     }
 
+    // ---------------- 渲染 ----------------
+
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        // 顶部标题条先绘制（主菜单按钮位于标题条内右上角，super.render 后渲染按钮盖住标题条半透明底）
+        drawTitleBar(g);
         // 背景与控件由 super 渲染（renderBackground 已覆盖为空，无全局虚化），自定义内容绘制在其上
         super.render(g, mouseX, mouseY, partialTick);
         UnoClientState s = UnoClientState.INSTANCE;
         int cx = width / 2;
-        // 顶部标题条
-        g.fill(0, 0, width, 26, 0x66000000);
-        UnoGui.centeredShadow(g, this.font, width, "UNO 大厅", 9, 0xFFFFD700);
         if (!s.inRoom()) {
             int top = contentTop();
+            int lx = cx - 172;
             // 提示区半透明黑底（位于内容区下方，不与按钮重叠）
             g.fill(cx - 180, top + 94, cx + 180, top + 126, 0x55000000);
             UnoGui.centeredShadow(g, this.font, width, "创建房间邀请好友一起玩，或输入房间码加入", top + 100, 0xFFAAAAAA);
             UnoGui.centeredShadow(g, this.font, width, "提示：房主可用 /cardgames invite <玩家名> 邀请", top + 114, 0xFF777777);
-            if (maxScroll() > 0) {
-                UnoGui.centeredShadow(g, this.font, width, "内容超出屏幕，滚动滚轮查看", height - 14, 0xFF888888);
-            }
+            // 公开房间列表（标题 + 行文本 + 滚动条，点击行操作按钮加入/旁观、点房间码复制）
+            drawRoomList(g);
         } else {
             // 房间信息区半透明黑底（随滚动偏移，覆盖到最底部提示行）
             int top = roomTop();

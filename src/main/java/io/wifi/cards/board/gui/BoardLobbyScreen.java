@@ -7,43 +7,64 @@ import io.wifi.cards.board.network.BoardPackets.LeaveRoomC2S;
 import io.wifi.cards.board.network.BoardPackets.LobbyQueryC2S;
 import io.wifi.cards.board.network.BoardPackets.SpectateC2S;
 import io.wifi.cards.common.GameRegistry;
-import io.wifi.cards.common.client.GameMenuClient;
-import io.wifi.cards.common.network.CommonPackets.MenuQueryC2S;
+import io.wifi.cards.common.client.AbstractLobbyScreen;
+import io.wifi.cards.common.client.LobbyPrefs;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
 import java.util.List;
 
 /**
- * 棋类统一大厅（黑白棋/五子棋/围棋共用一个大厅）：
+ * 棋类统一大厅（黑白棋/五子棋/围棋共用一个大厅，继承 {@link AbstractLobbyScreen}，
+ * 共享标题条/主菜单/房间列表/复制/滚动）：
  * <ul>
- *   <li>未在房间：选择游戏（黑白棋/五子棋/围棋）、围棋可选 9/19 路、是否公布房间到聊天栏、
- *       机器人数量（围棋禁用）、创建房间、输入房间码加入、进行中房间列表（等待中可加入 / 对局中可旁观）</li>
- *   <li>已在房间（等待中）：显示房间码/游戏/尺寸/成员，可离开</li>
+ *   <li>未在房间：选择游戏与棋盘尺寸（黑白棋 6/8/10、五子棋 11/13/15/19、围棋 9/13/19 路）、
+ *       是否公布房间到聊天栏、机器人数量（围棋禁用）、创建房间、输入房间码加入、
+ *       进行中房间列表（等待中可加入 / 对局中可旁观，点击房间码可复制）</li>
+ *   <li>已在房间（等待中）：显示房间码/游戏/尺寸/成员，可离开（点击房间码可复制）</li>
  * </ul>
  * 房间列表由 LobbyQueryC2S 轮询刷新（打开时 + 每 20 tick），内容变化时重建控件。
  */
-public class BoardLobbyScreen extends Screen {
+public class BoardLobbyScreen extends AbstractLobbyScreen {
     private BoardGameType selected = BoardGameType.OTHELLO;
-    /** 围棋棋盘尺寸（9/19），其他游戏固定。 */
+    /** 各游戏当前选择的棋盘尺寸（切换游戏时各自保留）。 */
+    private int othelloSize = 8;
+    private int gomokuSize = 15;
     private int goSize = 9;
     /** 创建房间时是否公布到聊天栏（全服玩家可点击加入）。 */
     private boolean announce = true;
     /** 创建房间时是否加入 1 个机器人（围棋无 AI 禁用）。 */
     private boolean botOn;
-    private EditBox codeBox;
-    /** 内容区滚动偏移（≤0，小窗口内容超高时滚轮上移）。 */
-    private float scroll;
-    /** 房间列表摘要（内容变化才重建，避免每 tick 闪烁）。 */
-    private String listSignature = "";
 
     public BoardLobbyScreen() {
-        super(Component.literal("棋类大厅"));
+        super("棋类大厅");
+        // 记住上次开房间的选项（客户端 config 持久化），下次打开默认选中；
+        // 防御：越界/非法值回退默认（config 文件被手改/版本变化时）
+        int typeOrd = LobbyPrefs.getInt(GameRegistry.GAME_BOARD, "gameType", 0);
+        selected = typeOrd >= 0 && typeOrd < BoardGameType.values().length
+                ? BoardGameType.values()[typeOrd] : BoardGameType.OTHELLO;
+        othelloSize = validSize(BoardGameType.OTHELLO.sizeOptions,
+                LobbyPrefs.getInt(GameRegistry.GAME_BOARD, "othelloSize", 8), 8);
+        gomokuSize = validSize(BoardGameType.GOMOKU.sizeOptions,
+                LobbyPrefs.getInt(GameRegistry.GAME_BOARD, "gomokuSize", 15), 15);
+        goSize = validSize(BoardGameType.GO.sizeOptions,
+                LobbyPrefs.getInt(GameRegistry.GAME_BOARD, "goSize", 9), 9);
+        announce = LobbyPrefs.getBool(GameRegistry.GAME_BOARD, "announce", true);
+        botOn = LobbyPrefs.getBool(GameRegistry.GAME_BOARD, "botOn", false);
+    }
+
+    /** 校验持久化的尺寸是否是该游戏的可选尺寸之一；非法回退默认。 */
+    private static int validSize(int[] options, int value, int def) {
+        for (int opt : options) {
+            if (opt == value) {
+                return value;
+            }
+        }
+        return def;
     }
 
     @Override
@@ -56,105 +77,96 @@ public class BoardLobbyScreen extends Screen {
     public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
     }
 
-    /** 关闭大厅（Esc）：等待玩家中关闭时提示可通过命令/点击重新打开；
-     *  从菜单进入本大厅后关闭时，若其它游戏有进行中的会话则恢复其界面。 */
+    // ---------------- 基类钩子 ----------------
+
     @Override
-    public void onClose() {
-        if (GameMenuClient.tryRestoreOtherSession(GameRegistry.GAME_BOARD)) {
-            return;
-        }
-        if (BoardClientState.INSTANCE.inRoom()) {
-            BoardClientState.chatReopenHint("关闭大厅");
-        }
-        super.onClose();
+    protected String gameId() {
+        return GameRegistry.GAME_BOARD;
     }
 
-    /** 大厅内每 20 tick 轮询房间列表（服务端快照下发生成，无专门推送通道）；
-     *  已在房间等待中时界面为房间信息视图，无需刷新列表，停止轮询。 */
     @Override
-    public void tick() {
-        super.tick();
-        if (++queryCounter >= 20) {
-            queryCounter = 0;
-            if (!BoardClientState.INSTANCE.inRoom()) {
-                ClientPlayNetworking.send(new LobbyQueryC2S());
-            }
-        }
+    protected boolean inRoomState() {
+        return BoardClientState.INSTANCE.inRoom();
     }
 
-    private int queryCounter;
-
-    /** 房间列表下发：摘要（含行文本，成员名变化也触发刷新）变化才重建（保留输入框内容）。 */
-    public void onRoomListChanged() {
-        StringBuilder sb = new StringBuilder();
-        for (BoardClientState.RoomEntry e : BoardClientState.INSTANCE.roomList) {
-            sb.append(e.code()).append(e.status()).append(e.line());
-        }
-        String sig = sb.toString();
-        if (!sig.equals(listSignature)) {
-            listSignature = sig;
-            rebuild();
-        }
+    @Override
+    protected String lobbyTitle() {
+        return "棋类大厅";
     }
 
-    // ---------------- 内容区布局（创建区 + 房间列表区，滚轮滚动兜底） ----------------
-
-    /** 内容区顶部 y（随滚动偏移）。 */
-    private int contentTop() {
+    @Override
+    protected int contentTop() {
         return Math.max(50, (height - 180) / 2) + (int) scroll;
     }
 
-    /** 房间列表区顶部 y（创建区下方，含标题空间）。 */
-    private int listTop() {
-        return contentTop() + 118;
+    /** 棋类无提示区，列表区上移（含标题空间）。 */
+    @Override
+    protected int listTopOffset() {
+        return 118;
     }
 
-    /** 列表区可显示的行数（按窗口高度）。 */
-    private int listMaxRows() {
-        return Math.max(1, (height - listTop() - 20) / 22);
-    }
-
-    /** 内容区底部 y（房间列表末行 + 边距）。 */
-    private int contentBottom() {
+    /** 内容区底部 = 列表区 + 9 行（棋类布局，列表区固定行高）。 */
+    @Override
+    protected int contentBottom() {
         return listTop() + 9 * 22;
     }
 
-    /** 内容超高时允许的滚动量（0 = 无需滚动）。 */
-    private int maxScroll() {
-        return Math.max(0, contentBottom() - (height - 30));
-    }
-
-    /** 滚动后重建全部控件（位置随 contentTop 变化）。 */
-    private void rebuild() {
-        // 保留输入框内容（滚动重建会重新创建 EditBox，直接重建会清空已输入的房间码）
-        String prevCode = codeBox != null ? codeBox.getValue() : "";
-        clearWidgets();
-        init();
-        if (codeBox != null && !prevCode.isEmpty()) {
-            codeBox.setValue(prevCode);
-        }
+    @Override
+    protected void sendRoomQuery() {
+        ClientPlayNetworking.send(new LobbyQueryC2S());
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (!BoardClientState.INSTANCE.inRoom() && maxScroll() > 0) {
-            scroll -= (float) verticalAmount * 10;
-            scroll = Math.max(-maxScroll(), Math.min(0, scroll));
-            rebuild();
-            return true;
-        }
-        return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
+    protected List<? extends RoomEntry> lobbyRoomList() {
+        return BoardClientState.INSTANCE.roomList;
     }
 
     @Override
-    protected void init() {
-        clearWidgets(); // 滚动重建时防重复添加
+    protected void joinRoom(String code) {
+        ClientPlayNetworking.send(new JoinRoomC2S(code));
+    }
+
+    @Override
+    protected void spectateRoom(String code) {
+        ClientPlayNetworking.send(new SpectateC2S(code));
+    }
+
+    @Override
+    protected void lobbyChat(String message) {
+        BoardClientState.chat(message);
+    }
+
+    @Override
+    protected String currentRoomCode() {
+        return BoardClientState.INSTANCE.roomCode;
+    }
+
+    @Override
+    protected int[] roomInfoCodeRect() {
+        if (!inRoomState()) {
+            return null;
+        }
+        // 等待房间信息区"房间 XXX（游戏·尺寸）"行（居中，y≈50，行高 9，放宽点击区）
+        return new int[]{width / 2 - 200, 46, width / 2 + 200, 59};
+    }
+
+    @Override
+    protected void reopenHint() {
+        BoardClientState.chatReopenHint("关闭大厅");
+    }
+
+    /** 房间操作按钮（离开房间）区底部 y："关闭界面"按钮放在其下方。 */
+    @Override
+    protected int roomActionBottomY() {
+        return Math.max(40, height / 2 + 56) + 26;
+    }
+
+    // ---------------- 内容区控件 ----------------
+
+    @Override
+    protected void buildContent() {
         BoardClientState s = BoardClientState.INSTANCE;
         int cx = width / 2;
-        // 返回小游戏菜单（发刷新请求，服务端回发菜单数据打开菜单界面）
-        addRenderableWidget(Button.builder(Component.literal("主菜单"), b ->
-                        ClientPlayNetworking.send(new MenuQueryC2S()))
-                .bounds(width - 110, 32, 100, 20).build());
         if (!s.inRoom()) {
             // 两列紧凑布局：左列选项（游戏/尺寸/公布/机器人），右列操作（创建/输入框/加入）
             int top = contentTop();
@@ -170,33 +182,35 @@ public class BoardLobbyScreen extends Screen {
             addRenderableWidget(Button.builder(Component.literal(mark(selected == BoardGameType.GO, "围棋")),
                     b -> selectGame(BoardGameType.GO))
                     .bounds(lx + 108, top, 50, 20).build());
-            // 围棋尺寸（仅选围棋时显示；选中的以 ▶ 标记，两按钮对齐左列宽 160）
-            if (selected == BoardGameType.GO) {
-                addRenderableWidget(Button.builder(Component.literal(goSize == 9 ? "▶ 9 路" : "9 路"), b -> {
-                    goSize = 9;
-                    rebuild();
-                }).bounds(lx, top + 24, 78, 20).build());
-                addRenderableWidget(Button.builder(Component.literal(goSize == 19 ? "▶ 19 路" : "19 路"), b -> {
-                    goSize = 19;
-                    rebuild();
-                }).bounds(lx + 82, top + 24, 78, 20).build());
+            // 尺寸选择：当前游戏的可选尺寸一行，按钮宽按选项数自适应铺满左列 160（对齐）；
+            // 选中指示由 render 的金色描边承担（窄按钮放不下 ▶ 前缀）
+            int[] opts = selected.sizeOptions;
+            int bw = sizeBtnW(opts.length);
+            for (int i = 0; i < opts.length; i++) {
+                final int sz = opts[i];
+                addRenderableWidget(Button.builder(Component.literal(sz + " 路"), b -> {
+                    setSize(sz);
+                    rebuildLobby();
+                }).bounds(lx + i * (bw + 2), top + 24, bw, 20).build());
             }
-            addRenderableWidget(Button.builder(Component.literal("公布房间：" + (announce ? "开" : "关")), b -> {
+            addRenderableWidget(Button.builder(Component.literal("公布房间：" + (announce ? "✓ 开" : "✗ 关")), b -> {
                 announce = !announce;
-                b.setMessage(Component.literal("公布房间：" + (announce ? "开" : "关")));
+                LobbyPrefs.set(GameRegistry.GAME_BOARD, "announce", announce);
+                b.setMessage(Component.literal("公布房间：" + (announce ? "✓ 开" : "✗ 关")));
             }).bounds(lx, top + 48, 160, 20).build());
             // 机器人（围棋无 AI，禁用并提示；先清 botOn 再建按钮，避免文案残留"1 个"）
             if (selected == BoardGameType.GO) {
                 botOn = false;
             }
-            Button botBtn = Button.builder(Component.literal("机器人：" + (botOn ? "1 个" : "关")), b -> {
+            Button botBtn = Button.builder(Component.literal("机器人：" + (botOn ? "✓ 1 个" : "✗ 关")), b -> {
                 botOn = !botOn;
-                b.setMessage(Component.literal("机器人：" + (botOn ? "1 个" : "关")));
+                LobbyPrefs.set(GameRegistry.GAME_BOARD, "botOn", botOn);
+                b.setMessage(Component.literal("机器人：" + (botOn ? "✓ 1 个" : "✗ 关")));
             }).bounds(lx, top + 72, 160, 20).build();
             botBtn.active = selected != BoardGameType.GO;
             addRenderableWidget(botBtn);
             addRenderableWidget(Button.builder(Component.literal("创建房间"), b ->
-                    ClientPlayNetworking.send(new CreateRoomC2S((byte) selected.ordinal(), (byte) goSize,
+                    ClientPlayNetworking.send(new CreateRoomC2S((byte) selected.ordinal(), (byte) currentSize(),
                             announce, (byte) (botOn ? 1 : 0))))
                     .bounds(rx, top, 160, 20).build());
             codeBox = new EditBox(this.font, rx, top + 24, 160, 20, Component.literal("房间码"));
@@ -209,27 +223,6 @@ public class BoardLobbyScreen extends Screen {
             addRenderableWidget(Button.builder(Component.literal("规则介绍"), b ->
                     Minecraft.getInstance().setScreen(new BoardRulesScreen(BoardLobbyScreen.this)))
                     .bounds(rx, top + 72, 160, 20).build());
-            // 房间列表（等待中可加入 / 对局中可旁观）：行 = 左侧操作按钮 + 右侧文本（render 绘制）
-            List<BoardClientState.RoomEntry> list = s.roomList;
-            int ly = listTop();
-            int maxRows = listMaxRows();
-            for (int i = 0; i < Math.min(list.size(), maxRows); i++) {
-                BoardClientState.RoomEntry e = list.get(i);
-                int y = ly + i * 22;
-                if (e.status() == 0) {
-                    addRenderableWidget(Button.builder(Component.literal("加入"), b ->
-                                    ClientPlayNetworking.send(new JoinRoomC2S(e.code())))
-                            .bounds(lx, y, 54, 20).build());
-                } else if (e.status() == 1) {
-                    addRenderableWidget(Button.builder(Component.literal("旁观"), b ->
-                                    ClientPlayNetworking.send(new SpectateC2S(e.code())))
-                            .bounds(lx, y, 54, 20).build());
-                } else {
-                    addRenderableWidget(Button.builder(Component.literal("已结束"), b -> {
-                            })
-                            .bounds(lx, y, 54, 20).build()).active = false;
-                }
-            }
         } else {
             addRenderableWidget(Button.builder(Component.literal("离开房间"), b ->
                     ClientPlayNetworking.send(new LeaveRoomC2S()))
@@ -239,56 +232,87 @@ public class BoardLobbyScreen extends Screen {
 
     private void selectGame(BoardGameType type) {
         selected = type;
-        rebuild();
+        LobbyPrefs.set(GameRegistry.GAME_BOARD, "gameType", type.ordinal());
+        rebuildLobby();
     }
 
-    /** 选中的游戏按钮加 ▶ 前缀（视觉选中指示）。 */
-    private static String mark(boolean selected, String label) {
-        return selected ? "▶ " + label : label;
+    /** 当前选中游戏已选的棋盘尺寸。 */
+    private int currentSize() {
+        return switch (selected) {
+            case OTHELLO -> othelloSize;
+            case GOMOKU -> gomokuSize;
+            case GO -> goSize;
+        };
     }
+
+    private void setSize(int size) {
+        switch (selected) {
+            case OTHELLO -> {
+                othelloSize = size;
+                LobbyPrefs.set(GameRegistry.GAME_BOARD, "othelloSize", size);
+            }
+            case GOMOKU -> {
+                gomokuSize = size;
+                LobbyPrefs.set(GameRegistry.GAME_BOARD, "gomokuSize", size);
+            }
+            case GO -> {
+                goSize = size;
+                LobbyPrefs.set(GameRegistry.GAME_BOARD, "goSize", size);
+            }
+        }
+    }
+
+    /** 选中按钮金色描边（1px，画在按钮外缘，替代缺失的原生选中态）。 */
+    private static void drawSelectionFrame(GuiGraphics g, int x, int y, int w, int h) {
+        g.fill(x - 1, y - 1, x + w + 1, y, 0xFFFFD700);
+        g.fill(x - 1, y + h, x + w + 1, y + h + 1, 0xFFFFD700);
+        g.fill(x - 1, y - 1, x, y + h + 1, 0xFFFFD700);
+        g.fill(x + w, y - 1, x + w + 1, y + h + 1, 0xFFFFD700);
+    }
+
+    /** 尺寸按钮宽度：总宽 160（左列宽）按选项数均分，2px 间隙（5 档 = 30px，仍放得下"14 路"）。 */
+    private static int sizeBtnW(int count) {
+        return count <= 0 ? 0 : (160 - (count - 1) * 2) / count;
+    }
+
+    /** 选中的按钮加 ▶ 前缀（视觉选中指示）。 */
+    private static String mark(boolean selected, String label) {
+        return selected ? "▶" + label : label;
+    }
+
+    // ---------------- 渲染 ----------------
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        // 顶部标题条先绘制（主菜单按钮位于标题条内右上角，super.render 后渲染按钮盖住标题条半透明底）
+        drawTitleBar(g);
         // 背景与控件由 super 渲染（renderBackground 已覆盖为空，无全局虚化），自定义内容绘制在其上
         super.render(g, mouseX, mouseY, partialTick);
         BoardClientState s = BoardClientState.INSTANCE;
         int cx = width / 2;
-        // 顶部标题条
-        g.fill(0, 0, width, 26, 0x66000000);
-        BoardGui.centeredShadow(g, this.font, width, "棋类大厅", 9, 0xFFFFD700);
         if (!s.inRoom()) {
             int top = contentTop();
             int lx = cx - 172;
-            // 创建区：金色区块标题 + 半透明背景（控件在 super.render 已绘制，此处画底）
-            BoardGui.centeredShadowAt(g, this.font, lx, "创建房间", top - 12, 0xFFFFD700);
-            g.fill(cx - 180, top - 4, cx + 180, top + 96, 0x44000000);
-            // 房间列表区：标题（含数量）+ 半透明背景 + 行文本（房间码金色 / 信息灰色）
-            int ly = listTop();
-            int maxRows = listMaxRows();
-            List<BoardClientState.RoomEntry> list = s.roomList;
-            int shown = Math.min(list.size(), maxRows);
-            int listBottom = ly + shown * 22 + 8;
-            BoardGui.centeredShadowAt(g, this.font, cx - 172, "房间列表（" + list.size() + " 个）", ly - 12, 0xFFFFD700);
-            g.fill(cx - 180, ly - 4, cx + 180, listBottom, 0x44000000);
-            if (list.isEmpty()) {
-                BoardGui.centeredShadow(g, this.font, width, "暂无房间，创建第一个房间吧", ly + 10, 0xFF888888);
-            } else {
-                for (int i = 0; i < shown; i++) {
-                    BoardClientState.RoomEntry e = list.get(i);
-                    int y = ly + i * 22;
-                    g.drawString(this.font, e.code(), lx + 60, y + 5, 0xFFFFD700, true);
-                    g.drawString(this.font, font.plainSubstrByWidth(e.line(), 228), lx + 118, y + 5, 0xFFDDDDDD, true);
-                }
-                if (list.size() > maxRows) {
-                    BoardGui.centeredShadow(g, this.font, width, "滚动滚轮查看全部房间", listBottom - 12, 0xFF888888);
+            // 选中项金色描边（游戏选择行 + 尺寸行，画在按钮之上）
+            drawSelectionFrame(g, lx + selected.ordinal() * 54, top, 50, 20);
+            int[] opts = selected.sizeOptions;
+            int bw = sizeBtnW(opts.length);
+            for (int i = 0; i < opts.length; i++) {
+                if (currentSize() == opts[i]) {
+                    drawSelectionFrame(g, lx + i * (bw + 2), top + 24, bw, 20);
                 }
             }
-            if (maxScroll() > 0) {
-                BoardGui.centeredShadow(g, this.font, width, "内容超出屏幕，滚动滚轮查看", height - 14, 0xFF888888);
-            }
+            // 区块标题（屏幕居中）
+            BoardGui.centeredShadow(g, this.font, width, "创建房间", top - 12, 0xFFFFD700);
+            // 公开房间列表（标题 + 行文本 + 滚动条，点击行操作按钮加入/旁观、点房间码复制）
+            drawRoomList(g);
         } else {
-            // 房间信息区半透明黑底
+            // 房间信息区半透明黑底 + 金色边框
             g.fill(cx - 200, 30, cx + 200, 124, 0x55000000);
+            g.fill(cx - 201, 29, cx + 201, 30, 0xFFB08A3B);
+            g.fill(cx - 201, 124, cx + 201, 125, 0xFFB08A3B);
+            g.fill(cx - 201, 29, cx - 200, 125, 0xFFB08A3B);
+            g.fill(cx + 200, 29, cx + 201, 125, 0xFFB08A3B);
             BoardGui.centeredShadow(g, this.font, width, "等待房间（满 2 人自动开始）", 34, 0xFFFFD700);
             BoardGui.centeredShadow(g, this.font, width,
                     "房间 " + s.roomCode + "（" + s.gameType.displayName + sizeText() + "）", 50, 0xFFFFFF88);

@@ -1,8 +1,8 @@
 package io.wifi.cards.uno.manager;
 
+import io.wifi.cards.common.Room;
 import io.wifi.cards.uno.game.UnoGame;
 import io.wifi.cards.uno.model.UnoGamePhase;
-import io.wifi.cards.uno.network.UnoPackets.NoticeS2C;
 import io.wifi.cards.uno.network.UnoPackets.RoomStateS2C;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -19,32 +19,17 @@ import java.util.UUID;
  * botNames 与 members 并行（非空表示该座位是假人，members 对应位为 null）。
  * 开局由房主（座位 0）点击"开始游戏"触发，不是满员自动开。
  */
-public class UnoRoom {
+public class UnoRoom extends Room {
     public static final int MAX_PLAYERS = 10;
 
-    public final String id;
     /** 真人成员列表（座位即下标）。 */
     public final List<ServerPlayer> members = new ArrayList<>();
     /** 假人座位名（与 members 并行；非空 = 该座位是假人）。 */
     public final List<String> botNames = new ArrayList<>();
     public UnoGame game;
-    /** 结算完成时刻（毫秒），用于空闲房间自动销毁。 */
-    public long settledAtMillis = -1;
-    /** 旁观者（对局开始后可旁观，只读观看，不占座位）。 */
-    public final List<ServerPlayer> spectators = new ArrayList<>();
 
-    public UnoRoom(String id) {
-        this.id = id;
-    }
-
-    public void addSpectator(ServerPlayer player) {
-        if (!spectators.contains(player)) {
-            spectators.add(player);
-        }
-    }
-
-    public void removeSpectator(ServerPlayer player) {
-        spectators.remove(player);
+    public UnoRoom(String id, boolean announce) {
+        super(id, announce);
     }
 
     public boolean isBot(int seat) {
@@ -244,14 +229,5 @@ public class UnoRoom {
         if (isConnected(spectator, payload)) {
             ServerPlayNetworking.send(spectator, payload);
         }
-    }
-
-    /** 玩家连接是否仍可用（1.21.1 无公开的断线查询方法，用 fabric 的 canSend 判定）。 */
-    public static boolean isConnected(ServerPlayer player, CustomPacketPayload payload) {
-        return player != null && ServerPlayNetworking.canSend(player, payload.type());
-    }
-
-    public static boolean isConnected(ServerPlayer player) {
-        return player != null && ServerPlayNetworking.canSend(player, NoticeS2C.TYPE);
     }
 }

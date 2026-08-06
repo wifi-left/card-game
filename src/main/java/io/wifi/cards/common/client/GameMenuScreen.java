@@ -3,10 +3,12 @@ package io.wifi.cards.common.client;
 import io.wifi.cards.common.network.CommonPackets.MenuQueryC2S;
 import io.wifi.cards.common.network.CommonPackets.OpenGameC2S;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
 
 import java.util.List;
 
@@ -38,6 +40,10 @@ public class GameMenuScreen extends Screen {
     private Button refreshButton;
     /** 上次刷新请求时间（毫秒）。 */
     private long lastRefreshMillis;
+    /** 滚动条拖拽状态（按下时的鼠标 y / 滚动偏移，用于增量换算）。 */
+    private boolean draggingScroll;
+    private double dragStartMouseY;
+    private int dragStartScroll;
 
     public GameMenuScreen(List<Entry> entries) {
         super(Component.literal("小游戏大厅"));
@@ -122,18 +128,71 @@ public class GameMenuScreen extends Screen {
         return super.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount);
     }
 
-    /** 点击列表行：发送 OpenGameC2S 打开对应游戏（对局中由服务端恢复界面）。 */
+    /** 点击列表行：播放点击提示音（行非 Button 控件，需手动播）并发送 OpenGameC2S 打开对应游戏。
+     *  点击滚动条（轨道/滑块）：跳转到该处并进入拖拽。 */
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == 0 && hitScrollbar(mouseX, mouseY)) {
+            draggingScroll = true;
+            dragStartMouseY = mouseY;
+            dragStartScroll = GuiUtil.scrollFromY((int) mouseY, scrollbarY(), scrollbarH(), maxScroll());
+            scroll = dragStartScroll;
+            return true;
+        }
         if (button == 0 && mouseX >= listLeft() && mouseX < listLeft() + LIST_W
                 && mouseY >= listTop() && mouseY < listBottom()) {
             int idx = (int) ((mouseY - listTop() + scroll) / ROW_H);
             if (idx >= 0 && idx < entries.size()) {
+                Minecraft mc = Minecraft.getInstance();
+                if (mc.player != null) {
+                    mc.player.playSound(SoundEvents.UI_BUTTON_CLICK.value(), 0.6F, 1.0F);
+                }
                 ClientPlayNetworking.send(new OpenGameC2S(entries.get(idx).gameId()));
                 return true;
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    /** 拖拽滚动条：按鼠标位移增量换算滚动偏移（clamp 到合法范围）。 */
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (draggingScroll) {
+            int target = dragStartScroll
+                    + (int) ((mouseY - dragStartMouseY) * maxScroll() / GuiUtil.sliderRange(scrollbarH(), maxScroll()));
+            scroll = Math.max(0, Math.min(target, maxScroll()));
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (draggingScroll) {
+            draggingScroll = false;
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    // ---------------- 滚动条几何（与 render 绘制一致） ----------------
+
+    private int scrollbarX() {
+        return listLeft() + LIST_W + 4;
+    }
+
+    private int scrollbarY() {
+        return listTop() - 4;
+    }
+
+    private int scrollbarH() {
+        return listBottom() - listTop() + 8;
+    }
+
+    /** 命中滚动条轨道（含滑块）区域（轨道宽 2px，判定放宽到 6px 便于点击）。 */
+    private boolean hitScrollbar(double mouseX, double mouseY) {
+        return mouseX >= scrollbarX() - 2 && mouseX < scrollbarX() + 4
+                && mouseY >= scrollbarY() && mouseY < scrollbarY() + scrollbarH();
     }
 
     @Override
@@ -183,6 +242,8 @@ public class GameMenuScreen extends Screen {
         // 底部提示
         g.drawCenteredString(this.font, "点击进入游戏大厅 · ESC 返回 · 输入 /cardgames 打开", cx, height - 26, 0xFF777777);
         if (maxScroll() > 0) {
+            // 滚动条（列表右缘外侧，滑块比例 = 可视/内容）
+            GuiUtil.drawScrollbar(g, scrollbarX(), scrollbarY(), scrollbarH(), (int) scroll, maxScroll());
             g.drawCenteredString(this.font, "滚动滚轮查看更多", cx, height - 14, 0xFF888888);
         }
     }

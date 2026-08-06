@@ -1,7 +1,9 @@
 package io.wifi.cards.uno.gui;
 
+import io.wifi.cards.common.client.AbstractGameScreen;
 import io.wifi.cards.uno.card.UnoCard;
 import io.wifi.cards.uno.card.UnoColor;
+import io.wifi.cards.uno.game.UnoGame;
 import io.wifi.cards.uno.model.UnoGamePhase;
 import io.wifi.cards.uno.network.UnoPackets.CatchUnoC2S;
 import io.wifi.cards.uno.network.UnoPackets.DeclareUnoC2S;
@@ -16,21 +18,13 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.PlayerFaceRenderer;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.multiplayer.ClientPacketListener;
-import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.resources.ResourceLocation;
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.UUID;
 
 /**
- * UNO 牌桌界面（最多 10 人）：
+ * UNO 牌桌界面（最多 10 人，继承 {@link AbstractGameScreen}）：
  * <ul>
  * <li>顶部：房间码 + 阶段 + 方向 + 轮到谁/倒计时</li>
  * <li>中央：抽牌堆（自己回合可点击抽牌）+ 弃牌堆顶牌（万能牌显示所选颜色）+ 事件提示</li>
@@ -40,7 +34,7 @@ import java.util.UUID;
  * <li>万能牌出牌时中央弹 4 色选色弹层；旁观者左侧面板透视各家手牌</li>
  * </ul>
  */
-public class UnoGameScreen extends Screen {
+public class UnoGameScreen extends AbstractGameScreen {
     // 牌面尺寸：固定 34x50，重叠 20px 布局（GAP=20）
     private static final int CARD_W = 34;
     private static final int CARD_H = 50;
@@ -56,133 +50,73 @@ public class UnoGameScreen extends Screen {
     private static final int SPECTATOR_PANEL_TOP = 36;
     private static final int SPECTATOR_PANEL_BOTTOM_MARGIN = 34;
 
-    private final Set<Integer> selected = new HashSet<>();
-    private final List<Button> actionButtons = new java.util.ArrayList<>();
-    private int buttonSignature = -1;
-    private int countdown = 30;
-    /** 拖拽选牌：上次处理的牌下标（-1=不在牌上），避免同一张牌被反复切换。 */
-    private int lastDragCard = -1;
-    /** 拖拽时上次鼠标位置（GUI 缩放坐标），用于路径采样插值防漏牌。 */
-    private double lastDragX;
-    private double lastDragY;
-    /** 本次按下是否始于手牌（从按钮/空白按下拖动不处理手牌，避免误选）。 */
-    private boolean dragArmed;
-    /** 退出确认弹层：成员点「退出」后先询问（旁观者退出无需确认）。 */
-    private boolean confirmingExit;
     /** 万能牌选色弹层：出牌前先选颜色。 */
     private boolean confirmingColor;
     private int colorCardId = -1;
     /** 旁观者手牌面板滚动偏移（≥0，滚轮在面板上滚动；内容超高时查看全部手牌）。 */
     private float spectatorScroll;
-    /** 待打开聊天框（延迟到 tick 执行，避免同按键的字符事件被新聊天框接收）。 */
-    private boolean openChatPending;
 
     public UnoGameScreen() {
-        super(Component.literal("UNO" + (UnoClientState.INSTANCE.debugView ? "（调试）" : "")));
+        super("UNO" + (UnoClientState.INSTANCE.debugView ? "（调试）" : ""));
     }
 
     /** 旁观模式：服务端以 mySeat=-1 表示只读旁观（无手牌、无操作权）。 */
-    private boolean isSpectator() {
+    @Override
+    protected boolean isSpectator() {
         return UnoClientState.INSTANCE.mySeat < 0;
+    }
+
+    @Override
+    protected long turnEndGameTime() {
+        return UnoClientState.INSTANCE.turnEndGameTime;
+    }
+
+    @Override
+    protected void reopenHint() {
+        UnoClientState.chatReopenHint("关闭牌局界面");
+    }
+
+    @Override
+    protected String exitConfirmFirstLine() {
+        return "退出后座位将由机器人托管，对局继续";
+    }
+
+    /** Esc 优先处理：取消选色弹层 / 调试旁观直接回大厅。 */
+    @Override
+    protected boolean onEscPressed() {
+        if (confirmingColor) {
+            confirmingColor = false; // 第一下 Esc：取消选色弹层（保留选中，可重新出牌）
+            return true;
+        }
+        // 调试旁观（无真实房间/会话）：直接清空本地状态回到大厅
+        if (UnoClientState.INSTANCE.debugView) {
+            UnoClientState.INSTANCE.clearAll();
+            Minecraft.getInstance().setScreen(new UnoLobbyScreen());
+            return true;
+        }
+        return false;
     }
 
     @Override
     protected void init() {
         // 左下角：规则 / 事件历史（子界面返回时回到本打牌界面，并渲染本界面为背景）
-        addRenderableWidget(Button
-                .builder(Component.literal("规则"),
-                        b -> Minecraft.getInstance().setScreen(new UnoRulesScreen(UnoGameScreen.this)))
-                .bounds(8, height - 26, 60, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("历史"), b -> {
+        addRulesButton(() -> Minecraft.getInstance().setScreen(new UnoRulesScreen(UnoGameScreen.this)));
+        addHistoryButton(() -> {
             ClientPlayNetworking.send(new HistoryC2S());
             Minecraft.getInstance().setScreen(new UnoHistoryScreen(UnoGameScreen.this));
-        }).bounds(72, height - 26, 60, 20).build());
+        });
         // 操作按钮（退出/托管/出牌等）在 init 时立即重建：
         // resize（窗口/全屏/GUI 缩放变化）会重建整个 widget 树，
         // 若只等 tick 的签名变化重建，旁观者（签名恒定）的「退出旁观」按钮会丢失且无法恢复
         rebuildActionButtons();
     }
 
-    @Override
-    public boolean isPauseScreen() {
-        return false;
-    }
-
-    /** 取消全局背景虚化：不再渲染模糊/纹理背景，仅由各内容区块绘制半透明黑色背景。 */
-    @Override
-    public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-    }
-
-    /** 关闭牌局界面（Esc）：选色/退出确认弹层打开时先逐级取消，再按才关闭界面。 */
-    @Override
-    public void onClose() {
-        if (confirmingColor) {
-            confirmingColor = false; // 第一下 Esc：取消选色弹层（保留选中，可重新出牌）
-            return;
-        }
-        if (confirmingExit) {
-            confirmingExit = false; // 第一下 Esc：取消确认弹层（按钮由 tick 签名重建）
-            return;
-        }
-        // 调试旁观（无真实房间/会话）：直接清空本地状态回到大厅
-        if (UnoClientState.INSTANCE.debugView) {
-            UnoClientState.INSTANCE.clearAll();
-            Minecraft.getInstance().setScreen(new UnoLobbyScreen());
-            return;
-        }
-        UnoClientState.chatReopenHint("关闭牌局界面");
-        super.onClose();
-    }
-
-    @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        Minecraft mc = Minecraft.getInstance();
-        // 按聊天绑定键（原版 options.keyChat，默认 T）打开聊天框；
-        // 延迟到 tick 打开：立即打开会把本次按键的 charTyped 字符（如 't'）打进输入框
-        if (mc.options.keyChat.matches(keyCode, scanCode)) {
-            openChatPending = true;
-            return true;
-        }
-        return super.keyPressed(keyCode, scanCode, modifiers);
-    }
-
-    /**
-     * 被替换为子界面时调用：父类 removed() 会清空全部 widgets（含操作按钮），
-     * 返回本界面时因签名未变不会重建 → 强制重置签名，下个 tick 重建按钮。
-     */
-    @Override
-    public void removed() {
-        super.removed();
-        buttonSignature = -1;
-    }
-
-    /** 窗口 resize：父类会再次调用 init()，先清空全部再重建。 */
-    @Override
-    public void resize(Minecraft mc, int width, int height) {
-        clearWidgets();
-        actionButtons.clear();
-        buttonSignature = -1;
-        super.resize(mc, width, height);
-    }
-
     // ---------------- tick / 按钮 ----------------
 
+    /** 每 tick 游戏特有逻辑：出牌被拒清选中、选色弹层防残留、签名计算与按钮重建（聊天/倒计时由基类处理）。 */
     @Override
-    public void tick() {
-        super.tick();
-        // 延迟打开聊天框（等本次按键的字符事件处理完毕，避免 't' 等字符进入输入框）
-        if (openChatPending) {
-            openChatPending = false;
-            Minecraft.getInstance().setScreen(new UnoChatScreen(this));
-        }
+    protected void onTick() {
         UnoClientState s = UnoClientState.INSTANCE;
-        // 用服务端下发的截止游戏刻计算剩余秒数：客户端 level.getGameTime() 与服务端同步，
-        // 倒计时不受本地帧率/网络延迟影响
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level != null && s.turnEndGameTime > 0) {
-            long remainingTicks = s.turnEndGameTime - mc.level.getGameTime();
-            countdown = (int) Math.max(0, (remainingTicks + 19) / 20); // 向上取整
-        }
         // 服务端拒绝了最近一次出牌：清空选中，便于玩家重新选牌
         if (s.playRejected) {
             s.playRejected = false;
@@ -205,10 +139,7 @@ public class UnoGameScreen extends Screen {
                                 && !s.declaredUno[s.mySeat] ? 2000 : 0)
                         + (catchableTarget() >= 0 ? 4000 + catchableTarget() : 0)
                         + (confirmingExit ? 8000 : 0) + (confirmingColor ? 16000 : 0);
-        if (signature != buttonSignature) {
-            buttonSignature = signature;
-            rebuildActionButtons();
-        }
+        rebuildButtonsIfChanged(signature);
     }
 
     /** 第一个可被抓（剩 1 张未喊 UNO）的对手座位；无则 -1。 */
@@ -222,7 +153,8 @@ public class UnoGameScreen extends Screen {
         return -1;
     }
 
-    private void rebuildActionButtons() {
+    @Override
+    protected void rebuildActionButtons() {
         for (Button b : actionButtons) {
             removeWidget(b);
         }
@@ -278,20 +210,17 @@ public class UnoGameScreen extends Screen {
             return;
         }
         if (s.phase == UnoGamePhase.PLAYING) {
-            actionButtons.add(button(x, y, "出牌", b -> sendPlay(), !selected.isEmpty()));
+            // 出牌按钮仅在选择恰好一张且可打的牌时激活：
+            // 没选牌 / 选错牌（颜色/点数不匹配且非万能牌）一律禁用，客户端预检拦截。
+            // 提示按钮与出牌并排：自动选出一张可打的牌（无牌可打则提示抽牌）
+            actionButtons.add(button(x - 95, y, "提示", b -> hint(), true));
+            actionButtons.add(button(x, y, "出牌", b -> sendPlay(), selectionPlayable()));
             if (s.drawnPlayable) {
                 actionButtons.add(button(x, y + 26, "跳过", b -> sendPass(), true));
             } else {
                 actionButtons.add(button(x, y + 26, "抽牌", b -> sendDraw(), true));
             }
         }
-    }
-
-    private Button button(int x, int y, String label, Button.OnPress onPress, boolean active) {
-        Button b = Button.builder(Component.literal(label), onPress).bounds(x, y, 90, 20).build();
-        b.active = active;
-        addRenderableWidget(b);
-        return b;
     }
 
     /** 对手短名（过长截断，按钮标签用）。 */
@@ -335,6 +264,34 @@ public class UnoGameScreen extends Screen {
         confirmingColor = false;
         colorCardId = -1;
         selected.clear();
+    }
+
+    /** 提示：从手牌中找一张可打的牌并选中（优先非万能牌，与机器人策略一致）；
+     *  没有可打的牌时提示抽牌。选中后"出牌"按钮自动激活。 */
+    private void hint() {
+        UnoClientState s = UnoClientState.INSTANCE;
+        UnoCard play = null;
+        UnoCard wild = null;
+        for (UnoCard c : s.hand) {
+            if (c.isWild()) {
+                if (wild == null) {
+                    wild = c;
+                }
+                continue;
+            }
+            if (UnoGame.canPlay(c, s.topCard, s.topColor)) {
+                play = c;
+                break;
+            }
+        }
+        UnoCard chosen = play != null ? play : wild;
+        selected.clear();
+        if (chosen != null) {
+            selected.add(chosen.id());
+        } else {
+            UnoClientState.chat("没有能出的牌，请点击抽牌");
+        }
+        buttonSignature = -1; // 触发按钮重建（出牌按钮可用性）
     }
 
     private void sendDraw() {
@@ -422,10 +379,34 @@ public class UnoGameScreen extends Screen {
         return -1;
     }
 
-    /** 切换一张牌的选中状态（未选中→选中，已选中→取消选中）。 */
+    /**
+     * 选中牌是否可打（出牌按钮激活条件）：恰好选中一张，且与当前颜色/点数匹配或为万能牌。
+     * 复用服务端规则引擎做客户端预检——没选牌/选错牌时按钮禁用，
+     * 玩家无法发出必然被服务端拒绝的出牌。
+     */
+    private boolean selectionPlayable() {
+        UnoClientState s = UnoClientState.INSTANCE;
+        if (selected.size() != 1) {
+            return false;
+        }
+        for (UnoCard c : s.hand) {
+            if (selected.contains(c.id())) {
+                return UnoGame.canPlay(c, s.topCard, s.topColor);
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 单选切换：点击未选中的牌 → 选中它并取消其他牌选中（UNO 每次只出一张牌）；
+     * 点击已选中的牌 → 取消选中。
+     */
     private void toggleCard(int idx) {
         UnoCard c = UnoClientState.INSTANCE.hand.get(idx);
-        if (!selected.remove(c.id())) {
+        if (selected.contains(c.id())) {
+            selected.clear(); // 再点已选中：取消
+        } else {
+            selected.clear(); // 单选：取消其他牌
             selected.add(c.id());
         }
         buttonSignature = -1; // 触发按钮重建（出牌按钮可用性）
@@ -441,7 +422,7 @@ public class UnoGameScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (confirmingExit || confirmingColor) {
-            // 弹层中：不处理选牌/拖拽/抽牌，仅响应弹层按钮（super 转发给 widget）
+            // 弹层中：不处理选牌/抽牌，仅响应弹层按钮（super 转发给 widget）
             return super.mouseClicked(mouseX, mouseY, button);
         }
         if (button == 0) {
@@ -457,58 +438,19 @@ public class UnoGameScreen extends Screen {
             if (super.mouseClicked(mouseX, mouseY, button)) {
                 return true;
             }
-            // 点击：始终切换按下那张牌的选中状态；命中后消费点击以激活后续拖拽
-            lastDragCard = -1;
-            lastDragX = mouseX;
-            lastDragY = mouseY;
+            // 单击切换按下那张牌的选中状态（UNO 单选：无拖拽滑选，避免误选）
             int idx = cardIndexAt(mouseX, mouseY);
             if (idx >= 0) {
-                dragArmed = true; // 从手牌上按下：长按拖动才会滑选/滑取消
                 toggleCard(idx);
-                lastDragCard = idx; // 按下已处理，避免拖拽首事件重复切换
                 return true;
             }
-            dragArmed = false; // 从空白按下：拖动不处理手牌（避免误选）
             return false; // super 已在上方分发过，不重复
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
-    /**
-     * 长按左键滑动：逐张切换经过的每张牌——所在牌未选中则选中（滑选），
-     * 已选中则取消（滑取消），实时按该牌自身状态决定。
-     * 鼠标快速滑动时单次事件可能跨越多张牌，这里沿「上次位置→当前位置」线段每 4px
-     * 采样一次命中检测，保证中间牌不被漏掉；同一张牌在本次拖拽中只切换一次
-     * （lastDragCard 去重，移开再滑回会再次切换）。
-     */
-    @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (button == 0 && dragArmed) {
-            double dx = mouseX - lastDragX;
-            double dy = mouseY - lastDragY;
-            double dist = Math.hypot(dx, dy);
-            int steps = Math.max(1, (int) (dist / 4));
-            for (int i = 1; i <= steps; i++) {
-                double sx = lastDragX + dx * i / steps;
-                double sy = lastDragY + dy * i / steps;
-                int idx = cardIndexAt(sx, sy);
-                if (idx >= 0 && idx != lastDragCard) {
-                    toggleCard(idx);
-                    lastDragCard = idx;
-                }
-            }
-            lastDragX = mouseX;
-            lastDragY = mouseY;
-            return true;
-        }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-    }
-
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 0) {
-            lastDragCard = -1; // 松手后下次拖拽重新计数，避免残留状态
-        }
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
@@ -548,17 +490,6 @@ public class UnoGameScreen extends Screen {
         if (confirmingColor) {
             drawColorPicker(g);
         }
-    }
-
-    /** 退出确认弹层：半透明黑底 + 提示文本（按钮在右侧常驻行，见 rebuildActionButtons）。 */
-    private void drawExitConfirm(GuiGraphics g) {
-        int w = Math.min(340, width - 40);
-        int h = 54;
-        int x0 = (width - w) / 2;
-        int y0 = (height - h) / 2;
-        g.fill(x0, y0, x0 + w, y0 + h, 0xE6000000); // 深色背景遮罩
-        UnoGui.centeredShadow(g, this.font, width, "退出后座位将由机器人托管，对局继续", y0 + 10, 0xFFFFD700);
-        UnoGui.centeredShadow(g, this.font, width, "确定要退出游戏吗？", y0 + 26, 0xFFFFFFFF);
     }
 
     /** 选色弹层顶部 y（与 drawColorPicker 一致）。 */
@@ -864,32 +795,5 @@ public class UnoGameScreen extends Screen {
         return Math.max(0, spectatorContentHeight() - (spectatorPanelBottom() - SPECTATOR_PANEL_TOP));
     }
 
-    /**
-     * 渲染玩家头颅：通过 tab 列表的 PlayerInfo 获取皮肤纹理，
-     * 用 PlayerFaceRenderer 绘制脸部区域（8x8 放大到目标尺寸）。
-     * uuidStr 为空（假人/未知）、玩家不在 tab 列表或皮肤缺失时跳过。
-     */
-    private void drawHead(GuiGraphics g, String uuidStr, int x, int y, int size) {
-        if (uuidStr == null || uuidStr.isEmpty()) {
-            return;
-        }
-        try {
-            Minecraft mc = Minecraft.getInstance();
-            ClientPacketListener connection = mc.getConnection();
-            if (connection == null) {
-                return;
-            }
-            PlayerInfo info = connection.getPlayerInfo(UUID.fromString(uuidStr));
-            if (info == null) {
-                return;
-            }
-            ResourceLocation skin = info.getSkin().texture();
-            if (skin == null) {
-                return;
-            }
-            PlayerFaceRenderer.draw(g, skin, x, y, size);
-        } catch (IllegalArgumentException ignored) {
-            // 非法 UUID（理论不会发生）→ 跳过头像
-        }
-    }
+
 }

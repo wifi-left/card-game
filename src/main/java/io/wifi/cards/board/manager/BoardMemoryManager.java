@@ -81,7 +81,7 @@ public final class BoardMemoryManager {
             return;
         }
         int realSize = BoardGameType.safeSize(gameType, size);
-        BoardRoom room = new BoardRoom(generateCode(), gameType, realSize);
+        BoardRoom room = new BoardRoom(generateCode(), gameType, realSize, announce);
         room.addPlayer(player);
         rooms.put(room.id, room);
         playerRoomIds.put(player.getUUID(), room.id);
@@ -213,7 +213,7 @@ public final class BoardMemoryManager {
             return;
         }
         room.settledAtMillis = -1;
-        room.game.start();
+        room.game.begin();
         // start() 会重置托管标记：断线成员的座位重新标记托管（正轮到则自动行动），
         // 避免新局中该座位每回合干等 60 秒超时
         for (int i = 0; i < room.count; i++) {
@@ -314,12 +314,15 @@ public final class BoardMemoryManager {
             return;
         }
         BoardPhase phase = room.phase();
-        if (phase == BoardPhase.WAITING || phase == BoardPhase.SETTLED) {
-            // 等待/结算中断线已按离开处理（会话已清除），理论不会到达；防御性兜底关闭房间
+        if (phase == BoardPhase.WAITING) {
+            // 等待中断线已按离开处理（会话已清除），理论不会到达；防御性兜底关闭房间
             room.broadcast(new RoomClosedS2C(player.getGameProfile().getName() + " 重连发现旧房间，房间已关闭"));
             destroyRoomInternal(room);
             return;
         }
+        // 对局中（PLAYING）掉线托管续玩、或对局已结算（SETTLED）后重连：
+        // 会话仍有效，正常替换连接引用并同步快照（SETTLED 重连可看结算结果、点"再来一局"，
+        // 房间本可保留至 60 秒空闲销毁——不能销毁房间把其他成员一起踢回大厅）
         int seat = room.replacePlayerByUuid(player.getUUID(), player);
         if (seat < 0) {
             // 找不到对应座位（理论不会发生）→ 防御性关闭房间
@@ -449,7 +452,8 @@ public final class BoardMemoryManager {
         return count;
     }
 
-    /** 大厅房间列表下发（LobbyQueryC2S 响应）：等待中可加入 / 对局中可旁观 / 已结束仅展示。
+    /** 大厅房间列表下发（LobbyQueryC2S 响应）：仅公开房间（创建时"公布房间"开启）。
+     *  等待中可加入 / 对局中可旁观 / 已结束仅展示。
      *  带频率限制（最小间隔 500ms/玩家）：恶意客户端高频刷包会占用服务端主线程与带宽。 */
     public void sendRoomList(ServerPlayer player) {
         long now = System.currentTimeMillis();
@@ -458,7 +462,12 @@ public final class BoardMemoryManager {
             return;
         }
         lobbyQueryTimes.put(player.getUUID(), now);
-        List<BoardRoom> list = roomSnapshot();
+        List<BoardRoom> list = new ArrayList<>();
+        for (BoardRoom r : roomSnapshot()) {
+            if (r.announce) {
+                list.add(r);
+            }
+        }
         String[] codes = new String[list.size()];
         String[] lines = new String[list.size()];
         byte[] statuses = new byte[list.size()];
@@ -592,7 +601,7 @@ public final class BoardMemoryManager {
             case GOMOKU -> new GomokuGame(room);
             case GO -> new GoGame(room);
         };
-        room.game.start();
+        room.game.begin();
         // 全服广播：房间已开始，其他玩家可点击旁观
         ServerPlayer host = room.members[0];
         if (host != null && host.getServer() != null) {
@@ -657,7 +666,7 @@ public final class BoardMemoryManager {
 
     /** 房间码规范化：去掉本游戏前缀（兼容 "BD-XXXXX" 完整码与裸码 "XXXXX" 两种输入）。 */
     private static String cleanCode(String code) {
-        String norm = code.toUpperCase().trim();
+        String norm = code == null ? "" : code.toUpperCase().trim();
         return norm.startsWith(GameRegistry.PREFIX_BOARD + "-") ? norm.substring(3) : norm;
     }
 

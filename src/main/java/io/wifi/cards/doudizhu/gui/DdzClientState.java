@@ -1,6 +1,7 @@
 package io.wifi.cards.doudizhu.gui;
 
 import io.wifi.cards.common.GameRegistry;
+import io.wifi.cards.common.client.AbstractLobbyScreen;
 import io.wifi.cards.common.client.GameClientSession;
 import io.wifi.cards.doudizhu.card.DdzCard;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
@@ -14,6 +15,7 @@ import io.wifi.cards.doudizhu.network.DdzPackets.PlayBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.ReconnectS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RevealS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RobBroadcastS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.RoomListS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomStateS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.SpectatorHandsS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
@@ -90,6 +92,10 @@ public final class DdzClientState implements GameClientSession {
     public final List<HistoryLine> historyLines = new ArrayList<>();
     /** 三家完整手牌（仅旁观模式填充：SpectatorHandsS2C 透视视角，[0]=座位0…）。 */
     public final List<List<DdzCard>> spectatorHands = new ArrayList<>(3);
+
+    // ---- 大厅房间列表 ----
+    /** 大厅房间列表（由 RoomListS2C 填充，仅公开房间；条目类型见 AbstractLobbyScreen.RoomEntry）。 */
+    public final List<AbstractLobbyScreen.RoomEntry> roomList = new ArrayList<>();
 
     // ---- 结算 ----
     public String resultLandlordName = "";
@@ -399,6 +405,21 @@ public final class DdzClientState implements GameClientSession {
         }
     }
 
+    /** 大厅房间列表下发（LobbyQueryC2S 响应）：更新缓存并通知大厅界面刷新（内容变化时才重建控件）。 */
+    public void onRoomList(RoomListS2C payload) {
+        roomList.clear();
+        String[] codes = payload.codes();
+        String[] lines = payload.lines();
+        byte[] statuses = payload.statuses();
+        int n = Math.min(codes.length, Math.min(lines.length, statuses.length));
+        for (int i = 0; i < n; i++) {
+            roomList.add(new AbstractLobbyScreen.RoomEntry(codes[i], lines[i], statuses[i]));
+        }
+        if (Minecraft.getInstance().screen instanceof DdzLobbyScreen lobby) {
+            lobby.onRoomListChanged();
+        }
+    }
+
     public void onPass(PassBroadcastS2C payload) {
         this.lastPassName = payload.playerName();
         this.remaining = toIntArray(payload.remainingCounts());
@@ -534,6 +555,7 @@ public final class DdzClientState implements GameClientSession {
         lastPlays.clear();
         historyLines.clear();
         spectatorHands.clear();
+        roomList.clear();
         resultLandlordName = "";
         resultLandlordWin = false;
         resultBaseScore = 1;

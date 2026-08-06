@@ -1,10 +1,8 @@
 package io.wifi.cards.board.gui;
 
-import net.minecraft.client.Minecraft;
+import io.wifi.cards.common.client.AbstractSubScreen;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,84 +12,40 @@ import java.util.List;
  * 内容超出一屏时可滚动查看（滚轮 + 右侧可拖拽滚动条），Esc 或"返回"按钮退出。
  * 从大厅打开时返回大厅；从棋盘界面打开时返回棋盘界面（渲染父级内容为背景）。
  */
-public class BoardRulesScreen extends Screen {
-    private static final int CONTENT_TOP = 30;
-    private static final int LINE_H = 10;
-    private static final int BOTTOM_BAR = 30;
-    /** 滚动条距右缘的距离与宽度。 */
-    private static final int SCROLLBAR_RIGHT = 8;
-    private static final int SCROLLBAR_W = 3;
-
+public class BoardRulesScreen extends AbstractSubScreen {
     private final List<String> lines = new ArrayList<>();
-    private float scroll;
-    /** 是否正在拖拽滚动条滑块。 */
-    private boolean draggingScrollbar;
-    /** 按下时鼠标相对滑块顶部的偏移。 */
-    private double dragOffset;
-    /** 父级界面（从棋盘界面打开时返回棋盘界面，并渲染父级内容为背景）；null 时返回大厅。 */
-    private final Screen parent;
 
     public BoardRulesScreen() {
         this(null);
     }
 
-    public BoardRulesScreen(Screen parent) {
-        super(Component.literal("棋类规则"));
-        this.parent = parent;
+    @Override
+    public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        renderOriginalBackground(g, mouseX, mouseY, partialTick);
     }
 
-    @Override
-    public boolean isPauseScreen() {
-        return false;
+    public BoardRulesScreen(Screen parent) {
+        super(parent, "棋类规则");
     }
 
     // ---------------- 滚动计算 ----------------
 
-    private int trackTop() {
-        return CONTENT_TOP;
+    /** 内容总高（行数 × 行高；历史界面按换行后行数累计）。 */
+    @Override
+    protected int contentHeight() {
+        return lines.size() * LINE_H;
     }
 
-    private int trackBottom() {
-        return height - BOTTOM_BAR;
-    }
-
-    private int trackHeight() {
-        return trackBottom() - trackTop();
-    }
-
-    private int maxScroll() {
-        return Math.max(0, lines.size() * LINE_H - trackHeight());
-    }
-
-    private int thumbHeight() {
-        int track = trackHeight();
-        int content = lines.size() * LINE_H;
-        return Math.max(12, track * Math.min(track, content) / Math.max(content, track));
-    }
-
-    private int thumbTop() {
-        int max = maxScroll();
-        if (max <= 0) {
-            return trackTop();
-        }
-        return trackTop() + (int) ((trackHeight() - thumbHeight()) * scroll / max);
-    }
-
-    private void clampScroll() {
-        scroll = Math.max(0, Math.min(scroll, maxScroll()));
+    /** 无父级打开时的返回目标（大厅）。 */
+    @Override
+    protected Screen fallbackScreen() {
+        return new BoardLobbyScreen();
     }
 
     @Override
-    protected void init() {
+    protected void buildContent() {
+        lines.clear(); // resize（窗口/全屏变化）会再次调用 init→buildContent，先清空防内容翻倍
         buildLines();
-        addRenderableWidget(Button.builder(Component.literal("返回"), b -> this.onClose())
-                .bounds(width / 2 - 40, height - BOTTOM_BAR + 4, 80, 20).build());
-    }
-
-    /** 返回：有父级（棋盘界面）则回到父级，否则回大厅。 */
-    @Override
-    public void onClose() {
-        Minecraft.getInstance().setScreen(parent != null ? parent : new BoardLobbyScreen());
     }
 
     private void buildLines() {
@@ -129,17 +83,9 @@ public class BoardRulesScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        // 有父级时先渲染父级内容为背景（参考 DdzChatScreen），再绘制本界面
-        if (parent != null) {
-            parent.render(g, 0, 0, partialTick);
-        }
-        // 底部提示条背景（先画，返回按钮绘制在其上）
-        g.fill(0, height - BOTTOM_BAR, width, height, 0x44000000);
-        // 背景与控件由 super 渲染（renderBackground 已覆盖为空，无全局虚化），自定义内容绘制在其上
-        super.render(g, mouseX, mouseY, partialTick);
+    protected void renderContent(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         g.fill(0, 0, width, 26, 0x66000000);
-        BoardGui.centeredShadow(g, this.font, width, "棋类规则", 9, 0xFFFFD700);
+        g.drawCenteredString(this.font, "棋类规则", width / 2, 9, 0xFFFFD700);
         // 内容区半透明黑底，滚动文本绘制在其上
         g.fill(0, CONTENT_TOP, width, height - BOTTOM_BAR, 0x44000000);
         g.enableScissor(0, CONTENT_TOP, width, height - BOTTOM_BAR);
@@ -153,56 +99,8 @@ public class BoardRulesScreen extends Screen {
             y += LINE_H;
         }
         g.disableScissor();
-        // 滚动条（内容超出一屏时显示）
-        int sbX = width - SCROLLBAR_RIGHT;
-        int max = maxScroll();
-        if (max > 0) {
-            g.fill(sbX, trackTop(), sbX + SCROLLBAR_W, trackBottom(), 0x33000000); // 轨道
-            g.fill(sbX, thumbTop(), sbX + SCROLLBAR_W, thumbTop() + thumbHeight(), 0xCCFFFFFF); // 滑块
-        }
-        BoardGui.centeredShadow(g, this.font, width, "滚轮滚动 / 拖拽滚动条，Esc 返回", height - 16, 0xFF888888);
+        drawScrollbar(g);
+        drawScrollHint(g);
     }
 
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        scroll -= (float) verticalAmount * 10;
-        clampScroll();
-        return true;
-    }
-
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 0 && mouseX >= width - SCROLLBAR_RIGHT && mouseX <= width - SCROLLBAR_RIGHT + SCROLLBAR_W) {
-            int top = thumbTop();
-            if (mouseY >= top && mouseY <= top + thumbHeight()) {
-                draggingScrollbar = true;
-                dragOffset = mouseY - top;
-                return true;
-            }
-        }
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (draggingScrollbar && button == 0) {
-            int usable = trackHeight() - thumbHeight();
-            if (usable > 0) {
-                double pos = mouseY - trackTop() - dragOffset;
-                scroll = (float) (maxScroll() * pos / usable);
-                clampScroll();
-            }
-            return true;
-        }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-    }
-
-    @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (draggingScrollbar && button == 0) {
-            draggingScrollbar = false;
-            return true;
-        }
-        return super.mouseReleased(mouseX, mouseY, button);
-    }
 }

@@ -17,6 +17,7 @@ import io.wifi.cards.doudizhu.network.DdzPackets.ReconnectS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RevealS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RobBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomClosedS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.RoomListS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomStateS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.SpectatorHandsS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
@@ -103,6 +104,8 @@ public final class DdzClient {
                 ctx.client().execute(() -> state.onHistory(payload)));
         ClientPlayNetworking.registerGlobalReceiver(SpectatorHandsS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> state.onSpectatorHands(payload)));
+        ClientPlayNetworking.registerGlobalReceiver(RoomListS2C.TYPE, (payload, ctx) ->
+                ctx.client().execute(() -> state.onRoomList(payload)));
         // 服务端命令 /doudizhu 或 /cardgames open 触发：在主线程打开大厅。
         // OpenLobbyS2C 的语义是"你不在对局/旁观中"——但等待中的房间成员也会收到
         // （重开大厅），此时本地房间状态必须保留（大厅渲染房间视图/离开按钮），

@@ -1,5 +1,7 @@
 package io.wifi.cards.doudizhu.gui;
 
+import io.wifi.cards.common.client.AbstractGameScreen;
+import io.wifi.cards.common.client.CardGameChatScreen;
 import io.wifi.cards.doudizhu.card.DdzCard;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
 import io.wifi.cards.doudizhu.network.DdzPackets.CallScoreC2S;
@@ -12,6 +14,7 @@ import io.wifi.cards.doudizhu.network.DdzPackets.RobActionC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.SpectateLeaveC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.ToggleTrustC2S;
 import io.wifi.cards.doudizhu.rule.DdzAutoPlay;
+import io.wifi.cards.doudizhu.rule.DdzCardTypeRecognizer;
 import io.wifi.cards.doudizhu.rule.DdzPlayResult;
 import io.wifi.cards.doudizhu.sound.DdzSounds;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -19,25 +22,18 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.PlayerFaceRenderer;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.multiplayer.ClientPacketListener;
-import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.UUID;
 
 /**
- * 游戏桌面界面（第一轮文字化牌面）：
+ * 游戏桌面界面（第一轮文字化牌面，继承 {@link AbstractGameScreen}）：
  * <ul>
  * <li>顶部：对手信息（名字 + 剩余张数 + 地主标记），当前行动高亮</li>
  * <li>中央：阶段标题、轮到谁 + 倒计时、上一手出牌、底牌</li>
@@ -45,17 +41,13 @@ import java.util.UUID;
  * <li>右下：动态操作按钮（叫分 / 抢地主 / 出牌 + 提示 + 托管）</li>
  * </ul>
  */
-public class DdzGameScreen extends Screen {
+public class DdzGameScreen extends AbstractGameScreen {
     // 牌面尺寸：固定 34x50，重叠 14px 布局（GAP=20），地主 20 张也能在常见窗口宽度内放下
     private static final int CARD_W = 34;
     private static final int CARD_H = 50;
     private static final int CARD_GAP = 20;
     private static final int SELECT_OFFSET = 12;
 
-    private final Set<Integer> selected = new HashSet<>();
-    private final List<Button> actionButtons = new ArrayList<>();
-    private int buttonSignature = -1;
-    private int countdown = 30;
     /** 拖拽选牌：上次处理的牌下标（-1=不在牌上），避免同一张牌被反复切换。 */
     private int lastDragCard = -1;
     /** 拖拽时上次鼠标位置（GUI 缩放坐标），用于路径采样插值防漏牌。 */
@@ -63,29 +55,40 @@ public class DdzGameScreen extends Screen {
     private double lastDragY;
     /** 本次按下是否始于手牌（从按钮/空白按下拖动不处理手牌，避免误选）。 */
     private boolean dragArmed;
-    /** 退出确认弹层：成员点「退出」后先询问（旁观者退出无需确认）。 */
-    private boolean confirmingExit;
 
     public DdzGameScreen() {
-        super(Component.literal("斗地主"));
+        super("斗地主");
     }
 
     /** 旁观模式：服务端以 mySeat=-1 表示只读旁观（无手牌、无操作权）。 */
-    private boolean isSpectator() {
+    @Override
+    protected boolean isSpectator() {
         return DdzClientState.INSTANCE.mySeat < 0;
+    }
+
+    @Override
+    protected long turnEndGameTime() {
+        return DdzClientState.INSTANCE.turnEndGameTime;
+    }
+
+    @Override
+    protected void reopenHint() {
+        DdzClientState.chatReopenHint("关闭牌局界面");
+    }
+
+    @Override
+    protected String exitConfirmFirstLine() {
+        return "退出后座位将由机器人托管，对局继续";
     }
 
     @Override
     protected void init() {
         // 左下角：规则 / 出牌历史（子界面返回时回到本打牌界面，并渲染本界面为背景）
-        addRenderableWidget(Button
-                .builder(Component.literal("规则"),
-                        b -> Minecraft.getInstance().setScreen(new DdzRulesScreen(DdzGameScreen.this)))
-                .bounds(8, height - 26, 60, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("历史"), b -> {
+        addRulesButton(() -> Minecraft.getInstance().setScreen(new DdzRulesScreen(DdzGameScreen.this)));
+        addHistoryButton(() -> {
             ClientPlayNetworking.send(new HistoryC2S());
             Minecraft.getInstance().setScreen(new DdzHistoryScreen(DdzGameScreen.this));
-        }).bounds(72, height - 26, 60, 20).build());
+        });
         // 操作按钮（退出/托管/出牌等）在 init 时立即重建：
         // resize（窗口/全屏/GUI 缩放变化）会重建整个 widget 树，若只等 tick 的签名变化重建，
         // 旁观者（签名恒定）的「退出旁观」按钮会丢失且无法恢复（成员则要等选牌等变化才恢复）
@@ -107,7 +110,7 @@ public class DdzGameScreen extends Screen {
             return;
         }
         boolean inGameUi = current instanceof DdzGameScreen
-                || current instanceof DdzChatScreen
+                || current instanceof CardGameChatScreen
                 || (current instanceof DdzRulesScreen r && r.isFromGame())
                 || (current instanceof DdzHistoryScreen h && h.isFromGame());
         if (inGameUi) {
@@ -141,79 +144,12 @@ public class DdzGameScreen extends Screen {
         }
     }
 
-    @Override
-    public boolean isPauseScreen() {
-        return false;
-    }
-
-    /** 取消全局背景虚化：不再渲染模糊/纹理背景，仅由各内容区块绘制半透明黑色背景。 */
-    @Override
-    public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-    }
-
-    /** 待打开聊天框（延迟到 tick 执行，避免同按键的字符事件被新聊天框接收）。 */
-    private boolean openChatPending;
-
-    /** 关闭牌局界面（Esc）：退出确认弹层打开时先取消弹层，再按才关闭界面。 */
-    @Override
-    public void onClose() {
-        if (confirmingExit) {
-            confirmingExit = false; // 第一下 Esc：取消确认弹层（按钮由 tick 签名重建）
-            return;
-        }
-        DdzClientState.chatReopenHint("关闭牌局界面");
-        super.onClose();
-    }
-
-    /**
-     * 被替换为子界面（规则/历史/聊天）时调用：父类 removed() 会清空全部 widgets
-     * （含操作按钮），返回本界面时因签名未变不会重建 → 强制重置签名，下个 tick 重建按钮。
-     */
-    @Override
-    public void removed() {
-        super.removed();
-        buttonSignature = -1;
-    }
-
-    /** 窗口 resize：父类会再次调用 init()（重复添加规则/历史按钮），先清空全部再重建。 */
-    @Override
-    public void resize(Minecraft mc, int width, int height) {
-        clearWidgets();
-        actionButtons.clear();
-        buttonSignature = -1;
-        super.resize(mc, width, height);
-    }
-
-    @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        Minecraft mc = Minecraft.getInstance();
-        // 按聊天绑定键（原版 options.keyChat，默认 T）打开聊天框；
-        // 延迟到 tick 打开：立即打开会把本次按键的 charTyped 字符（如 't'）打进输入框
-        if (mc.options.keyChat.matches(keyCode, scanCode)) {
-            openChatPending = true;
-            return true;
-        }
-        return super.keyPressed(keyCode, scanCode, modifiers);
-    }
-
     // ---------------- tick / 按钮 ----------------
 
+    /** 每 tick 游戏特有逻辑：出牌被拒清选中 + 签名计算与按钮重建（聊天/倒计时由基类处理）。 */
     @Override
-    public void tick() {
-        super.tick();
-        // 延迟打开聊天框（等本次按键的字符事件处理完毕，避免 't' 等字符进入输入框）
-        if (openChatPending) {
-            openChatPending = false;
-            Minecraft.getInstance().setScreen(new DdzChatScreen(this));
-        }
+    protected void onTick() {
         DdzClientState s = DdzClientState.INSTANCE;
-        // 用服务端下发的截止游戏刻计算剩余秒数：客户端 level.getGameTime() 与服务端同步，
-        // 倒计时不受本地帧率/网络延迟影响
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level != null && s.turnEndGameTime > 0) {
-            long remainingTicks = s.turnEndGameTime - mc.level.getGameTime();
-            countdown = (int) Math.max(0, (remainingTicks + 19) / 20); // 向上取整
-        }
         // 服务端拒绝了最近一次出牌：清空选中，便于玩家重新选牌
         if (s.playRejected) {
             s.playRejected = false;
@@ -224,13 +160,11 @@ public class DdzGameScreen extends Screen {
         int signature = isSpectator() ? -50000
                 : (s.phase.ordinal() * 100 + (s.currentSeat + 1) * 10 + (s.myTrust ? 1 : 0)) * 2
                         + (selected.isEmpty() ? 0 : 1) + (s.revealed ? 1000 : 0) + (confirmingExit ? 500 : 0);
-        if (signature != buttonSignature) {
-            buttonSignature = signature;
-            rebuildActionButtons();
-        }
+        rebuildButtonsIfChanged(signature);
     }
 
-    private void rebuildActionButtons() {
+    @Override
+    protected void rebuildActionButtons() {
         for (Button b : actionButtons) {
             removeWidget(b);
         }
@@ -273,8 +207,8 @@ public class DdzGameScreen extends Screen {
                 actionButtons.add(button(x, y + 26, "抢地主 🔥", b -> sendRob(true), true));
             }
             case PLAYING -> {
-                // 出牌按钮始终显示；地主出第一手牌前额外显示「明牌」按钮（公开手牌）
-                actionButtons.add(button(x, y, "出牌", b -> sendPlay(), !selected.isEmpty()));
+                // 出牌按钮始终显示；选中牌为合法牌型且能压过上家时才可用（本地预检，与服务端同引擎）
+                actionButtons.add(button(x, y, "出牌", b -> sendPlay(), canPlaySelected()));
                 boolean canReveal = s.landlordSeat == s.mySeat && !s.revealed && s.lastPlaySeat < 0;
                 if (canReveal) {
                     actionButtons.add(button(x, y + 26, "明牌", b -> sendReveal(), true));
@@ -292,11 +226,30 @@ public class DdzGameScreen extends Screen {
         }
     }
 
-    private Button button(int x, int y, String label, Button.OnPress onPress, boolean active) {
-        Button b = Button.builder(Component.literal(label), onPress).bounds(x, y, 90, 20).build();
-        b.active = active;
-        addRenderableWidget(b);
-        return b;
+    /**
+     * 客户端本地出牌预检：选中牌是否为合法牌型（按房间规则过滤）且能压过上家。
+     * 与服务端 DdzGame.choosePlay 同引擎（DdzCardTypeRecognizer），防止把非法牌发到服务端被拒。
+     */
+    private boolean canPlaySelected() {
+        DdzClientState s = DdzClientState.INSTANCE;
+        if (selected.isEmpty() || s.hand.isEmpty()) {
+            return false;
+        }
+        List<DdzCard> cards = new ArrayList<>(selected.size());
+        for (DdzCard c : s.hand) {
+            if (selected.contains(c.id())) {
+                cards.add(c);
+            }
+        }
+        DdzPlayResult target = (s.lastPlayType != null && s.lastPlaySeat >= 0 && s.lastPlaySeat != s.mySeat)
+                ? new DdzPlayResult(s.lastPlayType, s.lastPlayKey, s.lastPlayCards)
+                : null;
+        for (DdzPlayResult r : DdzCardTypeRecognizer.recognize(cards, s.flowerMode, s.ruleSet)) {
+            if (r.canBeat(target)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ---------------- 操作 ----------------
@@ -481,17 +434,6 @@ public class DdzGameScreen extends Screen {
         }
     }
 
-    /** 退出确认弹层：半透明黑底 + 提示文本（按钮在右侧常驻行，见 rebuildActionButtons）。 */
-    private void drawExitConfirm(GuiGraphics g) {
-        int w = Math.min(340, width - 40);
-        int h = 54;
-        int x0 = (width - w) / 2;
-        int y0 = (height - h) / 2;
-        g.fill(x0, y0, x0 + w, y0 + h, 0xE6000000); // 深色背景遮罩
-        DdzGui.centeredShadow(g, this.font, width, "退出后座位将由机器人托管，对局继续", y0 + 10, 0xFFFFD700);
-        DdzGui.centeredShadow(g, this.font, width, "确定要退出游戏吗？", y0 + 26, 0xFFFFFFFF);
-    }
-
     private void drawTopInfo(GuiGraphics g) {
         DdzClientState s = DdzClientState.INSTANCE;
         // 顶部信息条（含玩家头颅与牌背）
@@ -585,35 +527,6 @@ public class DdzGameScreen extends Screen {
             case SETTLED -> "本局结束";
         };
         return s.debugSpectate() ? base + "（调试）" : base;
-    }
-
-    /**
-     * 渲染玩家头颅：通过 tab 列表的 PlayerInfo 获取皮肤纹理，
-     * 用 PlayerFaceRenderer 绘制脸部区域（8x8 放大到目标尺寸）。
-     * uuidStr 为空（假人/未知）、玩家不在 tab 列表或皮肤缺失时跳过。
-     */
-    private void drawHead(GuiGraphics g, String uuidStr, int x, int y, int size) {
-        if (uuidStr == null || uuidStr.isEmpty()) {
-            return;
-        }
-        try {
-            Minecraft mc = Minecraft.getInstance();
-            ClientPacketListener connection = mc.getConnection();
-            if (connection == null) {
-                return;
-            }
-            PlayerInfo info = connection.getPlayerInfo(UUID.fromString(uuidStr));
-            if (info == null) {
-                return;
-            }
-            ResourceLocation skin = info.getSkin().texture();
-            if (skin == null) {
-                return;
-            }
-            PlayerFaceRenderer.draw(g, skin, x, y, size);
-        } catch (IllegalArgumentException ignored) {
-            // 非法 UUID（理论不会发生）→ 跳过头像
-        }
     }
 
     private String nameLine(int seat) {

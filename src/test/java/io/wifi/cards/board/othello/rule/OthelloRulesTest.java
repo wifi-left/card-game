@@ -15,26 +15,44 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class OthelloRulesTest {
 
-    private static byte at(byte[] board, int x, int y) {
-        return board[y * 8 + x];
+    private static byte at(byte[] board, int size, int x, int y) {
+        return board[y * size + x];
     }
 
     @Test
     void initialBoardHasCenterFour() {
-        byte[] b = OthelloRules.initialBoard();
-        assertEquals(OthelloRules.WHITE, at(b, 3, 3));
-        assertEquals(OthelloRules.BLACK, at(b, 4, 3));
-        assertEquals(OthelloRules.BLACK, at(b, 3, 4));
-        assertEquals(OthelloRules.WHITE, at(b, 4, 4));
+        byte[] b = OthelloRules.initialBoard(8);
+        assertEquals(OthelloRules.WHITE, at(b, 8, 3, 3));
+        assertEquals(OthelloRules.BLACK, at(b, 8, 4, 3));
+        assertEquals(OthelloRules.BLACK, at(b, 8, 3, 4));
+        assertEquals(OthelloRules.WHITE, at(b, 8, 4, 4));
         assertEquals(2, OthelloRules.count(b, OthelloRules.BLACK));
         assertEquals(2, OthelloRules.count(b, OthelloRules.WHITE));
+    }
+
+    /** 非 8 尺寸（6×6 / 10×10 / 12×12 / 14×14）：初始四子同样居中，且黑方恰好 4 个合法着。 */
+    @Test
+    void initialBoardCenteredForOtherSizes() {
+        for (int size : new int[]{6, 10, 12, 14}) {
+            byte[] b = OthelloRules.initialBoard(size);
+            int m = size / 2;
+            assertEquals(OthelloRules.WHITE, at(b, size, m - 1, m - 1));
+            assertEquals(OthelloRules.BLACK, at(b, size, m, m - 1));
+            assertEquals(OthelloRules.BLACK, at(b, size, m - 1, m));
+            assertEquals(OthelloRules.WHITE, at(b, size, m, m));
+            List<int[]> moves = OthelloRules.legalMoves(b, size, OthelloRules.BLACK);
+            assertEquals(4, moves.size(), size + " 路初始合法着数");
+            for (int[] mv : moves) {
+                assertTrue(OthelloRules.flippedCount(b, size, mv[0], mv[1], OthelloRules.BLACK) > 0);
+            }
+        }
     }
 
     /** 标准开局：黑方恰好 4 个合法着（对角线方向）。 */
     @Test
     void initialLegalMoves() {
-        byte[] b = OthelloRules.initialBoard();
-        List<int[]> moves = OthelloRules.legalMoves(b, OthelloRules.BLACK);
+        byte[] b = OthelloRules.initialBoard(8);
+        List<int[]> moves = OthelloRules.legalMoves(b, 8, OthelloRules.BLACK);
         assertEquals(4, moves.size());
         for (int[] m : moves) {
             assertTrue(m[0] == 2 && m[1] == 3 || m[0] == 3 && m[1] == 2
@@ -46,11 +64,11 @@ class OthelloRulesTest {
     /** 落子 (2,3)：沿对角翻转 (3,3) 的白子，白子翻成黑子。 */
     @Test
     void applyMoveFlipsDiagonal() {
-        byte[] b = OthelloRules.initialBoard();
-        assertTrue(OthelloRules.applyMove(b, 2, 3, OthelloRules.BLACK));
-        assertEquals(OthelloRules.BLACK, at(b, 2, 3));
-        assertEquals(OthelloRules.BLACK, at(b, 3, 3)); // 被翻转
-        assertEquals(OthelloRules.BLACK, at(b, 4, 3)); // 保持
+        byte[] b = OthelloRules.initialBoard(8);
+        assertTrue(OthelloRules.applyMove(b, 8, 2, 3, OthelloRules.BLACK));
+        assertEquals(OthelloRules.BLACK, at(b, 8, 2, 3));
+        assertEquals(OthelloRules.BLACK, at(b, 8, 3, 3)); // 被翻转
+        assertEquals(OthelloRules.BLACK, at(b, 8, 4, 3)); // 保持
         assertEquals(4, OthelloRules.count(b, OthelloRules.BLACK));
         assertEquals(1, OthelloRules.count(b, OthelloRules.WHITE));
     }
@@ -58,10 +76,10 @@ class OthelloRulesTest {
     /** 占位点与无法夹住的点均不可落。 */
     @Test
     void applyMoveRejectsInvalid() {
-        byte[] b = OthelloRules.initialBoard();
-        assertFalse(OthelloRules.applyMove(b, 3, 3, OthelloRules.BLACK)); // 占位
-        assertFalse(OthelloRules.applyMove(b, 0, 0, OthelloRules.BLACK)); // 无翻转
-        assertFalse(OthelloRules.applyMove(b, -1, 0, OthelloRules.BLACK)); // 越界
+        byte[] b = OthelloRules.initialBoard(8);
+        assertFalse(OthelloRules.applyMove(b, 8, 3, 3, OthelloRules.BLACK)); // 占位
+        assertFalse(OthelloRules.applyMove(b, 8, 0, 0, OthelloRules.BLACK)); // 无翻转
+        assertFalse(OthelloRules.applyMove(b, 8, -1, 0, OthelloRules.BLACK)); // 越界
     }
 
     /** 水平翻转：黑落 (3,3)，右侧 白白黑 → 翻转两白为黑。 */
@@ -72,8 +90,8 @@ class OthelloRulesTest {
         b[3 * 8 + 4] = OthelloRules.WHITE;
         b[3 * 8 + 5] = OthelloRules.WHITE;
         b[3 * 8 + 6] = OthelloRules.BLACK; // 末端
-        assertEquals(2, OthelloRules.flippedCount(b, 3, 3, OthelloRules.BLACK));
-        assertTrue(OthelloRules.applyMove(b, 3, 3, OthelloRules.BLACK));
+        assertEquals(2, OthelloRules.flippedCount(b, 8, 3, 3, OthelloRules.BLACK));
+        assertTrue(OthelloRules.applyMove(b, 8, 3, 3, OthelloRules.BLACK));
         assertEquals(OthelloRules.BLACK, b[3 * 8 + 3]);
         assertEquals(OthelloRules.BLACK, b[3 * 8 + 4]);
         assertEquals(OthelloRules.BLACK, b[3 * 8 + 5]);
@@ -85,17 +103,29 @@ class OthelloRulesTest {
     void noLegalMoves() {
         byte[] b = new byte[64];
         java.util.Arrays.fill(b, OthelloRules.BLACK);
-        assertTrue(OthelloRules.legalMoves(b, OthelloRules.WHITE).isEmpty());
+        assertTrue(OthelloRules.legalMoves(b, 8, OthelloRules.WHITE).isEmpty());
     }
 
     /** AI：无合法着返回 null；初始局面返回合法着之一。 */
     @Test
     void aiFindMove() {
-        assertNull(OthelloAi.findMove(allBlackBoard(), OthelloRules.WHITE));
-        byte[] init = OthelloRules.initialBoard();
-        int[] move = OthelloAi.findMove(init, OthelloRules.BLACK);
+        assertNull(OthelloAi.findMove(allBlackBoard(), 8, OthelloRules.WHITE));
+        byte[] init = OthelloRules.initialBoard(8);
+        int[] move = OthelloAi.findMove(init, 8, OthelloRules.BLACK);
         assertNotNull(move);
-        assertTrue(OthelloRules.flippedCount(init, move[0], move[1], OthelloRules.BLACK) > 0);
+        assertTrue(OthelloRules.flippedCount(init, 8, move[0], move[1], OthelloRules.BLACK) > 0);
+    }
+
+    /** AI 任意尺寸：6×6 / 10×10 初始局面均能走出合法着。 */
+    @Test
+    void aiFindMoveOtherSizes() {
+        for (int size : new int[]{6, 10}) {
+            byte[] init = OthelloRules.initialBoard(size);
+            int[] move = OthelloAi.findMove(init, size, OthelloRules.BLACK);
+            assertNotNull(move);
+            assertTrue(OthelloRules.flippedCount(init, size, move[0], move[1], OthelloRules.BLACK) > 0,
+                    size + " 路 AI 着法非法");
+        }
     }
 
     private static byte[] allBlackBoard() {

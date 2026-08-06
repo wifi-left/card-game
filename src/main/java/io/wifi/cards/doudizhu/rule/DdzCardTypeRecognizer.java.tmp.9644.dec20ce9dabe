@@ -188,8 +188,7 @@ public final class DdzCardTypeRecognizer {
             if (allCount(counts, 3) && isConsecutive(new ArrayList<>(counts.keySet()), n / 3) && counts.lastKey() <= 14) {
                 return new DdzPlayResult(DdzCardType.PLANE, counts.lastKey(), null);
             }
-            // 四带二：四张 + 两张单牌（两单须不同牌点），或四张 + 两对（恰好 8 张）
-            // 注意：4+一对（6 张）/4+三对（10 张）不是合法牌型——带牌必须恰好两对
+            // 四带二：四张 + 两张单牌（两单须不同牌点），或四张 + 一对/两对
             if (counts.containsValue(4)) {
                 int quad = keyOfCount(counts, 4);
                 int others = n - 4;
@@ -209,7 +208,7 @@ public final class DdzCardTypeRecognizer {
                 if (others == 2 && onlySingles) {
                     return new DdzPlayResult(DdzCardType.FOUR_WITH_TWO_SINGLES, quad, null);
                 }
-                if (others == 4 && onlyPairs) {
+                if (onlyPairs) {
                     return new DdzPlayResult(DdzCardType.FOUR_WITH_TWO_PAIRS, quad, null);
                 }
             }

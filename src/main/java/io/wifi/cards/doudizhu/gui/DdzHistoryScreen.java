@@ -1,10 +1,9 @@
 package io.wifi.cards.doudizhu.gui;
 
+import io.wifi.cards.common.client.AbstractSubScreen;
 import io.wifi.cards.doudizhu.gui.DdzClientState.HistoryLine;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -15,73 +14,27 @@ import java.util.List;
 /**
  * 出牌历史界面：文本记录（"XXX 出了 333 5（三带一）"），最新在前。
  * <ul>
- *   <li>内容超出一屏时可滚动（滚轮 + 右侧可拖拽滚动条，同规则界面）</li>
- *   <li>出牌玩家、牌、牌型三色高亮</li>
- *   <li>有父级（打牌界面）时渲染父级内容为背景，返回时回到父级（参考 DdzChatScreen）</li>
+ * <li>内容超出一屏时可滚动（滚轮 + 右侧可拖拽滚动条，同规则界面）</li>
+ * <li>出牌玩家、牌、牌型三色高亮</li>
+ * <li>有父级（打牌界面）时渲染父级内容为背景，返回时回到父级（参考 DdzChatScreen）</li>
  * </ul>
  */
-public class DdzHistoryScreen extends Screen {
-    private static final int CONTENT_TOP = 30;
-    private static final int LINE_H = 10;
-    private static final int BOTTOM_BAR = 30;
-    private static final int SCROLLBAR_RIGHT = 8;
-    private static final int SCROLLBAR_W = 3;
-
-    private final Screen parent;
-    private float scroll;
-    private boolean draggingScrollbar;
-    private double dragOffset;
+public class DdzHistoryScreen extends AbstractSubScreen {
 
     public DdzHistoryScreen(Screen parent) {
-        super(Component.literal("出牌历史"));
-        this.parent = parent;
-    }
-
-    @Override
-    public boolean isPauseScreen() {
-        return false;
+        super(parent, "出牌历史");
     }
 
     // ---------------- 滚动计算（与规则界面一致） ----------------
-
-    private int trackTop() {
-        return CONTENT_TOP;
-    }
-
-    private int trackBottom() {
-        return height - BOTTOM_BAR;
-    }
-
-    private int trackHeight() {
-        return trackBottom() - trackTop();
-    }
-
-    private int maxScroll() {
-        return Math.max(0, totalHeight() - trackHeight());
-    }
-
-    private int thumbHeight() {
-        int track = trackHeight();
-        int content = totalHeight();
-        return Math.max(12, track * Math.min(track, content) / Math.max(content, track));
-    }
-
-    private int thumbTop() {
-        int max = maxScroll();
-        if (max <= 0) {
-            return trackTop();
-        }
-        return trackTop() + (int) ((trackHeight() - thumbHeight()) * scroll / max);
-    }
-
-    private void clampScroll() {
-        scroll = Math.max(0, Math.min(scroll, maxScroll()));
-    }
 
     private List<HistoryLine> lines() {
         return DdzClientState.INSTANCE.historyLines;
     }
 
+    @Override
+    public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+        renderOriginalBackground(g, mouseX, mouseY, partialTick);
+    }
     // ---------------- 文本构建（Component 样式着色 + font.split 换行） ----------------
 
     /** 文本区可用宽度（右侧留出滚动条）。 */
@@ -117,34 +70,26 @@ public class DdzHistoryScreen extends Screen {
         return total;
     }
 
+    /** 内容总高（行数 × 行高；历史界面按换行后行数累计）。 */
     @Override
-    protected void init() {
-        addRenderableWidget(Button.builder(Component.literal("返回"), b -> this.onClose())
-                .bounds(width / 2 - 40, height - BOTTOM_BAR + 4, 80, 20).build());
+    protected int contentHeight() {
+        return totalHeight();
     }
 
-    /** 是否从打牌界面打开（背景音乐归属判断用）。 */
-    public boolean isFromGame() {
-        return parent instanceof DdzGameScreen;
-    }
-
-    /** 返回：有父级（打牌界面）则回到父级，否则回大厅。 */
+    /** 无父级打开时的返回目标（大厅）。 */
     @Override
-    public void onClose() {
-        Minecraft.getInstance().setScreen(parent != null ? parent : new DdzLobbyScreen());
+    protected Screen fallbackScreen() {
+        return new DdzLobbyScreen();
     }
 
     @Override
-    public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        // 有父级时先渲染父级内容为背景（参考 DdzChatScreen），再绘制本界面
-        if (parent != null) {
-            parent.render(g, 0, 0, partialTick);
-        }
-        // 底部提示条背景（先画，返回按钮绘制在其上）
-        g.fill(0, height - BOTTOM_BAR, width, height, 0x44000000);
-        super.render(g, mouseX, mouseY, partialTick);
+    protected void buildContent() {
+    }
+
+    @Override
+    protected void renderContent(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         g.fill(0, 0, width, 26, 0x66000000);
-        DdzGui.centeredShadow(g, this.font, width, "出牌历史", 9, 0xFFFFD700);
+        g.drawCenteredString(this.font, "出牌历史", width / 2, 9, 0xFFFFD700);
         // 内容区半透明黑底（仅在有内容处），滚动文本绘制在其上
         g.fill(0, CONTENT_TOP, width, height - BOTTOM_BAR, 0x44000000);
         g.enableScissor(0, CONTENT_TOP, width, height - BOTTOM_BAR);
@@ -167,56 +112,8 @@ public class DdzHistoryScreen extends Screen {
             y += wrapped.size() * LINE_H;
         }
         g.disableScissor();
-        // 滚动条（内容超出一屏时显示）
-        int sbX = width - SCROLLBAR_RIGHT;
-        int max = maxScroll();
-        if (max > 0) {
-            g.fill(sbX, trackTop(), sbX + SCROLLBAR_W, trackBottom(), 0x33000000);
-            g.fill(sbX, thumbTop(), sbX + SCROLLBAR_W, thumbTop() + thumbHeight(), 0xCCFFFFFF);
-        }
-        DdzGui.centeredShadow(g, this.font, width, "滚轮滚动 / 拖拽滚动条，Esc 返回", height - 16, 0xFF888888);
+        drawScrollbar(g);
+        drawScrollHint(g);
     }
 
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        scroll -= (float) verticalAmount * 10;
-        clampScroll();
-        return true;
-    }
-
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 0 && mouseX >= width - SCROLLBAR_RIGHT && mouseX <= width - SCROLLBAR_RIGHT + SCROLLBAR_W) {
-            int top = thumbTop();
-            if (mouseY >= top && mouseY <= top + thumbHeight()) {
-                draggingScrollbar = true;
-                dragOffset = mouseY - top;
-                return true;
-            }
-        }
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (draggingScrollbar && button == 0) {
-            int usable = trackHeight() - thumbHeight();
-            if (usable > 0) {
-                double pos = mouseY - trackTop() - dragOffset;
-                scroll = (float) (maxScroll() * pos / usable);
-                clampScroll();
-            }
-            return true;
-        }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-    }
-
-    @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (draggingScrollbar && button == 0) {
-            draggingScrollbar = false;
-            return true;
-        }
-        return super.mouseReleased(mouseX, mouseY, button);
-    }
 }

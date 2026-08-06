@@ -58,7 +58,7 @@ public final class UnoCommands {
                             .executes(ctx -> unspectate(ctx.getSource())))
                     .then(Commands.literal("debug").requires(src -> src.hasPermission(2))
                             .then(Commands.literal("bots")
-                                    .then(Commands.argument("count", IntegerArgumentType.integer(1, 3))
+                                    .then(Commands.argument("count", IntegerArgumentType.integer(1, 9))
                                             .executes(ctx -> debugBots(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "count"))))
                                     .then(Commands.literal("remove")
                                             .executes(ctx -> debugBotsRemove(ctx.getSource()))))

@@ -147,9 +147,8 @@ class DdzCardTypeRecognizerTest {
         assertNotNull(p1);
         assertEquals(DdzCardType.FOUR_WITH_TWO_SINGLES, p1.type);
         assertEquals(8, p1.key);
-        DdzPlayResult p2 = recognize(c(20, 21, 22, 23, 0, 1)); // 888833
-        assertNotNull(p2);
-        assertEquals(DdzCardType.FOUR_WITH_TWO_PAIRS, p2.type);
+        // 888833（6 张，四带一对）：不是四带两对（带牌必须恰好两对），非法
+        assertNull(recognize(c(20, 21, 22, 23, 0, 1)));
         DdzPlayResult p3 = recognize(c(20, 21, 22, 23, 0, 1, 4, 5)); // 88883344
         assertNotNull(p3);
         assertEquals(DdzCardType.FOUR_WITH_TWO_PAIRS, p3.type);
@@ -410,5 +409,52 @@ class DdzCardTypeRecognizerTest {
         assertNotNull(b);
         assertFalse(a.canBeat(b));
         assertFalse(b.canBeat(a));
+    }
+
+    @Test
+    void tripleWithTwoSinglesIsNotValid() {
+        // JJJ45（三张 J + 4 + 5，3+1+1 共 5 张）：不是三带一（三带一只能带 1 张单牌）
+        assertNull(recognize(cards(r(11), r(11), r(11), r(4), r(5))));
+        // 4+1（5 张）同样不是合法牌型
+        assertNull(recognize(cards(r(8), r(8), r(8), r(8), r(4))));
+        // 3+2 仍是合法三带二
+        assertEquals(DdzCardType.TRIPLE_WITH_PAIR,
+                recognize(cards(r(11), r(11), r(11), r(4), r(4))).type);
+    }
+
+    @Test
+    void flowerTripleWithTwoSinglesIsNotValid() {
+        // 花牌 + JJJ + 4（5 张）：不得识别为三带一（花牌模式也禁三带二）
+        assertTrue(DdzCardTypeRecognizer.recognize(cards(DdzCard.flower(), r(11), r(11), r(11), r(4)),
+                true, DdzRuleSet.STANDARD).isEmpty());
+        // 经典 + 民间：花牌 + JJJ + 4 → 枚举替换后 3+1+1 非法；替换成 4 时三带二被民间规则禁
+        assertTrue(DdzCardTypeRecognizer.recognize(cards(DdzCard.flower(), r(11), r(11), r(11), r(4)),
+                false, DdzRuleSet.FOLK).isEmpty());
+    }
+
+    @Test
+    void fourWithOnePairIsNotValid() {
+        // 8888+44（6 张，四带一对）：不是四带两对（带牌必须恰好两对 = 8 张）
+        assertNull(recognize(cards(r(8), r(8), r(8), r(8), r(4), r(4))));
+        // 8888+444（7 张 4+3）：非法
+        assertNull(recognize(cards(r(8), r(8), r(8), r(8), r(4), r(4), r(4))));
+        // 8888+44+55+66（10 张，四带三对）：非法
+        assertNull(recognize(cards(r(8), r(8), r(8), r(8), r(4), r(4), r(5), r(5), r(6), r(6))));
+        // 8888+44+55（8 张，四带两对）：合法
+        assertEquals(DdzCardType.FOUR_WITH_TWO_PAIRS,
+                recognize(cards(r(8), r(8), r(8), r(8), r(4), r(4), r(5), r(5))).type);
+        // 8888+45（6 张，四带两单）：合法
+        assertEquals(DdzCardType.FOUR_WITH_TWO_SINGLES,
+                recognize(cards(r(8), r(8), r(8), r(8), r(4), r(5))).type);
+        // 8888+4444（8 张，双炸弹）：非法（四带两对必须是 4+2+2）
+        assertNull(recognize(cards(r(8), r(8), r(8), r(8), r(4), r(4), r(4), r(4))));
+    }
+
+    @Test
+    void fourWithMixedKickersIsNotValid() {
+        // 8888+4+55（7 张，单牌+对子混带）：非法
+        assertNull(recognize(cards(r(8), r(8), r(8), r(8), r(4), r(5), r(5))));
+        // 8888+4+5+6（7 张，三张单牌）：非法（四带二只能带两张单）
+        assertNull(recognize(cards(r(8), r(8), r(8), r(8), r(4), r(5), r(6))));
     }
 }

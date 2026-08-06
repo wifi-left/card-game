@@ -92,6 +92,15 @@ public abstract class BoardGame {
 
     public abstract void start();
 
+    /** 开始新一局（满 2 人开局 / 再来一局）：统一重置阶段后交给子类初始化。
+     *  {@link #settle(byte, int, int, String)} 会把 phase 置为 SETTLED，
+     *  子类 start() 若不复位 phase，再来一局后 onMove 的 phase 校验会拒绝所有落子——
+     *  这里兜底重置，防止子类遗漏。 */
+    public final void begin() {
+        phase = BoardPhase.PLAYING;
+        start();
+    }
+
     public abstract void onMove(ServerPlayer player, int x, int y);
 
     public abstract void onPass(ServerPlayer player);

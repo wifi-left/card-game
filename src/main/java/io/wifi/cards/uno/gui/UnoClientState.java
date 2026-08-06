@@ -1,6 +1,7 @@
 package io.wifi.cards.uno.gui;
 
 import io.wifi.cards.common.GameRegistry;
+import io.wifi.cards.common.client.AbstractLobbyScreen;
 import io.wifi.cards.common.client.GameClientSession;
 import io.wifi.cards.uno.card.UnoCard;
 import io.wifi.cards.uno.card.UnoColor;
@@ -15,6 +16,7 @@ import io.wifi.cards.uno.network.UnoPackets.HistoryS2C;
 import io.wifi.cards.uno.network.UnoPackets.PassBroadcastS2C;
 import io.wifi.cards.uno.network.UnoPackets.PlayBroadcastS2C;
 import io.wifi.cards.uno.network.UnoPackets.ReconnectS2C;
+import io.wifi.cards.uno.network.UnoPackets.RoomListS2C;
 import io.wifi.cards.uno.network.UnoPackets.RoomStateS2C;
 import io.wifi.cards.uno.network.UnoPackets.SpectatorHandsS2C;
 import io.wifi.cards.uno.network.UnoPackets.TrustStateS2C;
@@ -72,6 +74,10 @@ public final class UnoClientState implements GameClientSession {
     public boolean myTrust;
     /** 各家完整手牌（仅旁观模式填充：SpectatorHandsS2C 透视视角）。 */
     public final List<List<UnoCard>> spectatorHands = new ArrayList<>();
+
+    // ---- 大厅房间列表 ----
+    /** 大厅房间列表（由 RoomListS2C 填充，仅公开房间；条目类型见 AbstractLobbyScreen.RoomEntry）。 */
+    public final List<AbstractLobbyScreen.RoomEntry> roomList = new ArrayList<>();
     /** 中央事件提示行（最新一条）。 */
     public String lastEvent = "";
     /** 服务端拒绝了最近一次出牌（GameScreen 消费后清空选中）。 */
@@ -444,6 +450,21 @@ public final class UnoClientState implements GameClientSession {
         }
     }
 
+    /** 大厅房间列表下发（LobbyQueryC2S 响应）：更新缓存并通知大厅界面刷新（内容变化时才重建控件）。 */
+    public void onRoomList(RoomListS2C payload) {
+        roomList.clear();
+        String[] codes = payload.codes();
+        String[] lines = payload.lines();
+        byte[] statuses = payload.statuses();
+        int n = Math.min(codes.length, Math.min(lines.length, statuses.length));
+        for (int i = 0; i < n; i++) {
+            roomList.add(new AbstractLobbyScreen.RoomEntry(codes[i], lines[i], statuses[i]));
+        }
+        if (Minecraft.getInstance().screen instanceof UnoLobbyScreen lobby) {
+            lobby.onRoomListChanged();
+        }
+    }
+
     /**
      * 旁观 UI 调试快照（/uno debug spectateui）：无房间的虚拟旁观数据，
      * 填充状态后打开"（调试）"旁观界面，仅用于检查旁观 UI 渲染/滚动。
@@ -545,6 +566,7 @@ public final class UnoClientState implements GameClientSession {
         declaredUno = new boolean[0];
         myTrust = false;
         spectatorHands.clear();
+        roomList.clear();
         lastEvent = "";
         playRejected = false;
         historyLines.clear();
