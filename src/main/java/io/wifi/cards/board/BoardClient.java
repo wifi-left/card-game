@@ -77,10 +77,10 @@ public final class BoardClient {
                 ctx.client().execute(() -> state.onNotice(payload.message())));
         ClientPlayNetworking.registerGlobalReceiver(RoomListS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> state.onRoomList(payload)));
-        // 调试旁观界面（/board debug ui 触发）：随机虚拟对局数据，仅供 UI 检查
+        // 调试旁观界面（/chess debug ui 触发）：随机虚拟对局数据，仅供 UI 检查
         ClientPlayNetworking.registerGlobalReceiver(DebugUiS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> state.onDebugUi(payload)));
-        // 服务端命令 /board 触发：在主线程打开大厅（同时退出调试旁观模式）
+        // 服务端命令 /chess 触发：在主线程打开大厅（同时退出调试旁观模式）
         ClientPlayNetworking.registerGlobalReceiver(OpenLobbyS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> {
                     BoardClientState.INSTANCE.debugMode = false;

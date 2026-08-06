@@ -115,7 +115,7 @@ public final class BoardMemoryManager {
             error(player, "房间码无效");
             return;
         }
-        BoardRoom room = rooms.get(cleanCode(code));
+        BoardRoom room = rooms.get(fullCode(code));
         if (room == null) {
             error(player, "房间不存在：" + code);
             return;
@@ -155,7 +155,7 @@ public final class BoardMemoryManager {
      * </ul>
      */
     public void leaveRoom(ServerPlayer player) {
-        // 旁观者：/board leave 等同退出旁观
+        // 旁观者：/chess leave 等同退出旁观
         if (spectatorRoomIds.containsKey(player.getUUID())) {
             leaveSpectate(player);
             return;
@@ -426,12 +426,12 @@ public final class BoardMemoryManager {
 
     /** 按房间码查找房间（管理命令用），不存在返回 null。 */
     public BoardRoom roomByCode(String code) {
-        return rooms.get(cleanCode(code));
+        return rooms.get(fullCode(code));
     }
 
     /** 删除指定房间（通知成员后销毁）；返回错误信息或 null。 */
     public String deleteRoom(String code) {
-        BoardRoom room = rooms.get(cleanCode(code));
+        BoardRoom room = rooms.get(fullCode(code));
         if (room == null) {
             return "房间不存在：" + code;
         }
@@ -497,7 +497,7 @@ public final class BoardMemoryManager {
         if (code == null || code.length() > 16) {
             return "房间码无效";
         }
-        BoardRoom room = rooms.get(cleanCode(code));
+        BoardRoom room = rooms.get(fullCode(code));
         if (room == null) {
             return "房间不存在：" + code;
         }
@@ -566,7 +566,7 @@ public final class BoardMemoryManager {
     public String forceJoin(ServerPlayer target, String roomCode) {
         // 先退出旁观状态（强制入房同样要求退出旁观）
         leaveSpectateInternal(target);
-        BoardRoom room = rooms.get(cleanCode(roomCode));
+        BoardRoom room = rooms.get(fullCode(roomCode));
         if (room == null) {
             return "房间不存在：" + roomCode;
         }
@@ -665,9 +665,10 @@ public final class BoardMemoryManager {
     }
 
     /** 房间码规范化：去掉本游戏前缀（兼容 "BD-XXXXX" 完整码与裸码 "XXXXX" 两种输入）。 */
-    private static String cleanCode(String code) {
+    /** 房间码规范化：统一为完整码（补上前缀），兼容裸码与完整码输入（rooms 的 key 为完整码）。 */
+    private static String fullCode(String code) {
         String norm = code == null ? "" : code.toUpperCase().trim();
-        return norm.startsWith(GameRegistry.PREFIX_BOARD + "-") ? norm.substring(3) : norm;
+        return norm.startsWith(GameRegistry.PREFIX_BOARD + "-") ? norm : GameRegistry.PREFIX_BOARD + "-" + norm;
     }
 
     /** 当前房间总数（菜单统计用）。 */

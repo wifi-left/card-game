@@ -383,7 +383,7 @@ public final class BoardPackets {
         }
     }
 
-    /** 打开大厅（S2C，由 /board 命令触发）。 */
+    /** 打开大厅（S2C，由 /chess 命令触发）。 */
     public record OpenLobbyS2C() implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<OpenLobbyS2C> TYPE = new CustomPacketPayload.Type<>(OPEN_LOBBY);
         public static final StreamCodec<FriendlyByteBuf, OpenLobbyS2C> CODEC = StreamCodec.of(
@@ -417,7 +417,7 @@ public final class BoardPackets {
         }
     }
 
-    /** 调试旁观界面（S2C，OP 命令 /board debug ui 触发）：随机虚拟对局数据，无房间，仅供 UI 检查。 */
+    /** 调试旁观界面（S2C，OP 命令 /chess debug ui 触发）：随机虚拟对局数据，无房间，仅供 UI 检查。 */
     public record DebugUiS2C(byte gameType, byte size, byte[] board, String[] names, byte currentSeat) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<DebugUiS2C> TYPE = new CustomPacketPayload.Type<>(DEBUG_UI);
         public static final StreamCodec<FriendlyByteBuf, DebugUiS2C> CODEC = StreamCodec.of(

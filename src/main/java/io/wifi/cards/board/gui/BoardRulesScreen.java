@@ -53,7 +53,7 @@ public class BoardRulesScreen extends AbstractSubScreen {
     private void buildLines() {
         lines.add("【房间与对局】2 人对战：黑白棋 8×8、五子棋 15×15、围棋 9/19 路。");
         lines.add("满 2 人自动开局；黑方（房主）先手，轮流落子。");
-        lines.add("对局开始后可旁观（大厅列表 / 聊天栏公告 / /board spectate）。");
+        lines.add("对局开始后可旁观（大厅列表 / 聊天栏公告 / /chess spectate）。");
         lines.add("每步限时 60 秒：五子棋/黑白棋超时由 AI 托管走一步，");
         lines.add("围棋超时直接跳过轮到对方。可随时认输。");
         lines.add("对局中退出：五子棋/黑白棋座位转机器人托管继续；");
@@ -61,7 +61,7 @@ public class BoardRulesScreen extends AbstractSubScreen {
         lines.add("断线重连自动恢复完整对局状态（五子棋/黑白棋；");
         lines.add("围棋断线即结束本局，重连时房间已关闭）；");
         lines.add("结算后可再来一局或返回大厅。");
-        lines.add("调试：/board debug ui 可打开随机虚拟对局检查旁观界面。");
+        lines.add("调试：/chess debug ui 可打开随机虚拟对局检查旁观界面。");
         lines.add("");
         lines.add("【黑白棋（8×8）】黑先。");
         lines.add("落子在空格，横/竖/斜方向夹住对方棋子则整串翻转。");

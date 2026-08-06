@@ -29,7 +29,7 @@ import java.util.List;
  *   <li><code>/cardgames list</code>：聊天列出各游戏与房间/在线统计</li>
  *   <li><code>/cardgames debug rooms|roomdelete|roomclear</code>：OP 全游戏统一房间管理</li>
  * </ul>
- * 房间操作全部经 GameRegistry 路由到对应游戏，各游戏自身命令（/doudizhu /uno /board）保留不变。
+ * 房间操作全部经 GameRegistry 路由到对应游戏，各游戏自身命令（/doudizhu /uno /chess）保留不变。
  */
 public final class CardGamesCommands {
     private CardGamesCommands() {

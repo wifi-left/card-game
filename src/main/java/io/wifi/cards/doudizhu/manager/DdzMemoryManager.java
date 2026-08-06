@@ -110,7 +110,7 @@ public final class DdzMemoryManager {
             error(player, "房间码无效");
             return;
         }
-        DdzRoom room = rooms.get(cleanCode(code));
+        DdzRoom room = rooms.get(fullCode(code));
         if (room == null) {
             error(player, "房间不存在：" + code);
             return;
@@ -451,7 +451,7 @@ public final class DdzMemoryManager {
 
     /** 按房间码查找房间（管理命令用），不存在返回 null。 */
     public DdzRoom roomByCode(String code) {
-        return rooms.get(cleanCode(code));
+        return rooms.get(fullCode(code));
     }
 
     /** 大厅房间列表下发（LobbyQueryC2S 响应）：仅公开房间（创建时"公布房间"开启）。
@@ -490,7 +490,7 @@ public final class DdzMemoryManager {
 
     /** 删除指定房间（通知成员后销毁）；返回错误信息或 null。 */
     public String deleteRoom(String code) {
-        DdzRoom room = rooms.get(cleanCode(code));
+        DdzRoom room = rooms.get(fullCode(code));
         if (room == null) {
             return "房间不存在：" + code;
         }
@@ -518,7 +518,7 @@ public final class DdzMemoryManager {
         if (code == null || code.length() > 16) {
             return "房间码无效";
         }
-        DdzRoom room = rooms.get(cleanCode(code));
+        DdzRoom room = rooms.get(fullCode(code));
         if (room == null) {
             return "房间不存在：" + code;
         }
@@ -587,7 +587,7 @@ public final class DdzMemoryManager {
     public String forceJoin(ServerPlayer target, String roomCode) {
         // 先退出旁观状态（强制入房同样要求退出旁观）
         leaveSpectateInternal(target);
-        DdzRoom room = rooms.get(cleanCode(roomCode));
+        DdzRoom room = rooms.get(fullCode(roomCode));
         if (room == null) {
             return "房间不存在：" + roomCode;
         }
@@ -682,9 +682,10 @@ public final class DdzMemoryManager {
     }
 
     /** 房间码规范化：去掉本游戏前缀（兼容 "DZ-XXXXX" 完整码与裸码 "XXXXX" 两种输入）。 */
-    private static String cleanCode(String code) {
+    /** 房间码规范化：统一为完整码（补上前缀），兼容裸码与完整码输入（rooms 的 key 为完整码）。 */
+    private static String fullCode(String code) {
         String norm = code == null ? "" : code.toUpperCase().trim();
-        return norm.startsWith(GameRegistry.PREFIX_DOUDIZHU + "-") ? norm.substring(3) : norm;
+        return norm.startsWith(GameRegistry.PREFIX_DOUDIZHU + "-") ? norm : GameRegistry.PREFIX_DOUDIZHU + "-" + norm;
     }
 
     /** 当前房间总数（菜单统计用）。 */

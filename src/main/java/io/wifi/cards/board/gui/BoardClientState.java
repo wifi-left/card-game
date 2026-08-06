@@ -65,7 +65,7 @@ public final class BoardClientState implements GameClientSession {
     /** 大厅房间列表（由 RoomListS2C 填充，仅公开房间；条目类型见 AbstractLobbyScreen.RoomEntry）。 */
     public final List<AbstractLobbyScreen.RoomEntry> roomList = new ArrayList<>();
 
-    /** 调试旁观模式（/board debug ui）：无真实房间的随机虚拟对局，仅供 UI 检查；
+    /** 调试旁观模式（/chess debug ui）：无真实房间的随机虚拟对局，仅供 UI 检查；
      *  任何真实服务端状态包到达时清除（见各 onXxx 入口）。 */
     public boolean debugMode;
 
@@ -279,7 +279,7 @@ public final class BoardClientState implements GameClientSession {
         }
     }
 
-    /** 调试旁观界面（/board debug ui）：随机虚拟对局填充本地状态并打开棋盘界面（旁观视角）。 */
+    /** 调试旁观界面（/chess debug ui）：随机虚拟对局填充本地状态并打开棋盘界面（旁观视角）。 */
     public void onDebugUi(DebugUiS2C payload) {
         this.debugMode = true;
         this.roomCode = null; // 无真实房间
@@ -326,7 +326,7 @@ public final class BoardClientState implements GameClientSession {
         mc.gui.getChat().addMessage(Component.literal("[棋牌] 已" + closedDesc + "，输入 /chess 或 ")
                 .append(Component.literal("[点击此处]").withStyle(style -> style
                         .withColor(ChatFormatting.GREEN)
-                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/board"))))
+                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/chess"))))
                 .append(Component.literal(" 重新打开")));
     }
 

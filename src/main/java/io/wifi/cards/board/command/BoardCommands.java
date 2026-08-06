@@ -27,12 +27,12 @@ import java.util.Random;
 /**
  * 棋类服务端命令（服务端可加载，不引用任何含 client 的包）：
  * <ul>
- *   <li><code>/board</code>：打开棋类大厅（服务端校验后发 OpenLobbyS2C，客户端主线程打开 UI）</li>
- *   <li><code>/board accept &lt;房间码&gt;</code>：加入房间（聊天点击消息触发）</li>
- *   <li><code>/board invite &lt;玩家&gt;</code>：房主邀请玩家（被邀请者收到可点击消息）</li>
- *   <li><code>/board leave</code>：离开房间</li>
- *   <li><code>/board spectate &lt;房间码&gt;</code> / <code>unspectate</code>：旁观/退出旁观</li>
- *   <li><code>/board debug ...</code>：调试命令（OP 权限，开发端测试用）</li>
+ *   <li><code>/chess</code>：打开棋类大厅（服务端校验后发 OpenLobbyS2C，客户端主线程打开 UI）</li>
+ *   <li><code>/chess accept &lt;房间码&gt;</code>：加入房间（聊天点击消息触发）</li>
+ *   <li><code>/chess invite &lt;玩家&gt;</code>：房主邀请玩家（被邀请者收到可点击消息）</li>
+ *   <li><code>/chess leave</code>：离开房间</li>
+ *   <li><code>/chess spectate &lt;房间码&gt;</code> / <code>unspectate</code>：旁观/退出旁观</li>
+ *   <li><code>/chess debug ...</code>：调试命令（OP 权限，开发端测试用）</li>
  * </ul>
  */
 public final class BoardCommands {
@@ -104,7 +104,7 @@ public final class BoardCommands {
     // ---------------- 普通命令 ----------------
 
     /**
-     * 打开 UI：/board。
+     * 打开 UI：/chess。
      * <ul>
      *   <li>对局中/已结束：发房间状态 + 完整对局快照，客户端重新打开棋盘界面</li>
      *   <li>旁观中：重发旁观快照（房间状态 + 对局），客户端重新打开旁观界面</li>
@@ -116,7 +116,7 @@ public final class BoardCommands {
         return 1;
     }
 
-    /** 打开该游戏 UI（/board 与 /cardgames open 共用）：
+    /** 打开该游戏 UI（/chess 与 /cardgames open 共用）：
      * 对局中重发快照 / 旁观中重发旁观快照 / 否则发 OpenLobbyS2C 打开大厅。 */
     public static void openLobby(ServerPlayer player) {
         BoardMemoryManager m = BoardMemoryManager.INSTANCE;
@@ -127,7 +127,7 @@ public final class BoardCommands {
             room.game.syncTo(room.seatOf(player));
             return;
         }
-        // 旁观者：关闭 UI 后用 /board 重新打开应回到旁观界面（而非大厅）
+        // 旁观者：关闭 UI 后用 /chess 重新打开应回到旁观界面（而非大厅）
         String specId = m.spectatingRoomId(player);
         if (specId != null) {
             BoardRoom specRoom = m.roomByCode(specId);
@@ -140,14 +140,14 @@ public final class BoardCommands {
         ServerPlayNetworking.send(player, new OpenLobbyS2C());
     }
 
-    /** 接受邀请加入：/board accept <房间码>（服务端直接处理；聊天点击消息触发）。 */
+    /** 接受邀请加入：/chess accept <房间码>（服务端直接处理；聊天点击消息触发）。 */
     private static int accept(CommandSourceStack source, String code) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         BoardMemoryManager.INSTANCE.joinRoom(player, code);
         return 1;
     }
 
-    /** 旁观房间：/board spectate <房间码>（对局开始后的只读观看）。 */
+    /** 旁观房间：/chess spectate <房间码>（对局开始后的只读观看）。 */
     private static int spectate(CommandSourceStack source, String code) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         String error = BoardMemoryManager.INSTANCE.spectate(player, code);
@@ -159,7 +159,7 @@ public final class BoardCommands {
         return 1;
     }
 
-    /** 退出旁观：/board unspectate。 */
+    /** 退出旁观：/chess unspectate。 */
     private static int unspectate(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         BoardMemoryManager.INSTANCE.leaveSpectate(player);
@@ -177,7 +177,7 @@ public final class BoardCommands {
         return 1;
     }
 
-    /** 邀请玩家加入自己所在房间（/board invite 与 /cardgames invite 共用）；
+    /** 邀请玩家加入自己所在房间（/chess invite 与 /cardgames invite 共用）；
      *  成功时向目标发送可点击邀请消息，返回错误消息或 null。 */
     public static String invite(ServerPlayer owner, ServerPlayer target) {
         BoardRoom room = BoardMemoryManager.INSTANCE.currentRoom(owner);
@@ -204,21 +204,21 @@ public final class BoardCommands {
 
     // ---------------- 调试命令（OP） ----------------
 
-    /** 添加调试假人：/board debug bots 1（等待中的房间，满 2 人自动开局）。 */
+    /** 添加调试假人：/chess debug bots 1（等待中的房间，满 2 人自动开局）。 */
     private static int debugBots(CommandSourceStack source, int count) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         BoardMemoryManager.INSTANCE.addBots(player, count);
         return 1;
     }
 
-    /** 移除调试假人：/board debug bots remove。 */
+    /** 移除调试假人：/chess debug bots remove。 */
     private static int debugBotsRemove(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         BoardMemoryManager.INSTANCE.removeBots(player);
         return 1;
     }
 
-    /** 指挥当前轮到者落子（真人与假人均可）：/board debug move <x> <y>。 */
+    /** 指挥当前轮到者落子（真人与假人均可）：/chess debug move <x> <y>。 */
     private static int debugMove(CommandSourceStack source, int x, int y) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         BoardGame game = gameOf(source, player);
@@ -230,7 +230,7 @@ public final class BoardCommands {
         return 1;
     }
 
-    /** 指挥当前轮到者停一手（真人与假人均可）：/board debug pass。 */
+    /** 指挥当前轮到者停一手（真人与假人均可）：/chess debug pass。 */
     private static int debugPass(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         BoardGame game = gameOf(source, player);
@@ -242,7 +242,7 @@ public final class BoardCommands {
         return 1;
     }
 
-    /** 指挥当前轮到者认输：/board debug surrender。 */
+    /** 指挥当前轮到者认输：/chess debug surrender。 */
     private static int debugSurrender(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         BoardGame game = gameOf(source, player);
@@ -254,7 +254,7 @@ public final class BoardCommands {
         return 1;
     }
 
-    /** 打开调试旁观界面：/board debug ui。无房间，发送随机虚拟对局数据供旁观 UI 检查（标题带"（调试）"）。
+    /** 打开调试旁观界面：/chess debug ui。无房间，发送随机虚拟对局数据供旁观 UI 检查（标题带"（调试）"）。
      *  对局中/旁观中拒绝：虚拟数据会覆盖真实对局状态。 */
     private static int debugUi(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
@@ -308,7 +308,7 @@ public final class BoardCommands {
                 new String[]{"调试者A", "调试者B"}, (byte) RANDOM.nextInt(2));
     }
 
-    /** 强制将指定玩家加入房间：/board debug forcejoin <玩家> [房间码]（缺省用执行者所在房间）。 */
+    /** 强制将指定玩家加入房间：/chess debug forcejoin <玩家> [房间码]（缺省用执行者所在房间）。 */
     private static int debugForceJoin(CommandSourceStack source, ServerPlayer target, String roomCode) throws CommandSyntaxException {
         ServerPlayer executor = source.getPlayerOrException();
         final String code;
@@ -331,7 +331,7 @@ public final class BoardCommands {
         return 1;
     }
 
-    /** 强制指定玩家退出游戏（对局中座位转机器人托管；房间无真人则关闭）：/board debug kick <玩家>。 */
+    /** 强制指定玩家退出游戏（对局中座位转机器人托管；房间无真人则关闭）：/chess debug kick <玩家>。 */
     private static int debugKick(CommandSourceStack source, ServerPlayer target) {
         if (BoardMemoryManager.INSTANCE.currentRoom(target) == null) {
             source.sendFailure(Component.literal(target.getGameProfile().getName() + " 不在任何房间中"));
@@ -344,7 +344,7 @@ public final class BoardCommands {
 
     // ---------------- 管理员房间管理 ----------------
 
-    /** 房间列表（每行带 [显示具体信息][删除房间] 快捷点击）：/board debug rooms。 */
+    /** 房间列表（每行带 [显示具体信息][删除房间] 快捷点击）：/chess debug rooms。 */
     private static int debugRooms(CommandSourceStack source) {
         List<BoardRoom> rooms = BoardMemoryManager.INSTANCE.roomSnapshot();
         source.sendSuccess(() -> Component.literal("房间列表（共 " + rooms.size() + " 个）"), false);
@@ -364,7 +364,7 @@ public final class BoardCommands {
         return 1;
     }
 
-    /** 房间详细信息（成员：真人 + 机器人，含在线状态）：/board debug room <房间码>。 */
+    /** 房间详细信息（成员：真人 + 机器人，含在线状态）：/chess debug room <房间码>。 */
     private static int debugRoom(CommandSourceStack source, String code) {
         BoardRoom room = BoardMemoryManager.INSTANCE.roomByCode(code);
         if (room == null) {
@@ -392,7 +392,7 @@ public final class BoardCommands {
         return 1;
     }
 
-    /** 删除指定房间：/board debug roomdelete <房间码>。 */
+    /** 删除指定房间：/chess debug roomdelete <房间码>。 */
     private static int debugRoomDelete(CommandSourceStack source, String code) {
         String error = BoardMemoryManager.INSTANCE.deleteRoom(code);
         if (error != null) {
@@ -403,7 +403,7 @@ public final class BoardCommands {
         return 1;
     }
 
-    /** 清空所有房间：/board debug roomclear。 */
+    /** 清空所有房间：/chess debug roomclear。 */
     private static int debugRoomClear(CommandSourceStack source) {
         int count = BoardMemoryManager.INSTANCE.clearAllRooms();
         source.sendSuccess(() -> Component.literal("已清空全部房间（共 " + count + " 个）"), false);
