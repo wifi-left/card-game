@@ -40,12 +40,28 @@ public final class LobbyPrefs {
 
     public static boolean getBool(String gameId, String key, boolean def) {
         JsonObject g = root().getAsJsonObject(gameId);
-        return g != null && g.has(key) ? g.get(key).getAsBoolean() : def;
+        if (g != null && g.has(key)) {
+            try {
+                return g.get(key).getAsBoolean();
+            } catch (RuntimeException e) {
+                // 类型不符（config 被手改）：回退默认值，不崩溃
+                LOGGER.error("大厅偏好 {}/{} 类型不符，使用默认值", gameId, key);
+            }
+        }
+        return def;
     }
 
     public static int getInt(String gameId, String key, int def) {
         JsonObject g = root().getAsJsonObject(gameId);
-        return g != null && g.has(key) ? g.get(key).getAsInt() : def;
+        if (g != null && g.has(key)) {
+            try {
+                return g.get(key).getAsInt();
+            } catch (RuntimeException e) {
+                // 类型不符（config 被手改）：回退默认值，不崩溃
+                LOGGER.error("大厅偏好 {}/{} 类型不符，使用默认值", gameId, key);
+            }
+        }
+        return def;
     }
 
     // ---------------- 写入（写后立即落盘） ----------------

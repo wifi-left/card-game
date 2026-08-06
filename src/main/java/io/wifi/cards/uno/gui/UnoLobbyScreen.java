@@ -14,7 +14,6 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.network.chat.Component;
 
-import java.util.List;
 
 /**
  * UNO 大厅界面（继承 {@link AbstractLobbyScreen}，共享标题条/主菜单/房间列表/复制/滚动）：
@@ -132,15 +131,19 @@ public class UnoLobbyScreen extends AbstractLobbyScreen {
         return roomTop() + roomInfoH() + 8 + 72;
     }
 
-    /** 房间内容超高时允许的滚动量（0 = 无需滚动）。 */
+    /** 房间内容超高时允许的滚动量（0 = 无需滚动）。
+     *  用 scroll=0 的固定几何计算（roomTop 含滚动偏移，须剔除）——
+     *  滚动上限随当前 scroll 漂移会导致滚轮/拖拽跳动卡死。 */
     private int roomMaxScroll() {
-        return Math.max(0, roomBottom() - (height - 30));
+        int baseTop = Math.max(30, (height - (roomInfoH() + 60)) / 2); // roomTop 不含滚动
+        int baseBottom = baseTop + roomInfoH() + 8 + 72;
+        return Math.max(0, baseBottom - (height - 30));
     }
 
-    /** 房间视图滚动条轨道顶（信息区底，随滚动偏移）。 */
+    /** 房间视图滚动条轨道顶（固定：信息区底，不随滚动偏移——换算分母稳定）。 */
     @Override
     protected int scrollbarTrackTop() {
-        return roomTop() + roomInfoH() + 8;
+        return Math.max(30, (height - (roomInfoH() + 60)) / 2) + roomInfoH() + 8;
     }
 
     // ---------------- 内容区控件 ----------------

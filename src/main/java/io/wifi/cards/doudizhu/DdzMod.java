@@ -7,7 +7,6 @@ import io.wifi.cards.doudizhu.command.DdzCommands;
 import io.wifi.cards.doudizhu.manager.DdzMemoryManager;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
 import io.wifi.cards.doudizhu.network.DdzPackets;
-import io.wifi.cards.doudizhu.rule.DdzRuleSet;
 import io.wifi.cards.doudizhu.sound.DdzSounds;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -36,8 +35,6 @@ public final class DdzMod {
                 "斗地主", "斗", 0xFFE53935,
                 "经典 / 花牌万能牌，3 人对局",
                 DdzCommands::openLobby,
-                player -> DdzMemoryManager.INSTANCE.createRoom(player.server, player, false,
-                        DdzRuleSet.STANDARD, true, 0),
                 (player, code) -> DdzMemoryManager.INSTANCE.joinRoom(player, code),
                 DdzMemoryManager.INSTANCE::spectate,
                 DdzMemoryManager.INSTANCE::leaveRoom,

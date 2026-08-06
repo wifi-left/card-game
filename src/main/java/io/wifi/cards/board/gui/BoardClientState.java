@@ -120,7 +120,12 @@ public final class BoardClientState implements GameClientSession {
         if (phase == BoardPhase.WAITING) {
             // 刚进入房间（或座位/人数变化）时重建大厅：切换创建区/等待房间视图
             boolean stateChanged = !wasInRoom || prevSeat != this.mySeat || prevSize != roomSize();
-            if (!(mc.screen instanceof BoardLobbyScreen) || stateChanged) {
+            // 仅当玩家正处在本游戏相关界面（大厅/规则/历史/聊天）时重建切换创建区/等待视图；
+            // 已关闭界面（HUD/菜单/其他游戏）不强制弹回（保留"关闭界面"语义）
+            if (stateChanged && (mc.screen instanceof BoardLobbyScreen
+                    || mc.screen instanceof BoardGameScreen
+                    || mc.screen instanceof BoardRulesScreen
+                    || mc.screen instanceof CardGameChatScreen)) {
                 mc.setScreen(new BoardLobbyScreen());
             }
         } else if (!(mc.screen instanceof BoardGameScreen)
@@ -146,11 +151,16 @@ public final class BoardClientState implements GameClientSession {
         return inRoom() || debugMode;
     }
 
-    /** 按当前会话状态重开对应界面（菜单/其它大厅关闭后回到棋盘/大厅）。 */
+    /** 按当前会话状态重开对应界面（菜单/其它大厅关闭后回到大厅/棋盘）。 */
     @Override
     public void restoreScreen() {
         Minecraft mc = Minecraft.getInstance();
-        if (!(mc.screen instanceof BoardGameScreen)
+        if (phase == BoardPhase.WAITING) {
+            // 等待中：回大厅（房间视图：成员/房间码复制/关闭界面）
+            if (!(mc.screen instanceof BoardLobbyScreen)) {
+                mc.setScreen(new BoardLobbyScreen());
+            }
+        } else if (!(mc.screen instanceof BoardGameScreen)
                 && !(mc.screen instanceof BoardRulesScreen)
                 && !(mc.screen instanceof CardGameChatScreen)) {
             // 对局中/已结束均停留在棋盘界面（结算以横幅展示）。
@@ -244,9 +254,15 @@ public final class BoardClientState implements GameClientSession {
         if (reason != null && !reason.isEmpty()) {
             chat(reason);
         }
-        // 无条件重建大厅：离开/解散后必须回到"未在房间"的创建/加入布局
+        // 仅当玩家正处在本游戏相关界面（大厅/牌局/结算/规则/聊天）时回大厅；
+        // 已关闭界面（HUD/菜单/其他游戏）保持现状（状态已清理 + 聊天提示）
         Minecraft mc = Minecraft.getInstance();
-        mc.setScreen(new BoardLobbyScreen());
+        if (mc.screen instanceof BoardLobbyScreen
+                    || mc.screen instanceof BoardGameScreen
+                    || mc.screen instanceof BoardRulesScreen
+                    || mc.screen instanceof CardGameChatScreen) {
+            mc.setScreen(new BoardLobbyScreen());
+        }
     }
 
     public void onNotice(String message) {
@@ -256,7 +272,13 @@ public final class BoardClientState implements GameClientSession {
         if (inRoom() && (message.contains("你不在任何房间里") || message.contains("你不在旁观任何房间"))) {
             reset();
             Minecraft mc = Minecraft.getInstance();
-            mc.setScreen(new BoardLobbyScreen());
+            // 仅当正处在本游戏相关界面时回大厅（避免从菜单/HUD 弹回）
+            if (mc.screen instanceof BoardLobbyScreen
+                    || mc.screen instanceof BoardGameScreen
+                    || mc.screen instanceof BoardRulesScreen
+                    || mc.screen instanceof CardGameChatScreen) {
+                mc.setScreen(new BoardLobbyScreen());
+            }
         }
     }
 

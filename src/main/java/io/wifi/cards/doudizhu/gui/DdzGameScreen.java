@@ -673,10 +673,10 @@ public class DdzGameScreen extends AbstractGameScreen {
     }
 
     /**
-     * 左上/右上角手牌（两列棋盘布局）：
-     * 列 1 = 头部右侧/左侧的牌区（从头像行开始向下），列 2 = 头像下方的空白（从头像下一行开始）。
-     * 先填列 1，放不下时利用列 2（头像下方区域）；两列都用尽才压缩牌宽。
-     * 牌区底界 = 底部牌区顶（bottomTop），永不重叠。
+     * 左上/右上角手牌（底部式单区域多行布局）：
+     * 第一行 = 头像 + 名字 + 牌，后续行 = 纯牌续排（左角左对齐 / 右角右对齐）；
+     * 牌宽保持 20px，放不下自动换行（最多 5 行），5 行仍不够才压缩牌宽。
+     * 牌区底界 = 底部牌区顶（bottomTop）与左下按钮上方。
      */
     private void drawCornerHand(GuiGraphics g, int seat, boolean left, int bottomTop) {
         DdzClientState s = DdzClientState.INSTANCE;
@@ -697,25 +697,35 @@ public class DdzGameScreen extends AbstractGameScreen {
             nameW = this.font.width(name);
         }
         int labelW = 20 + nameW + 6;
-        int availW = Math.max(20, limitR - limitL - labelW);
         int n = hand.size();
         int y = 58; // 顶部信息条（0~54）之下
-        // 牌区底界：底部牌区上方，且不越过左下按钮（height-50）——两列可安全延伸
+        // 牌区底界：底部牌区上方，且不越过左下按钮（height-50）
         int maxY = Math.min(bottomTop - 8, height - 56);
-        // 类似底部：先利用头像左/右侧空间（列 1，从头像行起），再利用头像下方空间
-        // （列 2，从头像下一行起，可多行）；列 1 + 列 2 合计最多 5 行，超出才压缩牌宽
-        int maxRows = 5;
+        // 行 1 用头部右侧宽度（labelW 之后），行 2+ 用全区域宽度（每行可放更多张）
+        int availW1 = Math.max(20, limitR - limitL - labelW);
+        int availW2 = Math.max(20, limitR - limitL);
         int cardW = 20; // 目标牌宽（用户要求最小 20px）
-        int perRow1 = Math.max(1, (availW + gap) / (cardW + gap));
-        int rows1 = Math.max(0, Math.min(maxRows, (maxY - y) / (rowH + gap)));
-        int avail2 = Math.max(20, labelW - 6);
-        int perRow2 = Math.max(1, (avail2 + gap) / (cardW + gap));
-        int rows2 = Math.max(0, Math.min(maxRows - rows1, (maxY - (y + rowH + gap)) / (rowH + gap)));
-        int capacity = rows1 * perRow1 + rows2 * perRow2;
-        if (capacity < n && rows1 > 0) {
-            // 5 行内仍放不下（极限窄窗）：压缩列 1 牌宽（列 2 保持 20px）
-            perRow1 = Math.max(perRow1, (n - rows2 * perRow2 + rows1 - 1) / rows1);
-            cardW = Math.max(6, (availW - (perRow1 - 1) * gap) / perRow1);
+        // 行数：按 20px 容量递增（最多 5 行 / 空间允许的行数）
+        int maxRows = Math.min(5, Math.max(1, (maxY - y) / (rowH + gap)));
+        int rows = 1;
+        while (rows < maxRows) {
+            int p1 = Math.max(1, (availW1 + gap) / (cardW + gap));
+            int p2 = Math.max(1, (availW2 + gap) / (cardW + gap));
+            if (p1 + p2 * (rows - 1) >= n) {
+                break;
+            }
+            rows++;
+        }
+        // 当前行数容量不足（极限窄窗）：压缩牌宽直到放得下（下限 6px）
+        int perRow1;
+        int perRow2;
+        while (true) {
+            perRow1 = Math.max(1, (availW1 + gap) / (cardW + gap));
+            perRow2 = Math.max(1, (availW2 + gap) / (cardW + gap));
+            if (perRow1 + perRow2 * (rows - 1) >= n || cardW <= 6) {
+                break;
+            }
+            cardW--;
         }
         // 行 1 头部：头像 + 名字
         int headY = y + (rowH - 16) / 2;
@@ -727,25 +737,20 @@ public class DdzGameScreen extends AbstractGameScreen {
             g.drawString(this.font, name, headX - 6 - nameW, y + 4, 0xFFFFFF88, true);
             drawHead(g, s.playerUuids[seat], headX, headY, 16);
         }
-        // 填充列 1：左角从左排、右角右对齐到头像左侧
+        // 牌区：行 1 带头部缩进（左角从 labelW 后 / 右角右对齐到头像左侧），
+        // 行 2+ 用全区域宽度续排（左角从区域左缘 / 右角右对齐到区域右缘）
         int idx = 0;
-        for (int r = 0; r < rows1 && idx < n; r++) {
-            int cy = y + r * (rowH + gap);
-            int count = Math.min(perRow1, n - idx);
+        for (int r = 0; r < rows && idx < n; r++) {
+            int perRow = r == 0 ? perRow1 : perRow2;
+            int count = Math.min(perRow, n - idx);
             int rowW = count * cardW + (count - 1) * gap;
-            int x = left ? limitL + labelW : limitR - labelW - rowW;
-            for (int c = 0; c < count; c++, idx++) {
-                drawCard(g, hand.get(idx), x, cy, cardW, rowH);
-                x += cardW + gap;
+            int x;
+            if (r == 0) {
+                x = left ? limitL + labelW : limitR - labelW - rowW;
+            } else {
+                x = left ? limitL : limitR - rowW;
             }
-        }
-        // 填充列 2（头像下方）：左角从头像下 x=limitL 排；右角右对齐到头像左缘
-        int y2 = y + rowH + gap;
-        for (int r = 0; r < rows2 && idx < n; r++) {
-            int cy = y2 + r * (rowH + gap);
-            int count = Math.min(perRow2, n - idx);
-            int rowW = count * cardW + (count - 1) * gap;
-            int x = left ? limitL : limitR - 16 - 2 - rowW;
+            int cy = y + r * (rowH + gap);
             for (int c = 0; c < count; c++, idx++) {
                 drawCard(g, hand.get(idx), x, cy, cardW, rowH);
                 x += cardW + gap;

@@ -36,7 +36,6 @@ public final class UnoMod {
                 "UNO", "U", 0xFFFFB300,
                 "2~10 人，功能牌与 UNO 抓捕",
                 UnoCommands::openLobby,
-                player -> UnoMemoryManager.INSTANCE.createRoom(player.server, player, true, 0),
                 (player, code) -> UnoMemoryManager.INSTANCE.joinRoom(player, code),
                 UnoMemoryManager.INSTANCE::spectate,
                 UnoMemoryManager.INSTANCE::leaveRoom,

@@ -1,7 +1,6 @@
 package io.wifi.cards.common.client;
 
-import io.wifi.cards.common.network.CommonPackets.MenuQueryC2S;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -89,10 +88,10 @@ public abstract class AbstractLobbyScreen extends Screen {
     @Override
     protected void init() {
         clearWidgets(); // 重建时防重复添加
-        // 返回小游戏菜单（发刷新请求，服务端回发菜单数据打开菜单界面）；
-        // 位置：标题背景区域（0..26px）右上角，Y 轴居中
+        // 返回小游戏菜单：直接用缓存数据打开 UI（不发包——服务端刷新有签名对比，
+        // 统计无变化时不发 OpenMenuS2C，发包会导致菜单打不开）；统计可在菜单内点"刷新"更新
         addRenderableWidget(Button.builder(Component.literal("主菜单"), b ->
-                        ClientPlayNetworking.send(new MenuQueryC2S()))
+                        GameMenuClient.openMenuFromCache())
                 .bounds(width - 106, 3, 100, 20).build());
         buildContent();
         if (inRoomState()) {
@@ -255,14 +254,24 @@ public abstract class AbstractLobbyScreen extends Screen {
     protected abstract void drawRoomViewBg(GuiGraphics g);
 
     /** 未进房提示区（创建区下方，super.render 之前调用）：邀请提示 + 房间列表入口提示。
-     *  "查看房间列表"按钮由 init 添加（绘制在本提示区之上）。 */
+     *  配色：提示标签黄色、普通文字白色、命令青色（可读性优先）。 */
     protected void drawLobbyHints(GuiGraphics g) {
         int cx = width / 2;
         int top = contentTop();
         g.fill(cx - 180, top + 88, cx + 180, top + 162, 0x55000000);
-        g.drawCenteredString(this.font, "创建房间邀请好友一起玩，或输入房间码加入", cx, top + 94, 0xFFAAAAAA);
-        g.drawCenteredString(this.font, "提示：房主可用 /cardgames invite <玩家名> 邀请", cx, top + 108, 0xFF777777);
-        g.drawCenteredString(this.font, "查看房间列表：聊天栏显示本游戏房间，点击即可加入/旁观", cx, top + 122, 0xFF999999);
+        g.drawCenteredString(this.font,
+                Component.literal("创建房间邀请好友一起玩，或输入房间码加入").withStyle(ChatFormatting.WHITE),
+                cx, top + 94, 0xFFFFFFFF);
+        g.drawCenteredString(this.font,
+                Component.literal("提示：").withStyle(ChatFormatting.YELLOW)
+                        .append(Component.literal("房主可用 ").withStyle(ChatFormatting.WHITE))
+                        .append(Component.literal("/cardgames invite <玩家名>").withStyle(ChatFormatting.AQUA))
+                        .append(Component.literal(" 邀请").withStyle(ChatFormatting.WHITE)),
+                cx, top + 108, 0xFFFFFFFF);
+        g.drawCenteredString(this.font,
+                Component.literal("查看房间列表：").withStyle(ChatFormatting.YELLOW)
+                        .append(Component.literal("聊天栏显示本游戏房间，点击即可加入/旁观").withStyle(ChatFormatting.WHITE)),
+                cx, top + 122, 0xFFFFFFFF);
     }
 
     // ---------------- 滚动条几何（与绘制一致） ----------------

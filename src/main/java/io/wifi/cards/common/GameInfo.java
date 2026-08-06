@@ -34,10 +34,8 @@ public record GameInfo(
         int iconColor,
         /** 菜单简介。 */
         String description,
-        /** 打开该游戏 UI：对局/旁观中重发快照恢复界面，否则聊天栏显示房间列表（命令入口）。 */
+        /** 打开该游戏 UI：对局/旁观中重发快照恢复界面，否则打开大厅（房间列表通过命令查看）。 */
         Consumer<ServerPlayer> opener,
-        /** 创建房间（默认选项：公开、无机器人、各游戏默认规则/尺寸）。 */
-        Consumer<ServerPlayer> creator,
         /** 加入房间（房间码含前缀；失败经该游戏的 NoticeS2C 自行提示）。 */
         BiConsumer<ServerPlayer, String> joiner,
         /** 旁观房间，返回错误消息或 null。 */

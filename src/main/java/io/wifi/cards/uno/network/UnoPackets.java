@@ -44,7 +44,6 @@ public final class UnoPackets {
     public static final ResourceLocation NEXT_GAME = id("next_game");
     public static final ResourceLocation SPECTATE = id("spectate");
     public static final ResourceLocation SPECTATE_LEAVE = id("spectate_leave");
-    public static final ResourceLocation LOBBY_QUERY = id("lobby_query");
 
     // ---------------- S2C ----------------
 
@@ -67,7 +66,6 @@ public final class UnoPackets {
     public static final ResourceLocation NOTICE = id("notice");
     public static final ResourceLocation SPECTATOR_HANDS = id("spectator_hands");
     public static final ResourceLocation DEBUG_SPECTATOR = id("debug_spectator");
-    public static final ResourceLocation ROOM_LIST = id("room_list");
 
     // ---------------- Payload 定义 ----------------
 
@@ -781,19 +779,4 @@ public final class UnoPackets {
 
     // ---------------- 序列化辅助 ----------------
 
-    private static void writeStrings(FriendlyByteBuf buf, String[] arr) {
-        buf.writeVarInt(arr.length);
-        for (String s : arr) {
-            buf.writeUtf(s);
-        }
-    }
-
-    private static String[] readStrings(FriendlyByteBuf buf) {
-        int n = buf.readVarInt();
-        String[] arr = new String[n];
-        for (int i = 0; i < n; i++) {
-            arr[i] = buf.readUtf();
-        }
-        return arr;
-    }
 }

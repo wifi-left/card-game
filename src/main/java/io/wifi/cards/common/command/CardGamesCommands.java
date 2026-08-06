@@ -57,10 +57,6 @@ public final class CardGamesCommands {
                             .then(Commands.argument("game", StringArgumentType.word())
                                     .executes(ctx -> openGame(ctx.getSource(),
                                             StringArgumentType.getString(ctx, "game")))))
-                    .then(Commands.literal("create")
-                            .then(Commands.argument("game", StringArgumentType.word())
-                                    .executes(ctx -> create(ctx.getSource(),
-                                            StringArgumentType.getString(ctx, "game")))))
                     .then(Commands.literal("join")
                             .then(Commands.argument("code", StringArgumentType.word())
                                     .executes(ctx -> join(ctx.getSource(),
@@ -131,18 +127,6 @@ public final class CardGamesCommands {
             return 0;
         }
         info.opener().accept(player);
-        return 1;
-    }
-
-    /** 创建房间（默认选项）：/cardgames create <game>。 */
-    private static int create(CommandSourceStack source, String gameId) throws CommandSyntaxException {
-        ServerPlayer player = source.getPlayerOrException();
-        GameInfo info = GameRegistry.byId(gameId);
-        if (info == null) {
-            source.sendFailure(Component.literal("未知的游戏：" + gameId + "，可用：" + GameRegistry.gameIdsText()));
-            return 0;
-        }
-        info.creator().accept(player);
         return 1;
     }
 
@@ -237,7 +221,8 @@ public final class CardGamesCommands {
         return 1;
     }
 
-    /** 构建房间列表聊天消息行（标题 + 房间行 + 翻页按钮）；gameId 非空时只列该游戏。 */
+    /** 构建房间列表聊天消息行（标题 + 房间行 + 翻页按钮）；gameId 非空时只列该游戏。
+     *  排序：等待中（未满可加入）优先，其次对局中，最后已结束（同状态按房间码）。 */
     private static List<Component> roomListLines(ServerPlayer player, String gameId, int page) {
         boolean isOp = player.hasPermissions(2);
         List<RoomBrief> all = new ArrayList<>();
@@ -247,17 +232,20 @@ public final class CardGamesCommands {
             }
             all.addAll(info.roomBriefs().apply(isOp));
         }
-        all.sort(Comparator.comparing(RoomBrief::code));
+        all.sort(Comparator.comparingInt(RoomBrief::status).thenComparing(RoomBrief::code));
         int totalPages = Math.max(1, (all.size() + ROOMS_PAGE_SIZE - 1) / ROOMS_PAGE_SIZE);
         int p = Math.max(1, Math.min(page, totalPages));
         int from = (p - 1) * ROOMS_PAGE_SIZE;
         int to = Math.min(all.size(), from + ROOMS_PAGE_SIZE);
         List<Component> lines = new ArrayList<>();
-        lines.add(Component.literal("=== 小游戏房间（共 " + all.size() + " 个 · 第 "
+        // header：指定游戏时显示游戏名
+        String scopeName = gameId != null
+                ? GameRegistry.byId(gameId) != null ? GameRegistry.byId(gameId).displayName() : gameId
+                : "小游戏";
+        lines.add(Component.literal("=== " + scopeName + "房间（共 " + all.size() + " 个 · 第 "
                 + p + "/" + totalPages + " 页）==="));
         if (all.isEmpty()) {
-            lines.add(Component.literal("暂无房间，输入 /cardgames create <"
-                    + GameRegistry.gameIdsText() + "> 创建"));
+            lines.add(Component.literal("暂无房间，进入大厅点击创建房间"));
             return lines;
         }
         for (int i = from; i < to; i++) {
@@ -277,15 +265,17 @@ public final class CardGamesCommands {
             lines.add(line);
         }
         if (totalPages > 1) {
+            // 翻页按钮保留 game 过滤（指定游戏时翻页不跳出该游戏）
+            String navPrefix = gameId != null ? "/cardgames rooms " + gameId + " " : "/cardgames rooms ";
             MutableComponent nav = Component.literal("");
             if (p > 1) {
-                nav.append(click("[上一页]", "/cardgames rooms " + (p - 1), ChatFormatting.YELLOW));
+                nav.append(click("[上一页]", navPrefix + (p - 1), ChatFormatting.YELLOW));
             }
             if (p > 1 && p < totalPages) {
                 nav.append(Component.literal("  "));
             }
             if (p < totalPages) {
-                nav.append(click("[下一页]", "/cardgames rooms " + (p + 1), ChatFormatting.YELLOW));
+                nav.append(click("[下一页]", navPrefix + (p + 1), ChatFormatting.YELLOW));
             }
             lines.add(nav);
         }

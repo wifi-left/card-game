@@ -49,6 +49,7 @@ public final class CommonPackets {
 
     public static final ResourceLocation OPEN_MENU = id("menu_open");
     public static final ResourceLocation MENU_QUERY = id("menu_query");
+    public static final ResourceLocation OPEN_MENU_CMD = id("menu_open_cmd");
     public static final ResourceLocation OPEN_GAME = id("game_open");
 
     // ---------------- Payload 定义 ----------------
@@ -76,13 +77,28 @@ public final class CommonPackets {
         }
     }
 
-    /** 菜单刷新请求（C2S）：服务端重发最新统计。 */
+    /** 菜单刷新请求（C2S）：服务端重发最新统计（签名对比：统计无变化时不发，刷新专用）。 */
     public record MenuQueryC2S() implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<MenuQueryC2S> TYPE = new CustomPacketPayload.Type<>(MENU_QUERY);
         public static final StreamCodec<FriendlyByteBuf, MenuQueryC2S> CODEC = StreamCodec.of(
                 (buf, value) -> {
                 },
                 buf -> new MenuQueryC2S());
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+    /** 打开菜单请求（C2S，大厅"主菜单"按钮）：服务端**总是**下发最新菜单数据
+     *  （不走签名对比——打开菜单必须响应，否则从大厅回不去菜单）。 */
+    public record OpenMenuC2S() implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<OpenMenuC2S> TYPE = new CustomPacketPayload.Type<>(OPEN_MENU_CMD);
+        public static final StreamCodec<FriendlyByteBuf, OpenMenuC2S> CODEC = StreamCodec.of(
+                (buf, value) -> {
+                },
+                buf -> new OpenMenuC2S());
 
         @Override
         public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
@@ -108,6 +124,7 @@ public final class CommonPackets {
     /** 注册全部 payload 类型 + 服务端接收器（主入口调用，客户端也会执行此方法）。 */
     public static void register() {
         PayloadTypeRegistry.playC2S().register(MenuQueryC2S.TYPE, MenuQueryC2S.CODEC);
+        PayloadTypeRegistry.playC2S().register(OpenMenuC2S.TYPE, OpenMenuC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(OpenGameC2S.TYPE, OpenGameC2S.CODEC);
         PayloadTypeRegistry.playS2C().register(OpenMenuS2C.TYPE, OpenMenuS2C.CODEC);
         registerServerReceivers();
@@ -119,6 +136,10 @@ public final class CommonPackets {
     private static void registerServerReceivers() {
         // 所有 C2S 处理统一调度到服务器主线程执行（Fabric 接收器运行在 netty 线程），
         // 处理体统一 guarded 包装：主线程任务抛异常会崩溃整个服务器，任何意外只记录日志。
+        // 打开菜单（大厅"主菜单"按钮）：总是下发（无签名对比/无刷新限频——打开必须响应）
+        ServerPlayNetworking.registerGlobalReceiver(OpenMenuC2S.TYPE, (payload, ctx) ->
+                ctx.server().execute(() -> guarded(() ->
+                        ServerPlayNetworking.send(ctx.player(), snapshot()))));
         ServerPlayNetworking.registerGlobalReceiver(MenuQueryC2S.TYPE, (payload, ctx) ->
                 ctx.server().execute(() -> guarded(() -> {
                     // 频率限制（最小间隔 500ms/玩家）：恶意客户端高频刷包会占用服务端主线程与带宽

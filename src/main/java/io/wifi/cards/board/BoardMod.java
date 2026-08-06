@@ -2,7 +2,6 @@ package io.wifi.cards.board;
 
 import io.wifi.cards.board.command.BoardCommands;
 import io.wifi.cards.board.manager.BoardMemoryManager;
-import io.wifi.cards.board.model.BoardGameType;
 import io.wifi.cards.board.model.BoardPhase;
 import io.wifi.cards.board.network.BoardPackets;
 import io.wifi.cards.common.GameInfo;
@@ -34,8 +33,6 @@ public final class BoardMod {
                 "棋类", "棋", 0xFF1E88E5,
                 "黑白棋 / 五子棋 / 围棋",
                 BoardCommands::openLobby,
-                player -> BoardMemoryManager.INSTANCE.createRoom(player.server, player,
-                        BoardGameType.OTHELLO, 8, true, 0),
                 (player, code) -> BoardMemoryManager.INSTANCE.joinRoom(player, code),
                 BoardMemoryManager.INSTANCE::spectate,
                 BoardMemoryManager.INSTANCE::leaveRoom,

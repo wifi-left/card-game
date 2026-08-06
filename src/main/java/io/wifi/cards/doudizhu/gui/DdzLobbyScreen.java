@@ -14,7 +14,6 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.network.chat.Component;
 
-import java.util.List;
 
 /**
  * 斗地主大厅界面（继承 {@link AbstractLobbyScreen}，共享标题条/主菜单/房间列表/复制/滚动）：
@@ -115,15 +114,18 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
         return roomActionBottomY() + 20;
     }
 
-    /** 房间内容超高时允许的滚动量（0 = 无需滚动）。 */
+    /** 房间内容超高时允许的滚动量（0 = 无需滚动）。
+     *  用 scroll=0 的固定几何计算（roomActionBottomY 含滚动偏移，须剔除）——
+     *  滚动上限随当前 scroll 漂移会导致滚轮/拖拽跳动卡死。 */
     private int roomMaxScroll() {
-        return Math.max(0, roomBottom() - (height - 30));
+        int baseBottom = Math.max(40, height / 2 + 56) + 26 + 20; // roomActionBottomY(0) + 按钮高
+        return Math.max(0, baseBottom - (height - 30));
     }
 
-    /** 房间视图滚动条轨道顶（信息区底，随滚动偏移）。 */
+    /** 房间视图滚动条轨道顶（固定：信息区底，不随滚动偏移——换算分母稳定）。 */
     @Override
     protected int scrollbarTrackTop() {
-        return 130 + (int) scroll;
+        return 130;
     }
 
     /** 房间码点击区随滚动偏移（房间信息区首行）。 */
@@ -204,8 +206,7 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
         // 背景与控件由 super 渲染（renderBackground 已覆盖为空，无全局虚化），自定义内容绘制在其上
         super.render(g, mouseX, mouseY, partialTick);
         DdzClientState s = DdzClientState.INSTANCE;
-        if (!s.inRoom()) {
-        } else {
+        if (s.inRoom()) {
             // 房间信息区 + 按钮区底板见 drawRoomViewBg（super.render 之前绘制）
             int sc = (int) scroll;
             DdzGui.centeredShadow(g, this.font, width,

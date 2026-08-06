@@ -14,7 +14,6 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.network.chat.Component;
 
-import java.util.List;
 
 /**
  * 棋类统一大厅（黑白棋/五子棋/围棋共用一个大厅，继承 {@link AbstractLobbyScreen}，
@@ -153,15 +152,18 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
         return roomActionBottomY() + 20;
     }
 
-    /** 房间内容超高时允许的滚动量（0 = 无需滚动）。 */
+    /** 房间内容超高时允许的滚动量（0 = 无需滚动）。
+     *  用 scroll=0 的固定几何计算（roomActionBottomY 含滚动偏移，须剔除）——
+     *  滚动上限随当前 scroll 漂移会导致滚轮/拖拽跳动卡死。 */
     private int roomMaxScroll() {
-        return Math.max(0, roomBottom() - (height - 30));
+        int baseBottom = Math.max(40, height / 2 + 56) + 26 + 20; // roomActionBottomY(0) + 按钮高
+        return Math.max(0, baseBottom - (height - 30));
     }
 
-    /** 房间视图滚动条轨道顶（信息区底，随滚动偏移）。 */
+    /** 房间视图滚动条轨道顶（固定：信息区底，不随滚动偏移——换算分母稳定）。 */
     @Override
     protected int scrollbarTrackTop() {
-        return 124 + (int) scroll;
+        return 124;
     }
 
     // ---------------- 内容区控件 ----------------
@@ -237,6 +239,11 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
     private void selectGame(BoardGameType type) {
         selected = type;
         LobbyPrefs.set(GameRegistry.GAME_BOARD, "gameType", type.ordinal());
+        // 围棋无 AI：切换时同步清掉机器人的持久化状态（避免下次打开又显示"✓ 1 个"）
+        if (type == BoardGameType.GO) {
+            botOn = false;
+            LobbyPrefs.set(GameRegistry.GAME_BOARD, "botOn", false);
+        }
         rebuildLobby();
     }
 

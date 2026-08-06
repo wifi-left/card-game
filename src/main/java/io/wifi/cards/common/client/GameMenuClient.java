@@ -1,6 +1,7 @@
 package io.wifi.cards.common.client;
 
 import io.wifi.cards.common.network.CommonPackets.OpenMenuS2C;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 
@@ -19,6 +20,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class GameMenuClient {
     private static final List<GameClientSession> SESSIONS = new CopyOnWriteArrayList<>();
+    /** 最近一次菜单数据缓存：大厅"主菜单"按钮直接打开 UI 用（不发包）。 */
+    private static List<GameMenuScreen.Entry> cachedEntries = List.of();
 
     private GameMenuClient() {
     }
@@ -26,6 +29,9 @@ public final class GameMenuClient {
     public static void init() {
         ClientPlayNetworking.registerGlobalReceiver(OpenMenuS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> openMenu(payload)));
+        // 退出服务器/世界：清空菜单数据缓存（避免换服务器后显示旧统计）
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
+                client.execute(() -> cachedEntries = List.of()));
     }
 
     public static void registerSession(GameClientSession session) {
@@ -66,6 +72,21 @@ public final class GameMenuClient {
         return false;
     }
 
+    /**
+     * 直接打开菜单 UI（不发包）：使用最近一次缓存的数据（统计可能略旧，菜单内可点"刷新"更新）。
+     * 无缓存（理论仅开局瞬间）时执行 /cardgames 命令由服务端直接下发（不受刷新签名对比影响）。
+     */
+    public static void openMenuFromCache() {
+        if (cachedEntries.isEmpty()) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.getConnection() != null) {
+                mc.getConnection().sendCommand("cardgames");
+            }
+            return;
+        }
+        Minecraft.getInstance().setScreen(new GameMenuScreen(cachedEntries));
+    }
+
     /** 菜单数据到达：缓存并打开菜单界面。 */
     private static void openMenu(OpenMenuS2C payload) {
         int n = Math.min(payload.gameIds().length,
@@ -77,6 +98,7 @@ public final class GameMenuClient {
             entries.add(new GameMenuScreen.Entry(payload.gameIds()[i], payload.names()[i], payload.icons()[i],
                     payload.descs()[i], payload.colors()[i], payload.roomCounts()[i], payload.playerCounts()[i]));
         }
+        cachedEntries = entries;
         Minecraft.getInstance().setScreen(new GameMenuScreen(entries));
     }
 }

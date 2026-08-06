@@ -42,7 +42,6 @@ public final class BoardPackets {
     public static final ResourceLocation NEXT_GAME = id("next_game");
     public static final ResourceLocation SPECTATE = id("spectate");
     public static final ResourceLocation SPECTATE_LEAVE = id("spectate_leave");
-    public static final ResourceLocation LOBBY_QUERY = id("lobby_query");
 
     // ---------------- S2C ----------------
 
@@ -57,7 +56,6 @@ public final class BoardPackets {
     public static final ResourceLocation NOTICE = id("notice");
     public static final ResourceLocation RECONNECT = id("reconnect");
     public static final ResourceLocation OPEN_LOBBY = id("open_lobby");
-    public static final ResourceLocation ROOM_LIST = id("room_list");
     public static final ResourceLocation DEBUG_UI = id("debug_ui");
 
     // ---------------- Payload 定义 ----------------
@@ -484,14 +482,6 @@ public final class BoardPackets {
         return list;
     }
 
-    /** byte[] → List&lt;Byte&gt;。 */
-    private static java.util.List<Byte> boxBytes(byte[] arr) {
-        java.util.List<Byte> list = new java.util.ArrayList<>(arr.length);
-        for (byte v : arr) {
-            list.add(v);
-        }
-        return list;
-    }
 
     /** 读取 boolean 列表为原始数组（StreamCodec 的 readCollection 只能产出装箱类型）。 */
     private static boolean[] readBooleans(FriendlyByteBuf buf) {
@@ -503,15 +493,6 @@ public final class BoardPackets {
         return arr;
     }
 
-    /** 读取 byte 列表为原始数组。 */
-    private static byte[] readBytes(FriendlyByteBuf buf) {
-        java.util.List<Byte> list = buf.readCollection(java.util.ArrayList::new, FriendlyByteBuf::readByte);
-        byte[] arr = new byte[list.size()];
-        for (int i = 0; i < arr.length; i++) {
-            arr[i] = list.get(i);
-        }
-        return arr;
-    }
 
     /** 主线程任务防护：意外异常只记录日志，绝不让服务器崩溃。 */
     private static void guarded(Runnable task) {
