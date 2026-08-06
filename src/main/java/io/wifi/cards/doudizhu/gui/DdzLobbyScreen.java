@@ -6,8 +6,6 @@ import io.wifi.cards.common.client.LobbyPrefs;
 import io.wifi.cards.doudizhu.network.DdzPackets.CreateRoomC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.JoinRoomC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.LeaveRoomC2S;
-import io.wifi.cards.doudizhu.network.DdzPackets.LobbyQueryC2S;
-import io.wifi.cards.doudizhu.network.DdzPackets.SpectateC2S;
 import io.wifi.cards.doudizhu.rule.DdzRuleSet;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
@@ -77,26 +75,6 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
     }
 
     @Override
-    protected void sendRoomQuery() {
-        ClientPlayNetworking.send(new LobbyQueryC2S());
-    }
-
-    @Override
-    protected List<? extends RoomEntry> lobbyRoomList() {
-        return DdzClientState.INSTANCE.roomList;
-    }
-
-    @Override
-    protected void joinRoom(String code) {
-        ClientPlayNetworking.send(new JoinRoomC2S(code));
-    }
-
-    @Override
-    protected void spectateRoom(String code) {
-        ClientPlayNetworking.send(new SpectateC2S(code));
-    }
-
-    @Override
     protected void lobbyChat(String message) {
         DdzClientState.chat(message);
     }
@@ -129,7 +107,7 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
     /** 房间视图内容超高（小窗口）时同样可滚动。 */
     @Override
     protected int scrollLimit() {
-        return inRoomState() ? roomMaxScroll() : maxScroll();
+        return inRoomState() ? roomMaxScroll() : 0; // 未进房无房间列表，无需滚动
     }
 
     /** 房间内容区底部（信息面板 + 离开/关闭界面按钮行）。 */
@@ -217,18 +195,16 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         // 顶部标题条先绘制（主菜单按钮位于标题条内右上角，super.render 后渲染按钮盖住标题条半透明底）
         drawTitleBar(g);
-        // 底板先绘制：super.render 的按钮绘制在底板之上，不被半透明底压暗
-        if (!DdzClientState.INSTANCE.inRoom()) {
-            drawRoomListPanel(g);
-        } else {
+        // 房间视图底板/未进房提示区先绘制：super.render 的按钮绘制在其上，不被压暗
+        if (DdzClientState.INSTANCE.inRoom()) {
             drawRoomViewBg(g);
+        } else {
+            drawLobbyHints(g); // 邀请提示 + 房间列表入口提示（按钮由基类 init 添加）
         }
         // 背景与控件由 super 渲染（renderBackground 已覆盖为空，无全局虚化），自定义内容绘制在其上
         super.render(g, mouseX, mouseY, partialTick);
         DdzClientState s = DdzClientState.INSTANCE;
         if (!s.inRoom()) {
-            // 公开房间列表（标题 + 提示 + 行文本 + 滚动条，点击行操作按钮加入/旁观、点房间码复制）
-            drawRoomList(g);
         } else {
             // 房间信息区 + 按钮区底板见 drawRoomViewBg（super.render 之前绘制）
             int sc = (int) scroll;

@@ -9,7 +9,6 @@ import io.wifi.cards.board.model.BoardGameType;
 import io.wifi.cards.board.model.BoardPhase;
 import io.wifi.cards.board.network.BoardPackets.NoticeS2C;
 import io.wifi.cards.board.network.BoardPackets.RoomClosedS2C;
-import io.wifi.cards.board.network.BoardPackets.RoomListS2C;
 import io.wifi.cards.board.othello.game.OthelloGame;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.ChatFormatting;
@@ -54,8 +53,6 @@ public final class BoardMemoryManager {
     private final Map<UUID, String> playerRoomIds = new ConcurrentHashMap<>();
     /** 旁观者所属房间映射（旁观只读观看，不占座位、无成员会话）。 */
     private final Map<UUID, String> spectatorRoomIds = new ConcurrentHashMap<>();
-    /** 大厅列表查询时间戳（LobbyQueryC2S 频率限制，随断线清理）。 */
-    private final Map<UUID, Long> lobbyQueryTimes = new ConcurrentHashMap<>();
 
     private BoardMemoryManager() {
     }
@@ -105,6 +102,11 @@ public final class BoardMemoryManager {
                             .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames accept " + room.id))));
             server.getPlayerList().broadcastSystemMessage(message, false);
         }
+        // 无大厅 UI：直接提示房主房间已创建（可点击查看列表）
+        player.sendSystemMessage(Component.literal("已创建房间 " + room.id + "，等待玩家加入")
+                .append(Component.literal(" [房间列表]").withStyle(style -> style
+                        .withColor(ChatFormatting.GREEN)
+                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames rooms")))));
     }
 
     public void joinRoom(ServerPlayer player, String code) {
@@ -265,7 +267,6 @@ public final class BoardMemoryManager {
      * 等待/结算中 → 视为离开（不满 2 人解散）。
      */
     public void onPlayerDisconnect(ServerPlayer player) {
-        lobbyQueryTimes.remove(player.getUUID()); // 清理频率限制记录，防 Map 泄漏
         // 旁观者：清理旁观关系后直接返回（无成员会话）
         String specId = spectatorRoomIds.remove(player.getUUID());
         if (specId != null) {
@@ -450,44 +451,6 @@ public final class BoardMemoryManager {
         playerRoomIds.clear();
         spectatorRoomIds.clear(); // 旁观关系随房间一并清空
         return count;
-    }
-
-    /** 大厅房间列表下发（LobbyQueryC2S 响应）：仅公开房间（创建时"公布房间"开启）。
-     *  等待中可加入 / 对局中可旁观 / 已结束仅展示。
-     *  带频率限制（最小间隔 500ms/玩家）：恶意客户端高频刷包会占用服务端主线程与带宽。 */
-    public void sendRoomList(ServerPlayer player) {
-        long now = System.currentTimeMillis();
-        Long last = lobbyQueryTimes.get(player.getUUID());
-        if (last != null && now - last < 500) {
-            return;
-        }
-        lobbyQueryTimes.put(player.getUUID(), now);
-        List<BoardRoom> list = new ArrayList<>();
-        for (BoardRoom r : roomSnapshot()) {
-            if (r.announce) {
-                list.add(r);
-            }
-        }
-        String[] codes = new String[list.size()];
-        String[] lines = new String[list.size()];
-        byte[] statuses = new byte[list.size()];
-        for (int i = 0; i < list.size(); i++) {
-            BoardRoom r = list.get(i);
-            codes[i] = r.id;
-            String phaseText = switch (r.phase()) {
-                case WAITING -> "等待中";
-                case PLAYING -> "对局中";
-                case SETTLED -> "已结束";
-            };
-            String a = r.seatName(0);
-            String b = r.seatName(1);
-            lines[i] = r.gameType.displayName + sizeText(r.gameType, r.size) + " · "
-                    + (a.isEmpty() ? "等待加入…" : a) + " vs " + (b.isEmpty() ? "等待加入…" : b)
-                    + " · " + phaseText;
-            statuses[i] = (byte) (r.phase() == BoardPhase.WAITING ? 0
-                    : r.phase() == BoardPhase.PLAYING ? 1 : 2);
-        }
-        ServerPlayNetworking.send(player, new RoomListS2C(codes, lines, statuses));
     }
 
     // ---------------- 旁观（对局开始后只读观看） ----------------

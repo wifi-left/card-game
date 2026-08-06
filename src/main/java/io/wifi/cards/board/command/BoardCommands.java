@@ -3,13 +3,14 @@ package io.wifi.cards.board.command;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import io.wifi.cards.board.network.BoardPackets.OpenLobbyS2C;
+import io.wifi.cards.common.command.CardGamesCommands;
 import io.wifi.cards.board.game.BoardGame;
 import io.wifi.cards.board.manager.BoardMemoryManager;
 import io.wifi.cards.board.manager.BoardRoom;
 import io.wifi.cards.board.model.BoardGameType;
 import io.wifi.cards.board.model.BoardPhase;
 import io.wifi.cards.board.network.BoardPackets.DebugUiS2C;
-import io.wifi.cards.board.network.BoardPackets.OpenLobbyS2C;
 import io.wifi.cards.board.othello.rule.OthelloRules;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
@@ -21,6 +22,7 @@ import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
@@ -137,6 +139,7 @@ public final class BoardCommands {
                 return;
             }
         }
+        // 等待中/未进房：打开大厅 UI（房间列表通过 /cardgames rooms 命令查看）
         ServerPlayNetworking.send(player, new OpenLobbyS2C());
     }
 
@@ -417,6 +420,31 @@ public final class BoardCommands {
             case PLAYING -> "对局中";
             case SETTLED -> "本局结束";
         };
+    }
+
+    /** 房间详细信息行（/cardgames roominfo 用）；房间不存在返回空列表。 */
+    public static List<String> roomDetail(String code) {
+        BoardRoom r = BoardMemoryManager.INSTANCE.roomByCode(code);
+        if (r == null) {
+            return List.of();
+        }
+        List<String> lines = new ArrayList<>();
+        lines.add(r.gameType.displayName
+                + (r.gameType == BoardGameType.GO ? " " + r.size + " 路" : " · " + r.size + "×" + r.size)
+                + " · " + (r.announce ? "公开" : "未公开"));
+        lines.add("阶段：" + phaseName(r.phase()) + " · 玩家 " + r.count + "/2");
+        for (int i = 0; i < 2; i++) {
+            String name = r.seatName(i);
+            if (name.isEmpty()) {
+                lines.add((i + 1) + ". 等待加入…");
+                continue;
+            }
+            String extra = r.isBot(i) ? "（机器人）"
+                    : (BoardRoom.isConnected(r.members[i]) ? "" : "（离线）");
+            lines.add((i + 1) + ". " + name + "（" + (i == 0 ? "黑" : "白") + "方）" + extra);
+        }
+        lines.add("旁观：" + r.spectators.size() + " 人");
+        return lines;
     }
 
     private static BoardGame gameOf(CommandSourceStack source, ServerPlayer player) throws CommandSyntaxException {

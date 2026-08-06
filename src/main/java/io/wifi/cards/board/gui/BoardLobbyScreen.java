@@ -4,8 +4,6 @@ import io.wifi.cards.board.model.BoardGameType;
 import io.wifi.cards.board.network.BoardPackets.CreateRoomC2S;
 import io.wifi.cards.board.network.BoardPackets.JoinRoomC2S;
 import io.wifi.cards.board.network.BoardPackets.LeaveRoomC2S;
-import io.wifi.cards.board.network.BoardPackets.LobbyQueryC2S;
-import io.wifi.cards.board.network.BoardPackets.SpectateC2S;
 import io.wifi.cards.common.GameRegistry;
 import io.wifi.cards.common.client.AbstractLobbyScreen;
 import io.wifi.cards.common.client.LobbyPrefs;
@@ -27,7 +25,7 @@ import java.util.List;
  *       进行中房间列表（等待中可加入 / 对局中可旁观，点击房间码可复制）</li>
  *   <li>已在房间（等待中）：显示房间码/游戏/尺寸/成员，可离开（点击房间码可复制）</li>
  * </ul>
- * 房间列表由 LobbyQueryC2S 轮询刷新（打开时 + 每 20 tick），内容变化时重建控件。
+
  */
 public class BoardLobbyScreen extends AbstractLobbyScreen {
     private BoardGameType selected = BoardGameType.OTHELLO;
@@ -99,38 +97,6 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
         return Math.max(50, (height - 180) / 2) + (int) scroll;
     }
 
-    /** 列表区相对内容区的纵向偏移（含提示两行 + 标题空间）。 */
-    @Override
-    protected int listTopOffset() {
-        return 134;
-    }
-
-    /** 内容区底部 = 列表区 + 9 行（棋类布局，列表区固定行高）。 */
-    @Override
-    protected int contentBottom() {
-        return listTop() + 9 * 22;
-    }
-
-    @Override
-    protected void sendRoomQuery() {
-        ClientPlayNetworking.send(new LobbyQueryC2S());
-    }
-
-    @Override
-    protected List<? extends RoomEntry> lobbyRoomList() {
-        return BoardClientState.INSTANCE.roomList;
-    }
-
-    @Override
-    protected void joinRoom(String code) {
-        ClientPlayNetworking.send(new JoinRoomC2S(code));
-    }
-
-    @Override
-    protected void spectateRoom(String code) {
-        ClientPlayNetworking.send(new SpectateC2S(code));
-    }
-
     @Override
     protected void lobbyChat(String message) {
         BoardClientState.chat(message);
@@ -179,7 +145,7 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
     /** 房间视图内容超高（小窗口）时同样可滚动。 */
     @Override
     protected int scrollLimit() {
-        return inRoomState() ? roomMaxScroll() : maxScroll();
+        return inRoomState() ? roomMaxScroll() : 0; // 未进房无房间列表，无需滚动
     }
 
     /** 房间内容区底部（信息面板 + 离开/关闭界面按钮行）。 */
@@ -324,11 +290,11 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         // 顶部标题条先绘制（主菜单按钮位于标题条内右上角，super.render 后渲染按钮盖住标题条半透明底）
         drawTitleBar(g);
-        // 底板先绘制：super.render 的按钮绘制在底板之上，不被半透明底压暗
-        if (!BoardClientState.INSTANCE.inRoom()) {
-            drawRoomListPanel(g);
-        } else {
+        // 房间视图底板/未进房提示区先绘制：super.render 的按钮绘制在其上，不被压暗
+        if (BoardClientState.INSTANCE.inRoom()) {
             drawRoomViewBg(g);
+        } else {
+            drawLobbyHints(g); // 邀请提示 + 房间列表入口提示（按钮由基类 init 添加）
         }
         // 背景与控件由 super 渲染（renderBackground 已覆盖为空，无全局虚化），自定义内容绘制在其上
         super.render(g, mouseX, mouseY, partialTick);
@@ -348,8 +314,6 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
             }
             // 区块标题（屏幕居中）
             BoardGui.centeredShadow(g, this.font, width, "创建房间", top - 12, 0xFFFFD700);
-            // 公开房间列表（标题 + 提示 + 行文本 + 滚动条，点击行操作按钮加入/旁观、点房间码复制）
-            drawRoomList(g);
         } else {
             // 房间信息区 + 按钮区底板见 drawRoomViewBg（super.render 之前绘制）
             int sc = (int) scroll;

@@ -1,8 +1,9 @@
 package io.wifi.cards.uno;
 
+import io.wifi.cards.uno.gui.UnoLobbyScreen;
+import io.wifi.cards.uno.network.UnoPackets.OpenLobbyS2C;
 import io.wifi.cards.common.client.GameMenuClient;
 import io.wifi.cards.uno.gui.UnoClientState;
-import io.wifi.cards.uno.gui.UnoLobbyScreen;
 import io.wifi.cards.uno.network.UnoPackets.DrawBroadcastS2C;
 import io.wifi.cards.uno.network.UnoPackets.DrawPenaltyS2C;
 import io.wifi.cards.uno.network.UnoPackets.DrawResultS2C;
@@ -11,12 +12,10 @@ import io.wifi.cards.uno.network.UnoPackets.GameResultS2C;
 import io.wifi.cards.uno.network.UnoPackets.GameStartS2C;
 import io.wifi.cards.uno.network.UnoPackets.HistoryS2C;
 import io.wifi.cards.uno.network.UnoPackets.NoticeS2C;
-import io.wifi.cards.uno.network.UnoPackets.OpenLobbyS2C;
 import io.wifi.cards.uno.network.UnoPackets.PassBroadcastS2C;
 import io.wifi.cards.uno.network.UnoPackets.PlayBroadcastS2C;
 import io.wifi.cards.uno.network.UnoPackets.ReconnectS2C;
 import io.wifi.cards.uno.network.UnoPackets.RoomClosedS2C;
-import io.wifi.cards.uno.network.UnoPackets.RoomListS2C;
 import io.wifi.cards.uno.network.UnoPackets.RoomStateS2C;
 import io.wifi.cards.uno.network.UnoPackets.SpectatorHandsS2C;
 import io.wifi.cards.uno.network.UnoPackets.TrustStateS2C;
@@ -31,8 +30,7 @@ import net.minecraft.client.Minecraft;
  * UNO 模块客户端初始化（由 io.wifi.cards.CardGameModClient 载入）。
  * <p>所有客户端专属逻辑集中于此类（客户端网络接收器、屏幕调度），
  * 服务端可达的类不得引用含 client 的包，否则服务端无法启动。</p>
- * <p>没有客户端命令：打开 UI 统一由服务端命令发 OpenLobbyS2C 驱动，
- * 接收器在客户端主线程执行 setScreen，不存在命令线程被聊天界面覆盖的问题。</p>
+  * 接收器在客户端主线程执行 setScreen，不存在命令线程被聊天界面覆盖的问题。</p>
  */
 public final class UnoClient {
     private UnoClient() {
@@ -96,21 +94,11 @@ public final class UnoClient {
                 ctx.client().execute(() -> state.onNotice(payload.message())));
         ClientPlayNetworking.registerGlobalReceiver(SpectatorHandsS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> state.onSpectatorHands(payload)));
-        ClientPlayNetworking.registerGlobalReceiver(RoomListS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onRoomList(payload)));
         // 管理员调试命令 /uno debug spectateui：虚拟旁观数据打开"（调试）"旁观界面
         ClientPlayNetworking.registerGlobalReceiver(DebugSpectatorS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> state.onDebugSpectator(payload)));
-        // 服务端命令 /uno 触发：在主线程打开大厅。
-        // OpenLobbyS2C 的语义是"你不在对局/旁观中"——但等待中的房间成员也会收到
-        // （重开大厅），此时本地房间状态必须保留（大厅渲染房间视图/离开按钮），
-        // 因此只清空调试旁观（roomCode="调试"）的幽灵状态，其余情况直接开大厅
+        // 服务端命令 /xxx 或 /cardgames open 触发：在主线程打开大厅
         ClientPlayNetworking.registerGlobalReceiver(OpenLobbyS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> {
-                    if (UnoClientState.INSTANCE.debugView) {
-                        UnoClientState.INSTANCE.clearAll();
-                    }
-                    Minecraft.getInstance().setScreen(new UnoLobbyScreen());
-                }));
+                ctx.client().execute(() -> Minecraft.getInstance().setScreen(new UnoLobbyScreen())));
     }
 }

@@ -68,6 +68,21 @@ public final class DdzPackets {
 
     // ---------------- Payload 定义 ----------------
 
+    /** 打开大厅（S2C）：由服务端命令触发，客户端在主线程打开大厅 UI。 */
+    public record OpenLobbyS2C() implements CustomPacketPayload {
+        public static final CustomPacketPayload.Type<OpenLobbyS2C> TYPE = new CustomPacketPayload.Type<>(OPEN_LOBBY);
+        public static final StreamCodec<FriendlyByteBuf, OpenLobbyS2C> CODEC = StreamCodec.of(
+                (buf, value) -> {
+                },
+                buf -> new OpenLobbyS2C());
+
+        @Override
+        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
+            return TYPE;
+        }
+    }
+
+
     /** 创建房间（C2S）。flowerMode=花牌模式；ruleSet=规则集序号（0 标准 / 1 民间）；announce=是否公布到聊天栏；botCount=加入机器人数量（0~2）。 */
     public record CreateRoomC2S(boolean flowerMode, byte ruleSet, boolean announce, byte botCount) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<CreateRoomC2S> TYPE = new CustomPacketPayload.Type<>(CREATE_ROOM);
@@ -279,19 +294,6 @@ public final class DdzPackets {
         }
     }
 
-    /** 打开大厅（S2C）：由服务端命令触发，客户端在主线程打开 LobbyScreen。 */
-    public record OpenLobbyS2C() implements CustomPacketPayload {
-        public static final CustomPacketPayload.Type<OpenLobbyS2C> TYPE = new CustomPacketPayload.Type<>(OPEN_LOBBY);
-        public static final StreamCodec<FriendlyByteBuf, OpenLobbyS2C> CODEC = StreamCodec.of(
-                (buf, value) -> {
-                },
-                buf -> new OpenLobbyS2C());
-
-        @Override
-        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
-            return TYPE;
-        }
-    }
 
     /** 重连快照（S2C，逐人发送）：断线玩家重连后同步当前对局完整状态。 */
     public record ReconnectS2C(byte phaseOrdinal, int[] hand, byte callMaxScore, byte currentSeat, long endGameTime,
@@ -604,37 +606,9 @@ public final class DdzPackets {
 
     // ---------------- 注册 ----------------
 
-    /** 大厅房间列表请求（C2S）：打开大厅时轮询（每 20 tick），服务端回发公开房间列表。 */
-    public record LobbyQueryC2S() implements CustomPacketPayload {
-        public static final CustomPacketPayload.Type<LobbyQueryC2S> TYPE = new CustomPacketPayload.Type<>(LOBBY_QUERY);
-        public static final StreamCodec<FriendlyByteBuf, LobbyQueryC2S> CODEC = StreamCodec.of(
-                (buf, value) -> {
-                },
-                buf -> new LobbyQueryC2S());
-
-        @Override
-        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
-            return TYPE;
-        }
-    }
 
     /** 大厅房间列表（S2C）：公开房间的平行数组（codes/lines/statuses 长度一致）。
      *  status：0=等待中可加入 1=对局中可旁观 2=已结束。 */
-    public record RoomListS2C(String[] codes, String[] lines, byte[] statuses) implements CustomPacketPayload {
-        public static final CustomPacketPayload.Type<RoomListS2C> TYPE = new CustomPacketPayload.Type<>(ROOM_LIST);
-        public static final StreamCodec<FriendlyByteBuf, RoomListS2C> CODEC = StreamCodec.of(
-                (buf, value) -> {
-                    writeStrings(buf, value.codes());
-                    writeStrings(buf, value.lines());
-                    buf.writeByteArray(value.statuses());
-                },
-                buf -> new RoomListS2C(readStrings(buf), readStrings(buf), buf.readByteArray()));
-
-        @Override
-        public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
-            return TYPE;
-        }
-    }
 
     /** 注册全部 payload 类型 + 服务端接收器（主入口调用，客户端也会执行此方法）。 */
     public static void register() {
@@ -651,12 +625,11 @@ public final class DdzPackets {
         PayloadTypeRegistry.playC2S().register(HistoryC2S.TYPE, HistoryC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(SpectateC2S.TYPE, SpectateC2S.CODEC);
         PayloadTypeRegistry.playC2S().register(SpectateLeaveC2S.TYPE, SpectateLeaveC2S.CODEC);
-        PayloadTypeRegistry.playC2S().register(LobbyQueryC2S.TYPE, LobbyQueryC2S.CODEC);
 
+        PayloadTypeRegistry.playS2C().register(OpenLobbyS2C.TYPE, OpenLobbyS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(RoomStateS2C.TYPE, RoomStateS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(GameStartS2C.TYPE, GameStartS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(ReconnectS2C.TYPE, ReconnectS2C.CODEC);
-        PayloadTypeRegistry.playS2C().register(OpenLobbyS2C.TYPE, OpenLobbyS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(CallBroadcastS2C.TYPE, CallBroadcastS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(RobBroadcastS2C.TYPE, RobBroadcastS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(LandlordS2C.TYPE, LandlordS2C.CODEC);
@@ -670,7 +643,6 @@ public final class DdzPackets {
         PayloadTypeRegistry.playS2C().register(TrustStateS2C.TYPE, TrustStateS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(HistoryS2C.TYPE, HistoryS2C.CODEC);
         PayloadTypeRegistry.playS2C().register(SpectatorHandsS2C.TYPE, SpectatorHandsS2C.CODEC);
-        PayloadTypeRegistry.playS2C().register(RoomListS2C.TYPE, RoomListS2C.CODEC);
 
         registerServerReceivers();
     }
@@ -716,8 +688,6 @@ public final class DdzPackets {
                 ctx.server().execute(() -> guarded(() -> m.spectate(ctx.player(), payload.roomCode()))));
         ServerPlayNetworking.registerGlobalReceiver(SpectateLeaveC2S.TYPE, (payload, ctx) ->
                 ctx.server().execute(() -> guarded(() -> m.leaveSpectate(ctx.player()))));
-        ServerPlayNetworking.registerGlobalReceiver(LobbyQueryC2S.TYPE, (payload, ctx) ->
-                ctx.server().execute(() -> guarded(() -> m.sendRoomList(ctx.player()))));
     }
 
     /** 主线程任务防护：意外异常只记录日志，绝不让服务器崩溃。 */

@@ -88,10 +88,10 @@ public class UnoGameScreen extends AbstractGameScreen {
             confirmingColor = false; // 第一下 Esc：取消选色弹层（保留选中，可重新出牌）
             return true;
         }
-        // 调试旁观（无真实房间/会话）：直接清空本地状态回到大厅
+        // 调试旁观（无真实房间/会话）：直接清空本地状态关闭界面
         if (UnoClientState.INSTANCE.debugView) {
             UnoClientState.INSTANCE.clearAll();
-            Minecraft.getInstance().setScreen(new UnoLobbyScreen());
+            Minecraft.getInstance().setScreen(null);
             return true;
         }
         return false;
@@ -321,11 +321,11 @@ public class UnoGameScreen extends AbstractGameScreen {
         ClientPlayNetworking.send(new LeaveRoomC2S());
     }
 
-    /** 退出旁观：服务端清理旁观关系并下发房间关闭消息，回到大厅（调试模式仅本地清理）。 */
+    /** 退出旁观：服务端清理旁观关系并下发房间关闭消息，关闭界面（调试模式仅本地清理）。 */
     private void sendUnspectate() {
         if (UnoClientState.INSTANCE.debugView) {
             UnoClientState.INSTANCE.clearAll();
-            Minecraft.getInstance().setScreen(new UnoLobbyScreen());
+            Minecraft.getInstance().setScreen(null);
             return;
         }
         ClientPlayNetworking.send(new SpectateLeaveC2S());

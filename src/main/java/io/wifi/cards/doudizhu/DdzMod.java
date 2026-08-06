@@ -2,9 +2,12 @@ package io.wifi.cards.doudizhu;
 
 import io.wifi.cards.common.GameInfo;
 import io.wifi.cards.common.GameRegistry;
+import io.wifi.cards.common.RoomBrief;
 import io.wifi.cards.doudizhu.command.DdzCommands;
 import io.wifi.cards.doudizhu.manager.DdzMemoryManager;
+import io.wifi.cards.doudizhu.model.DdzGamePhase;
 import io.wifi.cards.doudizhu.network.DdzPackets;
+import io.wifi.cards.doudizhu.rule.DdzRuleSet;
 import io.wifi.cards.doudizhu.sound.DdzSounds;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
@@ -33,6 +36,8 @@ public final class DdzMod {
                 "斗地主", "斗", 0xFFE53935,
                 "经典 / 花牌万能牌，3 人对局",
                 DdzCommands::openLobby,
+                player -> DdzMemoryManager.INSTANCE.createRoom(player.server, player, false,
+                        DdzRuleSet.STANDARD, true, 0),
                 (player, code) -> DdzMemoryManager.INSTANCE.joinRoom(player, code),
                 DdzMemoryManager.INSTANCE::spectate,
                 DdzMemoryManager.INSTANCE::leaveRoom,
@@ -44,6 +49,14 @@ public final class DdzMod {
                 () -> DdzMemoryManager.INSTANCE.roomSnapshot().stream()
                         .map(r -> r.id + " · 人数 " + r.size + "/3 · " + DdzCommands.phaseName(r.phase()))
                         .toList(),
+                // 房间列表行（/cardgames rooms）：管理员含未公开房间
+                includePrivate -> DdzMemoryManager.INSTANCE.roomSnapshot().stream()
+                        .filter(r -> includePrivate || r.announce)
+                        .map(r -> new RoomBrief(r.id, "玩家 " + r.size + "/3 · " + DdzCommands.phaseName(r.phase()),
+                                (byte) (r.phase() == DdzGamePhase.WAITING ? 0
+                                        : r.phase() == DdzGamePhase.SETTLED ? 2 : 1)))
+                        .toList(),
+                DdzCommands::roomDetail,
                 DdzMemoryManager.INSTANCE::deleteRoom,
                 DdzMemoryManager.INSTANCE::clearAllRooms));
         // 断线/进服回调：Fabric 的 DISCONNECT 在网络线程触发（ClientConnection.channelInactive/

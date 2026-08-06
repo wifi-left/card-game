@@ -35,6 +35,8 @@ public final class CommonPackets {
     /** 菜单刷新查询时间戳（服务端限频 500ms：客户端刷新按钮另有 1s 冷却，
      *  本限频兜底绕过客户端直接发包的恶意客户端，随断线清理）。 */
     private static final Map<UUID, Long> MENU_QUERY_TIMES = new ConcurrentHashMap<>();
+    /** 每个玩家上次下发的菜单快照签名（仅统计：房间/在线数；无变化时刷新零发包）。 */
+    private static final Map<UUID, String> MENU_SIGS = new ConcurrentHashMap<>();
 
     private CommonPackets() {
     }
@@ -126,7 +128,14 @@ public final class CommonPackets {
                         return;
                     }
                     MENU_QUERY_TIMES.put(ctx.player().getUUID(), now);
-                    ServerPlayNetworking.send(ctx.player(), snapshot());
+                    // 签名对比：统计（房间/在线数）无变化时直接不发，客户端沿用现有菜单数据
+                    OpenMenuS2C snap = snapshot();
+                    String sig = menuSig(snap);
+                    if (sig.equals(MENU_SIGS.get(ctx.player().getUUID()))) {
+                        return;
+                    }
+                    MENU_SIGS.put(ctx.player().getUUID(), sig);
+                    ServerPlayNetworking.send(ctx.player(), snap);
                 })));
         ServerPlayNetworking.registerGlobalReceiver(OpenGameC2S.TYPE, (payload, ctx) ->
                 ctx.server().execute(() -> guarded(() -> {
@@ -140,9 +149,21 @@ public final class CommonPackets {
                 })));
     }
 
-    /** 玩家断线：清理频率限制记录，防 Map 泄漏（由 CommonMod 的断线事件调用）。 */
+    /** 玩家断线：清理频率限制与签名记录，防 Map 泄漏（由 CommonMod 的断线事件调用）。 */
     public static void onPlayerDisconnect(UUID uuid) {
         MENU_QUERY_TIMES.remove(uuid);
+        MENU_SIGS.remove(uuid);
+    }
+
+    /** 菜单快照签名（仅统计部分：游戏条目静态不变，统计变化才需重新下发）。 */
+    private static String menuSig(OpenMenuS2C snap) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < snap.gameIds().length; i++) {
+            sb.append(snap.gameIds()[i]).append('|')
+                    .append(snap.roomCounts()[i]).append('|')
+                    .append(snap.playerCounts()[i]).append(';');
+        }
+        return sb.toString();
     }
 
     /** 主线程任务防护：意外异常只记录日志，绝不让服务器崩溃。 */

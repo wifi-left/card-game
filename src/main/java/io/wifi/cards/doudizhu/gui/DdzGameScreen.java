@@ -174,9 +174,13 @@ public class DdzGameScreen extends AbstractGameScreen {
         DdzClientState s = DdzClientState.INSTANCE;
         int x = width - 100;
         int y = height - 150;
-        // 旁观模式：只读观看，仅提供「退出旁观」（服务端清理旁观关系并回到大厅）
+        // 旁观模式：只读观看，仅提供「退出旁观」——置于左下角「规则/历史」按钮上方，
+        // 宽度恰好 = 规则(60) + 间隔(4) + 历史(60) = 124，与两按钮左右对齐
         if (isSpectator()) {
-            actionButtons.add(button(x, y, "退出旁观", b -> sendUnspectate(), true));
+            Button exitBtn = Button.builder(Component.literal("退出旁观"), b -> sendUnspectate())
+                    .bounds(8, height - 50, 124, 20).build();
+            actionButtons.add(exitBtn);
+            addRenderableWidget(exitBtn);
             return;
         }
         // 常驻行：退出游戏 + 托管（整局可用，随时可退出/取消托管）
@@ -646,16 +650,17 @@ public class DdzGameScreen extends AbstractGameScreen {
     /**
      * 旁观透视（传统斗地主布局）：
      * 左上角 = 座位 0（头像 + 名字 + 手牌）、右上角 = 座位 1、底部中央 = 座位 2；
-     * 角落手牌放不下时自动换第二行，牌宽自适应；均避开按钮区与中央面板。
+     * 先画底部（确定其牌顶作为角落牌区的延伸边界），角落两列棋盘布局；
+     * 均避开按钮区与中央面板。
      */
     private void drawSpectatorHands(GuiGraphics g) {
         DdzClientState s = DdzClientState.INSTANCE;
         if (s.spectatorHands.size() < 3) {
             return; // 尚未收到三家手牌快照
         }
-        drawCornerHand(g, 0, true); // 左上
-        drawCornerHand(g, 1, false); // 右上
-        drawBottomHand(g, 2); // 底部中央
+        int bottomTop = drawBottomHand(g, 2); // 底部中央（返回其牌顶）
+        drawCornerHand(g, 0, true, bottomTop); // 左上
+        drawCornerHand(g, 1, false, bottomTop); // 右上
     }
 
     /** 中央面板几何（与 drawCenter 一致）。 */
@@ -668,11 +673,12 @@ public class DdzGameScreen extends AbstractGameScreen {
     }
 
     /**
-     * 左上/右上角手牌：第一行 = 头像 + 名字 + 牌，第二行（放不下时）= 纯牌。
-     * 牌区夹在中央面板与屏幕边缘之间，永不遮挡面板/按钮；
-     * 长名字截断显示，防止行数爆炸。
+     * 左上/右上角手牌（两列棋盘布局）：
+     * 列 1 = 头部右侧/左侧的牌区（从头像行开始向下），列 2 = 头像下方的空白（从头像下一行开始）。
+     * 先填列 1，放不下时利用列 2（头像下方区域）；两列都用尽才压缩牌宽。
+     * 牌区底界 = 底部牌区顶（bottomTop），永不重叠。
      */
-    private void drawCornerHand(GuiGraphics g, int seat, boolean left) {
+    private void drawCornerHand(GuiGraphics g, int seat, boolean left, int bottomTop) {
         DdzClientState s = DdzClientState.INSTANCE;
         List<DdzCard> hand = s.spectatorHands.get(seat);
         if (hand.isEmpty()) {
@@ -693,10 +699,24 @@ public class DdzGameScreen extends AbstractGameScreen {
         int labelW = 20 + nameW + 6;
         int availW = Math.max(20, limitR - limitL - labelW);
         int n = hand.size();
-        int cardW = Math.max(7, Math.min(18, (availW - (n - 1) * gap) / n));
-        int perRow = Math.max(1, (availW + gap) / (cardW + gap));
-        int rows = (n + perRow - 1) / perRow;
         int y = 58; // 顶部信息条（0~54）之下
+        // 牌区底界：底部牌区上方，且不越过左下按钮（height-50）——两列可安全延伸
+        int maxY = Math.min(bottomTop - 8, height - 56);
+        // 类似底部：先利用头像左/右侧空间（列 1，从头像行起），再利用头像下方空间
+        // （列 2，从头像下一行起，可多行）；列 1 + 列 2 合计最多 5 行，超出才压缩牌宽
+        int maxRows = 5;
+        int cardW = 20; // 目标牌宽（用户要求最小 20px）
+        int perRow1 = Math.max(1, (availW + gap) / (cardW + gap));
+        int rows1 = Math.max(0, Math.min(maxRows, (maxY - y) / (rowH + gap)));
+        int avail2 = Math.max(20, labelW - 6);
+        int perRow2 = Math.max(1, (avail2 + gap) / (cardW + gap));
+        int rows2 = Math.max(0, Math.min(maxRows - rows1, (maxY - (y + rowH + gap)) / (rowH + gap)));
+        int capacity = rows1 * perRow1 + rows2 * perRow2;
+        if (capacity < n && rows1 > 0) {
+            // 5 行内仍放不下（极限窄窗）：压缩列 1 牌宽（列 2 保持 20px）
+            perRow1 = Math.max(perRow1, (n - rows2 * perRow2 + rows1 - 1) / rows1);
+            cardW = Math.max(6, (availW - (perRow1 - 1) * gap) / perRow1);
+        }
         // 行 1 头部：头像 + 名字
         int headY = y + (rowH - 16) / 2;
         if (left) {
@@ -707,16 +727,27 @@ public class DdzGameScreen extends AbstractGameScreen {
             g.drawString(this.font, name, headX - 6 - nameW, y + 4, 0xFFFFFF88, true);
             drawHead(g, s.playerUuids[seat], headX, headY, 16);
         }
-        // 牌区：左对齐（左角）或右对齐到头像左侧（右角）
-        for (int r = 0; r < rows; r++) {
-            int from = r * perRow;
-            int to = Math.min(n, from + perRow);
-            int count = to - from;
+        // 填充列 1：左角从左排、右角右对齐到头像左侧
+        int idx = 0;
+        for (int r = 0; r < rows1 && idx < n; r++) {
+            int cy = y + r * (rowH + gap);
+            int count = Math.min(perRow1, n - idx);
             int rowW = count * cardW + (count - 1) * gap;
             int x = left ? limitL + labelW : limitR - labelW - rowW;
-            int cy = y + r * (rowH + gap);
-            for (int i = from; i < to; i++) {
-                drawCard(g, hand.get(i), x, cy, cardW, rowH);
+            for (int c = 0; c < count; c++, idx++) {
+                drawCard(g, hand.get(idx), x, cy, cardW, rowH);
+                x += cardW + gap;
+            }
+        }
+        // 填充列 2（头像下方）：左角从头像下 x=limitL 排；右角右对齐到头像左缘
+        int y2 = y + rowH + gap;
+        for (int r = 0; r < rows2 && idx < n; r++) {
+            int cy = y2 + r * (rowH + gap);
+            int count = Math.min(perRow2, n - idx);
+            int rowW = count * cardW + (count - 1) * gap;
+            int x = left ? limitL : limitR - 16 - 2 - rowW;
+            for (int c = 0; c < count; c++, idx++) {
+                drawCard(g, hand.get(idx), x, cy, cardW, rowH);
                 x += cardW + gap;
             }
         }
@@ -724,13 +755,15 @@ public class DdzGameScreen extends AbstractGameScreen {
 
     /**
      * 底部中央手牌（座位 2）：头像 + 名字 + 牌，整块居中。
-     * 避开左下角按钮区（x<140）；放不下时牌宽收缩，仍不够则换第二行（不溢出屏幕）。
+     * 避开左下角按钮区（x<140）；保持可读牌宽优先，放不下自动换行（行数随窗口高度动态）。
+     *
+     * @return 底部牌区顶 y（角落牌区以此为上界，保证不重叠）
      */
-    private void drawBottomHand(GuiGraphics g, int seat) {
+    private int drawBottomHand(GuiGraphics g, int seat) {
         DdzClientState s = DdzClientState.INSTANCE;
         List<DdzCard> hand = s.spectatorHands.get(seat);
         if (hand.isEmpty()) {
-            return;
+            return height - 8; // 无底部牌区：角落以左下按钮上方为界（drawCornerHand 内 clamp）
         }
         int rowH = 22;
         int gap = 2;
@@ -746,8 +779,12 @@ public class DdzGameScreen extends AbstractGameScreen {
         int labelW = 20 + nameW + 6;
         int availW = Math.max(20, limitR - limitL - labelW);
         int n = hand.size();
-        int cardW = Math.max(6, Math.min(20, (availW - (n - 1) * gap) / n));
-        int perRow = Math.max(1, (availW + gap) / (cardW + gap));
+        // 保持可读牌宽（20px）优先：放不下自动换行；行数上限随窗口高度动态
+        // （底部牌顶不低于 160，避免与角落牌区/中央面板重叠）
+        int maxBottomRows = Math.max(1, (height - 160) / (rowH + gap));
+        int[] layout = cardLayout(availW, n, 20, 20, maxBottomRows);
+        int cardW = layout[0];
+        int perRow = layout[1];
         int rows = (n + perRow - 1) / perRow;
         int rowW = Math.min(n, perRow) * cardW + (Math.min(n, perRow) - 1) * gap;
         int blockW = labelW + rowW;
@@ -769,6 +806,27 @@ public class DdzGameScreen extends AbstractGameScreen {
                 x += cardW + gap;
             }
         }
+        return y; // 底部牌区顶（角落牌区延伸的边界）
+    }
+
+    /**
+     * 牌布局计算：以「可读牌宽」为优先——先按最小可读宽度（minW）决定每行张数，
+     * 放不下就换行；行数超过 maxRows（极端窄窗）才压缩牌宽，避免牌被压得过窄。
+     * 牌宽按实际每行张数计算（牌少时用满可用宽度，牌宽可达 idealW）。
+     *
+     * @return {cardW, perRow}
+     */
+    private static int[] cardLayout(int availW, int n, int idealW, int minW, int maxRows) {
+        int gap = 2;
+        int perRow = Math.max(1, (availW + gap) / (minW + gap));
+        int rows = (n + perRow - 1) / perRow;
+        if (rows > maxRows) {
+            // 极端窄窗：保持 maxRows 行，压缩牌宽（防溢出屏幕）
+            perRow = Math.max(1, (n + maxRows - 1) / maxRows);
+        }
+        int perRowActual = Math.min(n, perRow);
+        int cardW = Math.min(idealW, Math.max(1, (availW - (perRowActual - 1) * gap) / perRowActual));
+        return new int[]{cardW, perRow};
     }
 
     /** 绘制一张牌（文字化：色块 + 左上角点数/花色文字，花牌金色）。无阴影保证小字号清晰。 */

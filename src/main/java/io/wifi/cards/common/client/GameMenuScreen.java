@@ -38,8 +38,11 @@ public class GameMenuScreen extends Screen {
     private float scroll;
     /** 刷新按钮（冷却中禁用并显示剩余秒数）。 */
     private Button refreshButton;
-    /** 上次刷新请求时间（毫秒）。 */
-    private long lastRefreshMillis;
+    /**
+     * 上次刷新请求时间（毫秒）。静态：每次刷新成功后服务端回发菜单数据并新建本界面实例，
+     * 实例字段会在重建时清零导致冷却丢失（看起来"没冷却"）；静态跨实例保留冷却状态。
+     */
+    private static long lastRefreshMillis;
     /** 滚动条拖拽状态（按下时的鼠标 y / 滚动偏移，用于增量换算）。 */
     private boolean draggingScroll;
     private double dragStartMouseY;

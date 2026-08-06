@@ -2,9 +2,11 @@ package io.wifi.cards.uno;
 
 import io.wifi.cards.common.GameInfo;
 import io.wifi.cards.common.GameRegistry;
+import io.wifi.cards.common.RoomBrief;
 import io.wifi.cards.uno.command.UnoCommands;
 import io.wifi.cards.uno.manager.UnoMemoryManager;
 import io.wifi.cards.uno.manager.UnoRoom;
+import io.wifi.cards.uno.model.UnoGamePhase;
 import io.wifi.cards.uno.network.UnoPackets;
 import io.wifi.cards.uno.sound.UnoSounds;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -34,6 +36,7 @@ public final class UnoMod {
                 "UNO", "U", 0xFFFFB300,
                 "2~10 人，功能牌与 UNO 抓捕",
                 UnoCommands::openLobby,
+                player -> UnoMemoryManager.INSTANCE.createRoom(player.server, player, true, 0),
                 (player, code) -> UnoMemoryManager.INSTANCE.joinRoom(player, code),
                 UnoMemoryManager.INSTANCE::spectate,
                 UnoMemoryManager.INSTANCE::leaveRoom,
@@ -46,6 +49,15 @@ public final class UnoMod {
                         .map(r -> r.id + " · 人数 " + r.size() + "/" + UnoRoom.MAX_PLAYERS
                                 + " · " + UnoCommands.phaseName(r.phase()))
                         .toList(),
+                // 房间列表行（/cardgames rooms）：管理员含未公开房间
+                includePrivate -> UnoMemoryManager.INSTANCE.roomSnapshot().stream()
+                        .filter(r -> includePrivate || r.announce)
+                        .map(r -> new RoomBrief(r.id, "玩家 " + r.size() + "/" + UnoRoom.MAX_PLAYERS
+                                        + " · " + UnoCommands.phaseName(r.phase()),
+                                (byte) (r.phase() == UnoGamePhase.WAITING ? 0
+                                        : r.phase() == UnoGamePhase.SETTLED ? 2 : 1)))
+                        .toList(),
+                UnoCommands::roomDetail,
                 UnoMemoryManager.INSTANCE::deleteRoom,
                 UnoMemoryManager.INSTANCE::clearAllRooms));
         // 断线/进服回调：Fabric 的 DISCONNECT 在网络线程触发（ClientConnection.channelInactive/

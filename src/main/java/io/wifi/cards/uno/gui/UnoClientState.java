@@ -1,7 +1,6 @@
 package io.wifi.cards.uno.gui;
 
 import io.wifi.cards.common.GameRegistry;
-import io.wifi.cards.common.client.AbstractLobbyScreen;
 import io.wifi.cards.common.client.CardGameChatScreen;
 import io.wifi.cards.common.client.GameClientSession;
 import io.wifi.cards.uno.card.UnoCard;
@@ -17,7 +16,6 @@ import io.wifi.cards.uno.network.UnoPackets.HistoryS2C;
 import io.wifi.cards.uno.network.UnoPackets.PassBroadcastS2C;
 import io.wifi.cards.uno.network.UnoPackets.PlayBroadcastS2C;
 import io.wifi.cards.uno.network.UnoPackets.ReconnectS2C;
-import io.wifi.cards.uno.network.UnoPackets.RoomListS2C;
 import io.wifi.cards.uno.network.UnoPackets.RoomStateS2C;
 import io.wifi.cards.uno.network.UnoPackets.SpectatorHandsS2C;
 import io.wifi.cards.uno.network.UnoPackets.TrustStateS2C;
@@ -77,8 +75,6 @@ public final class UnoClientState implements GameClientSession {
     public final List<List<UnoCard>> spectatorHands = new ArrayList<>();
 
     // ---- 大厅房间列表 ----
-    /** 大厅房间列表（由 RoomListS2C 填充，仅公开房间；条目类型见 AbstractLobbyScreen.RoomEntry）。 */
-    public final List<AbstractLobbyScreen.RoomEntry> roomList = new ArrayList<>();
     /** 中央事件提示行（最新一条）。 */
     public String lastEvent = "";
     /** 服务端拒绝了最近一次出牌（GameScreen 消费后清空选中）。 */
@@ -164,7 +160,7 @@ public final class UnoClientState implements GameClientSession {
     public void onRoomState(RoomStateS2C payload) {
         boolean wasInRoom = this.roomCode != null;
         int prevSeat = this.mySeat;
-        int prevSize = this.names.size();
+        int prevSize = names.size();
         this.debugView = false; // 真实房间状态到达：退出调试模式
         this.roomCode = payload.roomCode();
         this.phase = safePhase(payload.phaseOrdinal());
@@ -183,12 +179,9 @@ public final class UnoClientState implements GameClientSession {
         }
         Minecraft mc = Minecraft.getInstance();
         if (phase == UnoGamePhase.WAITING) {
-            // 刚进入房间（或座位/人数变化）时强制重建大厅，刷新创建/加入/开始/离开等组件。
-            // 人数变化必须重建：房主"开始游戏"按钮的可用性（≥2 人）随成员加入/离开变化，
-            // 否则朋友加入后按钮仍保持禁用；聊天框打开中不强制弹回（打字输入不受打扰）
+            // 刚进入房间（或座位/人数变化）时重建大厅：切换创建区/等待房间视图
             boolean stateChanged = !wasInRoom || prevSeat != this.mySeat || prevSize != names.size();
-            if (!(mc.screen instanceof CardGameChatScreen)
-                    && (!(mc.screen instanceof UnoLobbyScreen) || stateChanged)) {
+            if (!(mc.screen instanceof UnoLobbyScreen) || stateChanged) {
                 mc.setScreen(new UnoLobbyScreen());
             }
         } else if (phase == UnoGamePhase.SETTLED) {
@@ -258,11 +251,7 @@ public final class UnoClientState implements GameClientSession {
         this.lastEvent = "";
         this.historyLines.clear(); // 历史以快照为准不沿用旧局残留（打开历史界面时重新请求）
         Minecraft mc = Minecraft.getInstance();
-        if (phase == UnoGamePhase.WAITING) {
-            if (!(mc.screen instanceof UnoLobbyScreen)) {
-                mc.setScreen(new UnoLobbyScreen());
-            }
-        } else if (phase == UnoGamePhase.SETTLED) {
+        if (phase == UnoGamePhase.SETTLED) {
             // 结算中：打开结算界面（数据由服务端随后重发的 GameResultS2C 填充）
             if (!(mc.screen instanceof UnoResultScreen)) {
                 mc.setScreen(new UnoResultScreen());
@@ -453,20 +442,6 @@ public final class UnoClientState implements GameClientSession {
         }
     }
 
-    /** 大厅房间列表下发（LobbyQueryC2S 响应）：更新缓存并通知大厅界面刷新（内容变化时才重建控件）。 */
-    public void onRoomList(RoomListS2C payload) {
-        roomList.clear();
-        String[] codes = payload.codes();
-        String[] lines = payload.lines();
-        byte[] statuses = payload.statuses();
-        int n = Math.min(codes.length, Math.min(lines.length, statuses.length));
-        for (int i = 0; i < n; i++) {
-            roomList.add(new AbstractLobbyScreen.RoomEntry(codes[i], lines[i], statuses[i]));
-        }
-        if (Minecraft.getInstance().screen instanceof UnoLobbyScreen lobby) {
-            lobby.onRoomListChanged();
-        }
-    }
 
     /**
      * 旁观 UI 调试快照（/uno debug spectateui）：无房间的虚拟旁观数据，
@@ -569,7 +544,6 @@ public final class UnoClientState implements GameClientSession {
         declaredUno = new boolean[0];
         myTrust = false;
         spectatorHands.clear();
-        roomList.clear();
         lastEvent = "";
         playRejected = false;
         historyLines.clear();

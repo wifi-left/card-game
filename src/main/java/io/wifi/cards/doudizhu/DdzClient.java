@@ -1,23 +1,22 @@
 package io.wifi.cards.doudizhu;
 
+import io.wifi.cards.doudizhu.gui.DdzLobbyScreen;
+import io.wifi.cards.doudizhu.network.DdzPackets.OpenLobbyS2C;
 import io.wifi.cards.common.client.GameMenuClient;
 import io.wifi.cards.doudizhu.gui.DdzClientState;
 import io.wifi.cards.doudizhu.gui.DdzGameScreen;
-import io.wifi.cards.doudizhu.gui.DdzLobbyScreen;
 import io.wifi.cards.doudizhu.network.DdzPackets.CallBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.GameResultS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.GameStartS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.HistoryS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.LandlordS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.NoticeS2C;
-import io.wifi.cards.doudizhu.network.DdzPackets.OpenLobbyS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.PassBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.PlayBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.ReconnectS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RevealS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RobBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomClosedS2C;
-import io.wifi.cards.doudizhu.network.DdzPackets.RoomListS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomStateS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.SpectatorHandsS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
@@ -31,8 +30,7 @@ import net.minecraft.client.Minecraft;
  * 斗地主模块客户端初始化（由 io.wifi.cards.CardGameModClient 载入）。
  * <p>所有客户端专属逻辑集中于此类（客户端网络接收器、屏幕调度），
  * 服务端可达的类不得引用含 client 的包，否则服务端无法启动。</p>
- * <p>没有客户端命令：打开 UI 统一由服务端命令发 OpenLobbyS2C 驱动，
- * 接收器在客户端主线程执行 setScreen，不存在命令线程被聊天界面覆盖的问题。</p>
+  * 接收器在客户端主线程执行 setScreen，不存在命令线程被聊天界面覆盖的问题。</p>
  */
 public final class DdzClient {
     private DdzClient() {
@@ -104,18 +102,8 @@ public final class DdzClient {
                 ctx.client().execute(() -> state.onHistory(payload)));
         ClientPlayNetworking.registerGlobalReceiver(SpectatorHandsS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> state.onSpectatorHands(payload)));
-        ClientPlayNetworking.registerGlobalReceiver(RoomListS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onRoomList(payload)));
-        // 服务端命令 /doudizhu 或 /cardgames open 触发：在主线程打开大厅。
-        // OpenLobbyS2C 的语义是"你不在对局/旁观中"——但等待中的房间成员也会收到
-        // （重开大厅），此时本地房间状态必须保留（大厅渲染房间视图/离开按钮），
-        // 因此只清空调试旁观（roomCode="DEBUG"）的幽灵状态，其余情况直接开大厅
+        // 服务端命令 /xxx 或 /cardgames open 触发：在主线程打开大厅
         ClientPlayNetworking.registerGlobalReceiver(OpenLobbyS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> {
-                    if (DdzClientState.INSTANCE.debugSpectate()) {
-                        DdzClientState.INSTANCE.clearAll();
-                    }
-                    Minecraft.getInstance().setScreen(new DdzLobbyScreen());
-                }));
+                ctx.client().execute(() -> Minecraft.getInstance().setScreen(new DdzLobbyScreen())));
     }
 }

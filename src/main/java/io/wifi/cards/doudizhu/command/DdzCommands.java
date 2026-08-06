@@ -4,12 +4,13 @@ import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import io.wifi.cards.doudizhu.network.DdzPackets.OpenLobbyS2C;
+import io.wifi.cards.common.command.CardGamesCommands;
 import io.wifi.cards.doudizhu.card.DdzCard;
 import io.wifi.cards.doudizhu.game.DdzGame;
 import io.wifi.cards.doudizhu.manager.DdzMemoryManager;
 import io.wifi.cards.doudizhu.manager.DdzRoom;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
-import io.wifi.cards.doudizhu.network.DdzPackets.OpenLobbyS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.ReconnectS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomStateS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.SpectatorHandsS2C;
@@ -159,6 +160,7 @@ public final class DdzCommands {
                 return;
             }
         }
+        // 等待中/未进房：打开大厅 UI（房间列表通过 /cardgames rooms 命令查看）
         ServerPlayNetworking.send(player, new OpenLobbyS2C());
     }
 
@@ -453,6 +455,36 @@ public final class DdzCommands {
             case PLAYING -> "出牌阶段";
             case SETTLED -> "本局结束";
         };
+    }
+
+    /** 房间详细信息行（/cardgames roominfo 用）；房间不存在返回空列表。 */
+    public static List<String> roomDetail(String code) {
+        DdzRoom r = DdzMemoryManager.INSTANCE.roomByCode(code);
+        if (r == null) {
+            return List.of();
+        }
+        List<String> lines = new ArrayList<>();
+        lines.add((r.flowerMode ? "花牌模式" : "经典模式") + " · " + r.ruleSet.displayName()
+                + " · " + (r.announce ? "公开" : "未公开"));
+        lines.add("阶段：" + phaseName(r.phase()) + " · 玩家 " + r.size + "/3");
+        for (int i = 0; i < 3; i++) {
+            String name = r.seatName(i);
+            if (name.isEmpty()) {
+                lines.add((i + 1) + ". 等待加入…");
+                continue;
+            }
+            String extra;
+            if (r.isBot(i)) {
+                extra = "（机器人）";
+            } else if (DdzRoom.isConnected(r.members[i])) {
+                extra = "";
+            } else {
+                extra = "（离线·托管中）";
+            }
+            lines.add((i + 1) + ". " + name + extra);
+        }
+        lines.add("旁观：" + r.spectators.size() + " 人");
+        return lines;
     }
 
     /** 强制指定座位开启/关闭托管（真人与假人均可，无需真人在线）：/doudizhu debug trust <0|1|2> <true|false>。 */

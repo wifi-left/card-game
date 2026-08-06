@@ -1,7 +1,6 @@
 package io.wifi.cards.board.gui;
 
 import io.wifi.cards.common.GameRegistry;
-import io.wifi.cards.common.client.AbstractLobbyScreen;
 import io.wifi.cards.common.client.CardGameChatScreen;
 import io.wifi.cards.common.client.GameClientSession;
 import io.wifi.cards.board.model.BoardGameType;
@@ -12,7 +11,6 @@ import io.wifi.cards.board.network.BoardPackets.GameStartS2C;
 import io.wifi.cards.board.network.BoardPackets.MoveBroadcastS2C;
 import io.wifi.cards.board.network.BoardPackets.PassBroadcastS2C;
 import io.wifi.cards.board.network.BoardPackets.ReconnectS2C;
-import io.wifi.cards.board.network.BoardPackets.RoomListS2C;
 import io.wifi.cards.board.network.BoardPackets.RoomStateS2C;
 import io.wifi.cards.board.network.BoardPackets.SurrenderS2C;
 import io.wifi.cards.board.network.BoardPackets.TurnS2C;
@@ -62,8 +60,6 @@ public final class BoardClientState implements GameClientSession {
     public byte resultReason;
 
     // ---- 大厅房间列表 ----
-    /** 大厅房间列表（由 RoomListS2C 填充，仅公开房间；条目类型见 AbstractLobbyScreen.RoomEntry）。 */
-    public final List<AbstractLobbyScreen.RoomEntry> roomList = new ArrayList<>();
 
     /** 调试旁观模式（/chess debug ui）：无真实房间的随机虚拟对局，仅供 UI 检查；
      *  任何真实服务端状态包到达时清除（见各 onXxx 入口）。 */
@@ -104,6 +100,39 @@ public final class BoardClientState implements GameClientSession {
         return n;
     }
 
+    // ---------------- S2C 处理 ----------------
+
+    public void onRoomState(RoomStateS2C payload) {
+        boolean wasInRoom = this.roomCode != null;
+        int prevSeat = this.mySeat;
+        int prevSize = roomSize();
+        this.debugMode = false; // 真实房间状态到达：退出调试旁观模式
+        this.roomCode = payload.roomCode();
+        this.gameType = safeType(payload.gameType());
+        this.size = payload.size() > 0 ? payload.size() : gameType.defaultSize;
+        this.phase = safePhase(payload.phaseOrdinal());
+        this.mySeat = payload.mySeat();
+        // 防御性拷贝：源数组长度不足时其余座位填空（防版本不匹配崩溃）
+        copyInto(payload.names(), names);
+        copyInto(payload.uuids(), playerUuids);
+        copyBooleans(payload.connected(), connected);
+        Minecraft mc = Minecraft.getInstance();
+        if (phase == BoardPhase.WAITING) {
+            // 刚进入房间（或座位/人数变化）时重建大厅：切换创建区/等待房间视图
+            boolean stateChanged = !wasInRoom || prevSeat != this.mySeat || prevSize != roomSize();
+            if (!(mc.screen instanceof BoardLobbyScreen) || stateChanged) {
+                mc.setScreen(new BoardLobbyScreen());
+            }
+        } else if (!(mc.screen instanceof BoardGameScreen)
+                && !(mc.screen instanceof BoardRulesScreen)
+                && !(mc.screen instanceof CardGameChatScreen)) {
+            // 对局中/已结束均停留在棋盘界面（结算以横幅展示）。
+            // 规则子界面（渲染棋盘为背景，状态实时同步）与聊天框不强制弹回，
+            // 避免其他玩家断线/退出触发 RoomState 时被打断
+            mc.setScreen(new BoardGameScreen());
+        }
+    }
+
     // ---------------- 小游戏菜单会话（跨游戏恢复界面） ----------------
 
     @Override
@@ -121,39 +150,7 @@ public final class BoardClientState implements GameClientSession {
     @Override
     public void restoreScreen() {
         Minecraft mc = Minecraft.getInstance();
-        if (phase == BoardPhase.WAITING) {
-            mc.setScreen(new BoardLobbyScreen());
-        } else {
-            mc.setScreen(new BoardGameScreen());
-        }
-    }
-
-    // ---------------- S2C 处理 ----------------
-
-    public void onRoomState(RoomStateS2C payload) {
-        this.debugMode = false; // 真实房间状态到达：退出调试旁观模式
-        boolean wasInRoom = this.roomCode != null;
-        int prevSeat = this.mySeat;
-        int prevSize = roomSize();
-        this.roomCode = payload.roomCode();
-        this.gameType = safeType(payload.gameType());
-        this.size = payload.size() > 0 ? payload.size() : gameType.defaultSize;
-        this.phase = safePhase(payload.phaseOrdinal());
-        this.mySeat = payload.mySeat();
-        // 防御性拷贝：源数组长度不足时其余座位填空（防版本不匹配崩溃）
-        copyInto(payload.names(), names);
-        copyInto(payload.uuids(), playerUuids);
-        copyBooleans(payload.connected(), connected);
-        Minecraft mc = Minecraft.getInstance();
-        if (phase == BoardPhase.WAITING) {
-            // 刚进入房间（或座位/人数变化）时强制重建大厅，刷新创建/加入/离开等组件；
-            // 聊天框打开中不强制弹回（打字输入不受打扰）
-            boolean stateChanged = !wasInRoom || prevSeat != this.mySeat || prevSize != roomSize();
-            if (!(mc.screen instanceof CardGameChatScreen)
-                    && (!(mc.screen instanceof BoardLobbyScreen) || stateChanged)) {
-                mc.setScreen(new BoardLobbyScreen());
-            }
-        } else if (!(mc.screen instanceof BoardGameScreen)
+        if (!(mc.screen instanceof BoardGameScreen)
                 && !(mc.screen instanceof BoardRulesScreen)
                 && !(mc.screen instanceof CardGameChatScreen)) {
             // 对局中/已结束均停留在棋盘界面（结算以横幅展示）。
@@ -263,21 +260,6 @@ public final class BoardClientState implements GameClientSession {
         }
     }
 
-    /** 大厅房间列表下发：更新缓存并通知大厅界面刷新（内容变化时才重建控件）。 */
-    public void onRoomList(RoomListS2C payload) {
-        this.debugMode = false; // 打开大厅即退出调试旁观模式（防残留标记）
-        roomList.clear();
-        String[] codes = payload.codes();
-        String[] lines = payload.lines();
-        byte[] statuses = payload.statuses();
-        int n = Math.min(codes.length, Math.min(lines.length, statuses.length));
-        for (int i = 0; i < n; i++) {
-            roomList.add(new AbstractLobbyScreen.RoomEntry(codes[i], lines[i], statuses[i]));
-        }
-        if (Minecraft.getInstance().screen instanceof BoardLobbyScreen lobby) {
-            lobby.onRoomListChanged();
-        }
-    }
 
     /** 调试旁观界面（/chess debug ui）：随机虚拟对局填充本地状态并打开棋盘界面（旁观视角）。 */
     public void onDebugUi(DebugUiS2C payload) {
@@ -355,7 +337,6 @@ public final class BoardClientState implements GameClientSession {
         blackScore = 0;
         whiteScore = 0;
         resultReason = 0;
-        roomList.clear();
         debugMode = false;
     }
 

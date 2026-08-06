@@ -7,7 +7,6 @@ import io.wifi.cards.doudizhu.game.DdzGame;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
 import io.wifi.cards.doudizhu.network.DdzPackets.NoticeS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomClosedS2C;
-import io.wifi.cards.doudizhu.network.DdzPackets.RoomListS2C;
 import io.wifi.cards.doudizhu.rule.DdzRuleSet;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.ChatFormatting;
@@ -50,8 +49,6 @@ public final class DdzMemoryManager {
     private final Map<UUID, String> playerRoomIds = new ConcurrentHashMap<>();
     /** 旁观者所属房间映射（旁观只读观看，不占座位、无成员会话）。 */
     private final Map<UUID, String> spectatorRoomIds = new ConcurrentHashMap<>();
-    /** 大厅列表查询时间戳（LobbyQueryC2S 频率限制，随断线清理）。 */
-    private final Map<UUID, Long> lobbyQueryTimes = new ConcurrentHashMap<>();
 
     private DdzMemoryManager() {
     }
@@ -100,6 +97,11 @@ public final class DdzMemoryManager {
                             .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames accept " + room.id))));
             server.getPlayerList().broadcastSystemMessage(message, false);
         }
+        // 无大厅 UI：直接提示房主房间已创建（可点击查看列表）
+        player.sendSystemMessage(Component.literal("已创建房间 " + room.id + "，等待玩家加入")
+                .append(Component.literal(" [房间列表]").withStyle(style -> style
+                        .withColor(ChatFormatting.GREEN)
+                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames rooms")))));
     }
 
     public void joinRoom(ServerPlayer player, String code) {
@@ -304,7 +306,6 @@ public final class DdzMemoryManager {
      * 等待/结算中 → 视为离开（不满 3 人解散）。
      */
     public void onPlayerDisconnect(ServerPlayer player) {
-        lobbyQueryTimes.remove(player.getUUID()); // 清理频率限制记录，防 Map 泄漏
         // 旁观者：清理旁观关系后直接返回（无成员会话）
         String specId = spectatorRoomIds.remove(player.getUUID());
         if (specId != null) {
@@ -452,40 +453,6 @@ public final class DdzMemoryManager {
     /** 按房间码查找房间（管理命令用），不存在返回 null。 */
     public DdzRoom roomByCode(String code) {
         return rooms.get(fullCode(code));
-    }
-
-    /** 大厅房间列表下发（LobbyQueryC2S 响应）：仅公开房间（创建时"公布房间"开启）。
-     *  等待中可加入 / 对局中可旁观 / 已结束仅展示。
-     *  带频率限制（最小间隔 500ms/玩家）：恶意客户端高频刷包会占用服务端主线程与带宽。 */
-    public void sendRoomList(ServerPlayer player) {
-        long now = System.currentTimeMillis();
-        Long last = lobbyQueryTimes.get(player.getUUID());
-        if (last != null && now - last < 500) {
-            return;
-        }
-        lobbyQueryTimes.put(player.getUUID(), now);
-        List<DdzRoom> list = new ArrayList<>();
-        for (DdzRoom r : roomSnapshot()) {
-            if (r.announce) {
-                list.add(r);
-            }
-        }
-        String[] codes = new String[list.size()];
-        String[] lines = new String[list.size()];
-        byte[] statuses = new byte[list.size()];
-        for (int i = 0; i < list.size(); i++) {
-            DdzRoom r = list.get(i);
-            codes[i] = r.id;
-            String phaseText = switch (r.phase()) {
-                case WAITING -> "等待中";
-                case SETTLED -> "已结束";
-                default -> "对局中";
-            };
-            lines[i] = (r.flowerMode ? "花牌" : "经典") + " · 玩家 " + r.size + "/3 · " + phaseText;
-            statuses[i] = (byte) (r.phase() == DdzGamePhase.WAITING ? 0
-                    : r.phase() == DdzGamePhase.SETTLED ? 2 : 1);
-        }
-        ServerPlayNetworking.send(player, new RoomListS2C(codes, lines, statuses));
     }
 
     /** 删除指定房间（通知成员后销毁）；返回错误信息或 null。 */

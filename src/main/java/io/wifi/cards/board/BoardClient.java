@@ -1,18 +1,17 @@
 package io.wifi.cards.board;
 
-import io.wifi.cards.board.gui.BoardClientState;
 import io.wifi.cards.board.gui.BoardLobbyScreen;
+import io.wifi.cards.board.network.BoardPackets.OpenLobbyS2C;
+import io.wifi.cards.board.gui.BoardClientState;
 import io.wifi.cards.board.network.BoardPackets.DebugUiS2C;
 import io.wifi.cards.common.client.GameMenuClient;
 import io.wifi.cards.board.network.BoardPackets.GameResultS2C;
 import io.wifi.cards.board.network.BoardPackets.GameStartS2C;
 import io.wifi.cards.board.network.BoardPackets.MoveBroadcastS2C;
 import io.wifi.cards.board.network.BoardPackets.NoticeS2C;
-import io.wifi.cards.board.network.BoardPackets.OpenLobbyS2C;
 import io.wifi.cards.board.network.BoardPackets.PassBroadcastS2C;
 import io.wifi.cards.board.network.BoardPackets.ReconnectS2C;
 import io.wifi.cards.board.network.BoardPackets.RoomClosedS2C;
-import io.wifi.cards.board.network.BoardPackets.RoomListS2C;
 import io.wifi.cards.board.network.BoardPackets.RoomStateS2C;
 import io.wifi.cards.board.network.BoardPackets.SurrenderS2C;
 import io.wifi.cards.board.network.BoardPackets.TurnS2C;
@@ -24,8 +23,7 @@ import net.minecraft.client.Minecraft;
  * 棋类模块客户端初始化（黑白棋/五子棋/围棋，由 io.wifi.cards.CardGameModClient 载入）。
  * <p>所有客户端专属逻辑集中于此类（客户端网络接收器、屏幕调度），
  * 服务端可达的类不得引用含 client 的包，否则服务端无法启动。</p>
- * <p>没有客户端命令：打开 UI 统一由服务端命令发 OpenLobbyS2C 驱动，
- * 接收器在客户端主线程执行 setScreen，不存在命令线程被聊天界面覆盖的问题。</p>
+  * 接收器在客户端主线程执行 setScreen，不存在命令线程被聊天界面覆盖的问题。</p>
  */
 public final class BoardClient {
     private BoardClient() {
@@ -75,16 +73,11 @@ public final class BoardClient {
                 ctx.client().execute(() -> state.onRoomClosed(payload.reason())));
         ClientPlayNetworking.registerGlobalReceiver(NoticeS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> state.onNotice(payload.message())));
-        ClientPlayNetworking.registerGlobalReceiver(RoomListS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> state.onRoomList(payload)));
         // 调试旁观界面（/chess debug ui 触发）：随机虚拟对局数据，仅供 UI 检查
         ClientPlayNetworking.registerGlobalReceiver(DebugUiS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> state.onDebugUi(payload)));
-        // 服务端命令 /chess 触发：在主线程打开大厅（同时退出调试旁观模式）
+        // 服务端命令 /xxx 或 /cardgames open 触发：在主线程打开大厅
         ClientPlayNetworking.registerGlobalReceiver(OpenLobbyS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> {
-                    BoardClientState.INSTANCE.debugMode = false;
-                    Minecraft.getInstance().setScreen(new BoardLobbyScreen());
-                }));
+                ctx.client().execute(() -> Minecraft.getInstance().setScreen(new BoardLobbyScreen())));
     }
 }

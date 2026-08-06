@@ -1,7 +1,6 @@
 package io.wifi.cards.doudizhu.gui;
 
 import io.wifi.cards.common.GameRegistry;
-import io.wifi.cards.common.client.AbstractLobbyScreen;
 import io.wifi.cards.common.client.CardGameChatScreen;
 import io.wifi.cards.common.client.GameClientSession;
 import io.wifi.cards.doudizhu.card.DdzCard;
@@ -16,7 +15,6 @@ import io.wifi.cards.doudizhu.network.DdzPackets.PlayBroadcastS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.ReconnectS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RevealS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RobBroadcastS2C;
-import io.wifi.cards.doudizhu.network.DdzPackets.RoomListS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.RoomStateS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.SpectatorHandsS2C;
 import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
@@ -93,10 +91,6 @@ public final class DdzClientState implements GameClientSession {
     public final List<HistoryLine> historyLines = new ArrayList<>();
     /** 三家完整手牌（仅旁观模式填充：SpectatorHandsS2C 透视视角，[0]=座位0…）。 */
     public final List<List<DdzCard>> spectatorHands = new ArrayList<>(3);
-
-    // ---- 大厅房间列表 ----
-    /** 大厅房间列表（由 RoomListS2C 填充，仅公开房间；条目类型见 AbstractLobbyScreen.RoomEntry）。 */
-    public final List<AbstractLobbyScreen.RoomEntry> roomList = new ArrayList<>();
 
     // ---- 结算 ----
     public String resultLandlordName = "";
@@ -185,11 +179,9 @@ public final class DdzClientState implements GameClientSession {
         copyBooleans(payload.connected(), connected);
         Minecraft mc = Minecraft.getInstance();
         if (phase == DdzGamePhase.WAITING) {
-            // 刚进入房间（或座位/人数变化）时强制重建大厅，刷新创建/加入/离开等组件；
-            // 聊天框打开中不强制弹回（打字输入不受打扰）
+            // 刚进入房间（或座位/人数变化）时重建大厅：切换创建区/等待房间视图
             boolean stateChanged = !wasInRoom || prevSeat != this.mySeat || prevSize != roomSize();
-            if (!(mc.screen instanceof CardGameChatScreen)
-                    && (!(mc.screen instanceof DdzLobbyScreen) || stateChanged)) {
+            if (!(mc.screen instanceof DdzLobbyScreen) || stateChanged) {
                 mc.setScreen(new DdzLobbyScreen());
             }
         } else if (phase == DdzGamePhase.SETTLED) {
@@ -287,11 +279,7 @@ public final class DdzClientState implements GameClientSession {
         }
         this.historyLines.clear();
         Minecraft mc = Minecraft.getInstance();
-        if (phase == DdzGamePhase.WAITING) {
-            if (!(mc.screen instanceof DdzLobbyScreen)) {
-                mc.setScreen(new DdzLobbyScreen());
-            }
-        } else if (phase == DdzGamePhase.SETTLED) {
+        if (phase == DdzGamePhase.SETTLED) {
             // 结算中：打开结算界面（数据由服务端随后重发的 GameResultS2C 填充）
             if (!(mc.screen instanceof DdzResultScreen)) {
                 mc.setScreen(new DdzResultScreen());
@@ -417,20 +405,6 @@ public final class DdzClientState implements GameClientSession {
         }
     }
 
-    /** 大厅房间列表下发（LobbyQueryC2S 响应）：更新缓存并通知大厅界面刷新（内容变化时才重建控件）。 */
-    public void onRoomList(RoomListS2C payload) {
-        roomList.clear();
-        String[] codes = payload.codes();
-        String[] lines = payload.lines();
-        byte[] statuses = payload.statuses();
-        int n = Math.min(codes.length, Math.min(lines.length, statuses.length));
-        for (int i = 0; i < n; i++) {
-            roomList.add(new AbstractLobbyScreen.RoomEntry(codes[i], lines[i], statuses[i]));
-        }
-        if (Minecraft.getInstance().screen instanceof DdzLobbyScreen lobby) {
-            lobby.onRoomListChanged();
-        }
-    }
 
     public void onPass(PassBroadcastS2C payload) {
         this.lastPassName = payload.playerName();
@@ -572,7 +546,6 @@ public final class DdzClientState implements GameClientSession {
         lastPlays.clear();
         historyLines.clear();
         spectatorHands.clear();
-        roomList.clear();
         resultLandlordName = "";
         resultLandlordWin = false;
         resultBaseScore = 1;

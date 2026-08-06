@@ -34,8 +34,10 @@ public record GameInfo(
         int iconColor,
         /** 菜单简介。 */
         String description,
-        /** 打开该游戏 UI：对局/旁观中重发快照恢复界面，否则打开大厅。 */
+        /** 打开该游戏 UI：对局/旁观中重发快照恢复界面，否则聊天栏显示房间列表（命令入口）。 */
         Consumer<ServerPlayer> opener,
+        /** 创建房间（默认选项：公开、无机器人、各游戏默认规则/尺寸）。 */
+        Consumer<ServerPlayer> creator,
         /** 加入房间（房间码含前缀；失败经该游戏的 NoticeS2C 自行提示）。 */
         BiConsumer<ServerPlayer, String> joiner,
         /** 旁观房间，返回错误消息或 null。 */
@@ -51,6 +53,10 @@ public record GameInfo(
         IntSupplier playerCount,
         /** 房间单行摘要列表（统一房间管理显示用）。 */
         Supplier<List<String>> roomLines,
+        /** 房间列表行（聊天栏 /cardgames rooms 用）：includePrivate=true 时含未公开房间（管理员查询）。 */
+        Function<Boolean, List<RoomBrief>> roomBriefs,
+        /** 房间详情行（/cardgames roominfo 用）；房间不存在返回空列表。 */
+        Function<String, List<String>> roomDetailer,
         /** 删除指定房间（房间码含前缀），返回错误消息或 null。 */
         Function<String, String> roomDeleter,
         /** 清空全部房间，返回删除数量。 */

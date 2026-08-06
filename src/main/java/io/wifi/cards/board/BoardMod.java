@@ -2,9 +2,12 @@ package io.wifi.cards.board;
 
 import io.wifi.cards.board.command.BoardCommands;
 import io.wifi.cards.board.manager.BoardMemoryManager;
+import io.wifi.cards.board.model.BoardGameType;
+import io.wifi.cards.board.model.BoardPhase;
 import io.wifi.cards.board.network.BoardPackets;
 import io.wifi.cards.common.GameInfo;
 import io.wifi.cards.common.GameRegistry;
+import io.wifi.cards.common.RoomBrief;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.server.level.ServerPlayer;
@@ -31,6 +34,8 @@ public final class BoardMod {
                 "棋类", "棋", 0xFF1E88E5,
                 "黑白棋 / 五子棋 / 围棋",
                 BoardCommands::openLobby,
+                player -> BoardMemoryManager.INSTANCE.createRoom(player.server, player,
+                        BoardGameType.OTHELLO, 8, true, 0),
                 (player, code) -> BoardMemoryManager.INSTANCE.joinRoom(player, code),
                 BoardMemoryManager.INSTANCE::spectate,
                 BoardMemoryManager.INSTANCE::leaveRoom,
@@ -43,6 +48,15 @@ public final class BoardMod {
                         .map(r -> r.id + " · " + r.gameType.displayName
                                 + " · 人数 " + r.count + "/2 · " + BoardCommands.phaseName(r.phase()))
                         .toList(),
+                // 房间列表行（/cardgames rooms）：管理员含未公开房间
+                includePrivate -> BoardMemoryManager.INSTANCE.roomSnapshot().stream()
+                        .filter(r -> includePrivate || r.announce)
+                        .map(r -> new RoomBrief(r.id, r.gameType.displayName + " · 玩家 " + r.count
+                                        + "/2 · " + BoardCommands.phaseName(r.phase()),
+                                (byte) (r.phase() == BoardPhase.WAITING ? 0
+                                        : r.phase() == BoardPhase.PLAYING ? 1 : 2)))
+                        .toList(),
+                BoardCommands::roomDetail,
                 BoardMemoryManager.INSTANCE::deleteRoom,
                 BoardMemoryManager.INSTANCE::clearAllRooms));
         // 断线/进服回调：Fabric 的 DISCONNECT 在网络线程触发（ClientConnection.channelInactive/
