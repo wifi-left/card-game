@@ -181,14 +181,27 @@ public class DdzRoom {
         return -1;
     }
 
-    /** 是否所有玩家都已掉线。 */
+    /**
+     * 是否所有玩家都已掉线。
+     * 在线判定用「服务器玩家列表查询」（carpet 假人/调试实体无真实网络连接，
+     * canSend 恒为 false，会被误判为离线——它们实体在线且参与对局，应视为在线）。
+     */
     public boolean allDisconnected() {
         for (int i = 0; i < size; i++) {
-            if (isConnected(members[i])) {
+            if (isOnline(members[i])) {
                 return false;
             }
         }
         return true;
+    }
+
+    /**
+     * 玩家是否在线（在服务器玩家列表中；carpet 假人无网络连接但实体在线，返回 true）。
+     * 服务器玩家列表查询（{@code server.getPlayerList().getPlayer(uuid)}）。
+     */
+    public static boolean isOnline(ServerPlayer player) {
+        return player != null && player.server != null
+                && player.server.getPlayerList().getPlayer(player.getUUID()) != null;
     }
 
     /** 同步房间状态给每个成员（mySeat 按接收者区分）与旁观者（mySeat=-1）。 */

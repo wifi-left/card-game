@@ -1,5 +1,7 @@
 package io.wifi.cards.doudizhu.gui;
 
+import io.wifi.cards.common.GameRegistry;
+import io.wifi.cards.common.client.GameClientSession;
 import io.wifi.cards.doudizhu.card.DdzCard;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
 import io.wifi.cards.doudizhu.network.DdzPackets.CallBroadcastS2C;
@@ -22,6 +24,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -33,7 +36,7 @@ import java.util.Set;
  * 客户端游戏状态（单一数据源）：由 S2C 包驱动，GUI 直接读取。
  * 座位约定：0~2 为绝对座位；对局中座位不变。
  */
-public final class DdzClientState {
+public final class DdzClientState implements GameClientSession {
     public static final DdzClientState INSTANCE = new DdzClientState();
 
     // ---- 房间/大厅 ----
@@ -102,6 +105,11 @@ public final class DdzClientState {
         return roomCode != null;
     }
 
+    /** 旁观 UI 调试模式（服务端调试命令以 roomCode=DEBUG 下发虚拟牌，仅用于 UI 检查）。 */
+    public boolean debugSpectate() {
+        return "DEBUG".equals(roomCode);
+    }
+
     public boolean inGame() {
         return roomCode != null && phase != DdzGamePhase.WAITING;
     }
@@ -126,6 +134,31 @@ public final class DdzClientState {
             }
         }
         return count;
+    }
+
+    // ---------------- 小游戏菜单会话（跨游戏恢复界面） ----------------
+
+    @Override
+    public String gameId() {
+        return GameRegistry.GAME_DOUDIZHU;
+    }
+
+    @Override
+    public boolean hasSession() {
+        return inRoom();
+    }
+
+    /** 按当前会话状态重开对应界面（菜单/其它大厅关闭后回到牌局/结算/大厅）。 */
+    @Override
+    public void restoreScreen() {
+        Minecraft mc = Minecraft.getInstance();
+        if (phase == DdzGamePhase.WAITING) {
+            mc.setScreen(new DdzLobbyScreen());
+        } else if (phase == DdzGamePhase.SETTLED) {
+            mc.setScreen(new DdzResultScreen());
+        } else {
+            mc.setScreen(new DdzGameScreen());
+        }
     }
 
     // ---------------- S2C 处理 ----------------
@@ -382,6 +415,13 @@ public final class DdzClientState {
     public void onTurn(TurnS2C payload) {
         this.currentSeat = payload.seat();
         this.turnEndGameTime = payload.endGameTime();
+        // 轮到本人且未托管：播放原版提示音效提醒操作（旁观者 mySeat=-1 不会匹配）
+        if (!this.myTrust && payload.seat() == this.mySeat && this.mySeat >= 0) {
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null) {
+                mc.player.playSound(SoundEvents.NOTE_BLOCK_PLING.value(), 1.0F, 1.0F);
+            }
+        }
     }
 
     /** 托管状态回传：按钮（托管/取消托管）与服务端保持一致（含 debug trust 命令、断线托管、重连）。 */

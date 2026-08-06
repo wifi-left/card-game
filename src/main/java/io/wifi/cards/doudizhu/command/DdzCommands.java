@@ -10,6 +10,10 @@ import io.wifi.cards.doudizhu.manager.DdzMemoryManager;
 import io.wifi.cards.doudizhu.manager.DdzRoom;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
 import io.wifi.cards.doudizhu.network.DdzPackets.OpenLobbyS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.ReconnectS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.RoomStateS2C;
+import io.wifi.cards.doudizhu.network.DdzPackets.SpectatorHandsS2C;
+import io.wifi.cards.doudizhu.rule.DdzRuleSet;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.ChatFormatting;
@@ -19,10 +23,14 @@ import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Random;
+import java.util.Set;
 
 /**
  * 斗地主服务端命令（服务端可加载，不引用任何含 client 的包）：
@@ -109,7 +117,9 @@ public final class DdzCommands {
                                     .then(Commands.argument("player", EntityArgument.player())
                                             .then(Commands.argument("enabled", BoolArgumentType.bool())
                                                     .executes(ctx -> debugTrust(ctx.getSource(), EntityArgument.getPlayer(ctx, "player"),
-                                                            BoolArgumentType.getBool(ctx, "enabled"))))))));
+                                                            BoolArgumentType.getBool(ctx, "enabled"))))))
+                            .then(Commands.literal("spectateui")
+                                    .executes(ctx -> debugSpectateUi(ctx.getSource())))));
         });
     }
 
@@ -124,14 +134,20 @@ public final class DdzCommands {
      * </ul>
      */
     private static int openLobby(CommandSourceStack source) throws CommandSyntaxException {
-        ServerPlayer player = source.getPlayerOrException();
+        openLobby(source.getPlayerOrException());
+        return 1;
+    }
+
+    /** 打开该游戏 UI（/doudizhu 与 /cardgames open 共用）：
+     * 对局中重发快照 / 旁观中重发旁观快照 / 否则发 OpenLobbyS2C 打开大厅。 */
+    public static void openLobby(ServerPlayer player) {
         DdzMemoryManager m = DdzMemoryManager.INSTANCE;
         DdzRoom room = m.currentRoom(player);
         if (room != null && room.phase() != DdzGamePhase.WAITING) {
             // 对局中：先同步房间信息（mySeat/成员），再发完整快照，客户端 onReconnect 会打开 GameScreen
             room.broadcastState();
             room.game.syncTo(room.seatOf(player));
-            return 1;
+            return;
         }
         // 旁观者：关闭 UI 后用 /doudizhu 重新打开应回到旁观界面（而非大厅）
         String specId = m.spectatingRoomId(player);
@@ -140,11 +156,10 @@ public final class DdzCommands {
             if (specRoom != null && specRoom.game != null) {
                 specRoom.broadcastState(); // 旁观者收到 mySeat=-1 的房间状态
                 specRoom.game.syncToSpectator(player); // 对局快照 + 三家手牌 + 历史
-                return 1;
+                return;
             }
         }
         ServerPlayNetworking.send(player, new OpenLobbyS2C());
-        return 1;
     }
 
     /** 接受邀请加入：/doudizhu accept <房间码>（服务端直接处理；聊天点击消息触发）。 */
@@ -162,7 +177,7 @@ public final class DdzCommands {
             source.sendFailure(Component.literal(error));
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("正在旁观房间 " + code + "，输入 /doudizhu unspectate 退出旁观"), false);
+        source.sendSuccess(() -> Component.literal("正在旁观房间 " + code + "，输入 /cardgames leave 退出旁观"), false);
         return 1;
     }
 
@@ -175,22 +190,31 @@ public final class DdzCommands {
 
     private static int invite(CommandSourceStack source, ServerPlayer target) throws CommandSyntaxException {
         ServerPlayer owner = source.getPlayerOrException();
-        DdzRoom room = DdzMemoryManager.INSTANCE.currentRoom(owner);
-        if (room == null) {
-            source.sendFailure(Component.literal("你不在任何房间里，请先创建房间"));
+        String error = invite(owner, target);
+        if (error != null) {
+            source.sendFailure(Component.literal(error));
             return 0;
         }
+        source.sendSuccess(() -> Component.literal("已向 " + target.getGameProfile().getName() + " 发送邀请"), false);
+        return 1;
+    }
+
+    /** 邀请玩家加入自己所在房间（/doudizhu invite 与 /cardgames invite 共用）；
+     *  成功时向目标发送可点击邀请消息，返回错误消息或 null。 */
+    public static String invite(ServerPlayer owner, ServerPlayer target) {
+        DdzRoom room = DdzMemoryManager.INSTANCE.currentRoom(owner);
+        if (room == null) {
+            return "你不在任何房间里，请先创建房间";
+        }
         if (room.size >= 3 || room.phase() != DdzGamePhase.WAITING) {
-            source.sendFailure(Component.literal("只能邀请玩家加入等待中的房间"));
-            return 0;
+            return "只能邀请玩家加入等待中的房间";
         }
         Component message = Component.literal(owner.getGameProfile().getName() + " 邀请你加入斗地主房间[" + room.id + "] ")
                 .append(Component.literal("[接受邀请]").withStyle(style -> style
                         .withColor(ChatFormatting.GREEN)
-                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/doudizhu accept " + room.id))));
+                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames accept " + room.id))));
         target.sendSystemMessage(message);
-        source.sendSuccess(() -> Component.literal("已向 " + target.getGameProfile().getName() + " 发送邀请"), false);
-        return 1;
+        return null;
     }
 
     private static int leave(CommandSourceStack source) throws CommandSyntaxException {
@@ -391,7 +415,7 @@ public final class DdzCommands {
             if (room.isBot(i)) {
                 line = "  座位" + (i + 1) + "：" + name + "（机器人）";
             } else {
-                boolean online = room.members[i] != null && DdzRoom.isConnected(room.members[i]);
+                boolean online = room.members[i] != null && DdzRoom.isOnline(room.members[i]);
                 boolean trusted = room.game != null && room.game.isTrusted(i);
                 line = "  座位" + (i + 1) + "：" + name + "（真人·" + (online ? "在线" : "离线")
                         + (trusted ? "·托管中" : "") + "）";
@@ -419,8 +443,8 @@ public final class DdzCommands {
         return 1;
     }
 
-    /** 阶段中文名（管理命令显示用）。 */
-    private static String phaseName(DdzGamePhase phase) {
+    /** 阶段中文名（管理命令/注册表房间摘要显示用）。 */
+    public static String phaseName(DdzGamePhase phase) {
         return switch (phase) {
             case WAITING -> "等待中";
             case DEALING -> "发牌中";
@@ -453,6 +477,52 @@ public final class DdzCommands {
         game.setTrust(target, enabled);
         source.sendSuccess(() -> Component.literal("已" + (enabled ? "开启" : "关闭") + " " + target.getGameProfile().getName() + " 的托管"), false);
         return 1;
+    }
+
+    /**
+     * 旁观 UI 调试：/doudizhu debug spectateui。
+     * 不创建房间，向执行者下发一组随机虚拟牌的旁观快照（RoomState mySeat=-1 + 对局快照 + 三家手牌），
+     * 客户端打开旁观界面，标题带「（调试）」标记；退出走既有自愈路径回大厅。
+     */
+    private static int debugSpectateUi(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        Random random = new Random();
+        Set<Integer> used = new HashSet<>();
+        int[] h0 = randomHand(5 + random.nextInt(13), random, used); // 5~17 张（测试换行/布局）
+        int[] h1 = randomHand(5 + random.nextInt(13), random, used); // 5~17 张
+        int[] h2 = randomHand(8 + random.nextInt(13), random, used); // 8~20 张（地主位）
+        int[] bottom = randomHand(3, random, used);
+        long endTime = 0;
+        MinecraftServer server = player.getServer();
+        if (server != null) {
+            endTime = player.serverLevel().getGameTime() + 600; // 倒计时 30 秒演示
+        }
+        // 房间码固定 DEBUG：客户端据此显示「（调试）」标记；本调试不占任何真实房间/旁观关系
+        ServerPlayNetworking.send(player, new RoomStateS2C("DEBUG", false, (byte) DdzGamePhase.PLAYING.ordinal(),
+                (byte) DdzRuleSet.STANDARD.ordinal(), (byte) -1,
+                new String[]{"调试A", "调试B", "调试C"}, new String[]{"", "", ""},
+                new boolean[]{true, true, true}));
+        ServerPlayNetworking.send(player, new ReconnectS2C(
+                (byte) DdzGamePhase.PLAYING.ordinal(), new int[0], (byte) 0, (byte) 0, endTime,
+                2, (byte) 0, (byte) 1, (byte) 0, "调试A", bottom,
+                (byte) -1, "", new int[0], (byte) -1, 0,
+                new byte[]{(byte) h0.length, (byte) h1.length, (byte) h2.length}));
+        ServerPlayNetworking.send(player, new SpectatorHandsS2C(h0, h1, h2));
+        source.sendSuccess(() -> Component.literal("已打开旁观界面调试（随机虚拟牌，仅本客户端可见，点「退出旁观」返回）"), false);
+        return 1;
+    }
+
+    /** 从牌堆中抽取 count 张互不重复的随机牌（id 数组）。 */
+    private static int[] randomHand(int count, Random random, Set<Integer> used) {
+        int[] ids = new int[count];
+        int i = 0;
+        while (i < count) {
+            int id = random.nextInt(DdzCard.TOTAL_COUNT);
+            if (used.add(id)) {
+                ids[i++] = id;
+            }
+        }
+        return ids;
     }
 
     /** 解析牌串并从手牌中取牌；非法字符或数量不足返回 null。 */

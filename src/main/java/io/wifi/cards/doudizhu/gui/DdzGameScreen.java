@@ -63,6 +63,8 @@ public class DdzGameScreen extends Screen {
     private double lastDragY;
     /** 本次按下是否始于手牌（从按钮/空白按下拖动不处理手牌，避免误选）。 */
     private boolean dragArmed;
+    /** 退出确认弹层：成员点「退出」后先询问（旁观者退出无需确认）。 */
+    private boolean confirmingExit;
 
     public DdzGameScreen() {
         super(Component.literal("斗地主"));
@@ -152,9 +154,13 @@ public class DdzGameScreen extends Screen {
     /** 待打开聊天框（延迟到 tick 执行，避免同按键的字符事件被新聊天框接收）。 */
     private boolean openChatPending;
 
-    /** 关闭牌局界面（Esc）：提示可通过命令/点击重新打开。 */
+    /** 关闭牌局界面（Esc）：退出确认弹层打开时先取消弹层，再按才关闭界面。 */
     @Override
     public void onClose() {
+        if (confirmingExit) {
+            confirmingExit = false; // 第一下 Esc：取消确认弹层（按钮由 tick 签名重建）
+            return;
+        }
         DdzClientState.chatReopenHint("关闭牌局界面");
         super.onClose();
     }
@@ -214,10 +220,10 @@ public class DdzGameScreen extends Screen {
             selected.clear();
             buttonSignature = -1;
         }
-        // 阶段/轮到谁/托管/明牌/选牌变化时重建按钮（旁观模式按钮恒定，用独立签名区分）
+        // 阶段/轮到谁/托管/明牌/选牌/退出确认弹层变化时重建按钮（旁观模式按钮恒定，用独立签名区分）
         int signature = isSpectator() ? -50000
                 : (s.phase.ordinal() * 100 + (s.currentSeat + 1) * 10 + (s.myTrust ? 1 : 0)) * 2
-                        + (selected.isEmpty() ? 0 : 1) + (s.revealed ? 1000 : 0);
+                        + (selected.isEmpty() ? 0 : 1) + (s.revealed ? 1000 : 0) + (confirmingExit ? 500 : 0);
         if (signature != buttonSignature) {
             buttonSignature = signature;
             rebuildActionButtons();
@@ -239,7 +245,17 @@ public class DdzGameScreen extends Screen {
         }
         // 常驻行：退出游戏 + 托管（整局可用，随时可退出/取消托管）
         if (s.phase == DdzGamePhase.CALLING || s.phase == DdzGamePhase.ROBBING || s.phase == DdzGamePhase.PLAYING) {
-            actionButtons.add(button(x - 95, y - 26, "退出", b -> sendLeave(), true));
+            if (confirmingExit) {
+                // 退出确认弹层：仅「确认退出 / 取消」（确认后座位转机器人托管，对局继续）。
+                // 回调只改字段，按钮由 tick 签名变化统一重建（避免点击遍历期间增删 widget）
+                actionButtons.add(button(x - 95, y - 26, "确认退出", b -> {
+                    confirmingExit = false;
+                    sendLeave();
+                }, true));
+                actionButtons.add(button(x, y - 26, "取消", b -> confirmingExit = false, true));
+                return;
+            }
+            actionButtons.add(button(x - 95, y - 26, "退出", b -> confirmingExit = true, true));
             actionButtons.add(button(x, y - 26, s.myTrust ? "取消托管" : "托管", b -> sendTrust(), true));
         }
         if (!s.isMyTurn()) {
@@ -388,6 +404,10 @@ public class DdzGameScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (confirmingExit) {
+            // 退出确认弹层中：不处理选牌/拖拽，仅响应确认/取消按钮（super 转发给 widget）
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
         if (button == 0) {
             // 点击：始终切换按下那张牌的选中状态；命中后消费点击以激活后续拖拽
             lastDragCard = -1;
@@ -456,6 +476,20 @@ public class DdzGameScreen extends Screen {
         if (isSpectator()) {
             drawSpectatorHands(g); // 旁观透视：底部显示三家完整手牌
         }
+        if (confirmingExit) {
+            drawExitConfirm(g);
+        }
+    }
+
+    /** 退出确认弹层：半透明黑底 + 提示文本（按钮在右侧常驻行，见 rebuildActionButtons）。 */
+    private void drawExitConfirm(GuiGraphics g) {
+        int w = Math.min(340, width - 40);
+        int h = 54;
+        int x0 = (width - w) / 2;
+        int y0 = (height - h) / 2;
+        g.fill(x0, y0, x0 + w, y0 + h, 0xE6000000); // 深色背景遮罩
+        DdzGui.centeredShadow(g, this.font, width, "退出后座位将由机器人托管，对局继续", y0 + 10, 0xFFFFD700);
+        DdzGui.centeredShadow(g, this.font, width, "确定要退出游戏吗？", y0 + 26, 0xFFFFFFFF);
     }
 
     private void drawTopInfo(GuiGraphics g) {
@@ -501,11 +535,12 @@ public class DdzGameScreen extends Screen {
         drawCardBacks(g, 24, 9, s.countOf(0));
         g.drawString(this.font, nameLine(0), 46, 11,
                 s.currentSeat == 0 ? 0xFFFFFF55 : 0xFFFFFFFF, true);
-        // 座位 1：中（头像居中，名字与牌背叠在其右侧）
+        // 座位 1：中（头像+牌背+名字整块居中，名字恒在牌背右侧，不与牌背重叠；长名截断防溢出）
         drawHead(g, s.playerUuids[1], width / 2 - 8, 6, 16);
-        drawCardBacks(g, width / 2 + 10, 9, s.countOf(1));
         String midText = nameLine(1);
-        g.drawString(this.font, midText, width / 2 - this.font.width(midText) / 2, 11,
+        midText = this.font.plainSubstrByWidth(midText, Math.max(40, width / 2 - 80));
+        drawCardBacks(g, width / 2 + 10, 9, s.countOf(1));
+        g.drawString(this.font, midText, width / 2 + 30, 11,
                 s.currentSeat == 1 ? 0xFFFFFF55 : 0xFFFFFFFF, true);
         // 座位 2：右（头像 + 牌背叠 + 名字右对齐）
         drawHead(g, s.playerUuids[2], width - 22, 6, 16);
@@ -538,10 +573,10 @@ public class DdzGameScreen extends Screen {
         g.drawString(font, "?", x + (w - font.width("?")) / 2, y + (h - 9) / 2, 0xFFFFFFFF, false);
     }
 
-    /** 当前阶段标题（顶部正中央显示）。 */
+    /** 当前阶段标题（顶部正中央显示）；旁观 UI 调试时附加「（调试）」标记。 */
     private String phaseText() {
         DdzClientState s = DdzClientState.INSTANCE;
-        return switch (s.phase) {
+        String base = switch (s.phase) {
             case WAITING -> "等待游戏开始…";
             case DEALING -> "发牌中…";
             case CALLING -> "叫分阶段" + (s.callMaxScore > 0 ? "（当前最高 " + s.callMaxScore + " 分）" : "");
@@ -549,6 +584,7 @@ public class DdzGameScreen extends Screen {
             case PLAYING -> "出牌阶段（倍数 ×" + s.multiplier + "，底分 " + s.baseScore + "）";
             case SETTLED -> "本局结束";
         };
+        return s.debugSpectate() ? base + "（调试）" : base;
     }
 
     /**
@@ -688,30 +724,130 @@ public class DdzGameScreen extends Screen {
     }
 
     /**
-     * 旁观透视：底部三行显示三家完整手牌（座位 0/1/2 自上而下），
-     * 牌面小卡横排自适应宽度，出牌时随服务端快照实时更新。
+     * 旁观透视（传统斗地主布局）：
+     * 左上角 = 座位 0（头像 + 名字 + 手牌）、右上角 = 座位 1、底部中央 = 座位 2；
+     * 角落手牌放不下时自动换第二行，牌宽自适应；均避开按钮区与中央面板。
      */
     private void drawSpectatorHands(GuiGraphics g) {
         DdzClientState s = DdzClientState.INSTANCE;
         if (s.spectatorHands.size() < 3) {
             return; // 尚未收到三家手牌快照
         }
-        int rowH = 22;
-        int y = height - 8 - 3 * rowH;
-        for (int seat = 0; seat < 3; seat++) {
-            List<DdzCard> hand = s.spectatorHands.get(seat);
-            String label = s.nameOf(seat) + "：";
-            int labelW = this.font.width(label);
-            g.drawString(this.font, label, 8, y + 3, 0xFFFFFF88, true);
-            int available = Math.max(20, width - 20 - labelW);
-            int n = Math.max(1, hand.size());
-            int cardW = Math.max(7, Math.min(20, (available - (n - 1) * 2) / n));
-            int x = 8 + labelW;
-            for (DdzCard c : hand) {
-                drawCard(g, c, x, y, cardW, rowH - 2);
-                x += cardW + 2;
+        drawCornerHand(g, 0, true); // 左上
+        drawCornerHand(g, 1, false); // 右上
+        drawBottomHand(g, 2); // 底部中央
+    }
+
+    /** 中央面板几何（与 drawCenter 一致）。 */
+    private int centerPanelW() {
+        return Math.max(40, Math.min(240, width - 210));
+    }
+
+    private int centerPanelX() {
+        return Math.max(8, width / 2 - centerPanelW() / 2);
+    }
+
+    /**
+     * 左上/右上角手牌：第一行 = 头像 + 名字 + 牌，第二行（放不下时）= 纯牌。
+     * 牌区夹在中央面板与屏幕边缘之间，永不遮挡面板/按钮；
+     * 长名字截断显示，防止行数爆炸。
+     */
+    private void drawCornerHand(GuiGraphics g, int seat, boolean left) {
+        DdzClientState s = DdzClientState.INSTANCE;
+        List<DdzCard> hand = s.spectatorHands.get(seat);
+        if (hand.isEmpty()) {
+            return;
+        }
+        int rowH = 20;
+        int gap = 2;
+        int limitL = left ? 8 : centerPanelX() + centerPanelW() + 8;
+        int limitR = left ? centerPanelX() - 8 : width - 8;
+        // 名字截断：头部（头像+名字）最多占区域一半，避免极长名把牌区挤到 1 列
+        String name = s.nameOf(seat);
+        int nameW = this.font.width(name);
+        int maxLabelW = Math.max(40, (limitR - limitL) / 2);
+        if (20 + nameW + 6 > maxLabelW) {
+            name = this.font.plainSubstrByWidth(name, Math.max(4, maxLabelW - 26));
+            nameW = this.font.width(name);
+        }
+        int labelW = 20 + nameW + 6;
+        int availW = Math.max(20, limitR - limitL - labelW);
+        int n = hand.size();
+        int cardW = Math.max(7, Math.min(18, (availW - (n - 1) * gap) / n));
+        int perRow = Math.max(1, (availW + gap) / (cardW + gap));
+        int rows = (n + perRow - 1) / perRow;
+        int y = 58; // 顶部信息条（0~54）之下
+        // 行 1 头部：头像 + 名字
+        int headY = y + (rowH - 16) / 2;
+        if (left) {
+            drawHead(g, s.playerUuids[seat], limitL, headY, 16);
+            g.drawString(this.font, name, limitL + 20, y + 4, 0xFFFFFF88, true);
+        } else {
+            int headX = limitR - 16;
+            g.drawString(this.font, name, headX - 6 - nameW, y + 4, 0xFFFFFF88, true);
+            drawHead(g, s.playerUuids[seat], headX, headY, 16);
+        }
+        // 牌区：左对齐（左角）或右对齐到头像左侧（右角）
+        for (int r = 0; r < rows; r++) {
+            int from = r * perRow;
+            int to = Math.min(n, from + perRow);
+            int count = to - from;
+            int rowW = count * cardW + (count - 1) * gap;
+            int x = left ? limitL + labelW : limitR - labelW - rowW;
+            int cy = y + r * (rowH + gap);
+            for (int i = from; i < to; i++) {
+                drawCard(g, hand.get(i), x, cy, cardW, rowH);
+                x += cardW + gap;
             }
-            y += rowH;
+        }
+    }
+
+    /**
+     * 底部中央手牌（座位 2）：头像 + 名字 + 牌，整块居中。
+     * 避开左下角按钮区（x<140）；放不下时牌宽收缩，仍不够则换第二行（不溢出屏幕）。
+     */
+    private void drawBottomHand(GuiGraphics g, int seat) {
+        DdzClientState s = DdzClientState.INSTANCE;
+        List<DdzCard> hand = s.spectatorHands.get(seat);
+        if (hand.isEmpty()) {
+            return;
+        }
+        int rowH = 22;
+        int gap = 2;
+        int limitL = 140; // 避开左下「规则」「历史」按钮
+        int limitR = width - 8;
+        String name = s.nameOf(seat);
+        int nameW = this.font.width(name);
+        int maxLabelW = Math.max(40, (limitR - limitL) / 2);
+        if (20 + nameW + 6 > maxLabelW) {
+            name = this.font.plainSubstrByWidth(name, Math.max(4, maxLabelW - 26));
+            nameW = this.font.width(name);
+        }
+        int labelW = 20 + nameW + 6;
+        int availW = Math.max(20, limitR - limitL - labelW);
+        int n = hand.size();
+        int cardW = Math.max(6, Math.min(20, (availW - (n - 1) * gap) / n));
+        int perRow = Math.max(1, (availW + gap) / (cardW + gap));
+        int rows = (n + perRow - 1) / perRow;
+        int rowW = Math.min(n, perRow) * cardW + (Math.min(n, perRow) - 1) * gap;
+        int blockW = labelW + rowW;
+        int startX = limitL + Math.max(0, (limitR - limitL - blockW) / 2);
+        int y = height - rows * (rowH + gap) - 8;
+        // 行 1 头部：头像 + 名字
+        drawHead(g, s.playerUuids[seat], startX, y + (rowH - 16) / 2, 16);
+        g.drawString(this.font, name, startX + 20, y + 5, 0xFFFFFF88, true);
+        // 牌区（多行时第 1 行带头部缩进，其余行从整块左缘开始）
+        for (int r = 0; r < rows; r++) {
+            int from = r * perRow;
+            int to = Math.min(n, from + perRow);
+            int count = to - from;
+            int rowWr = count * cardW + (count - 1) * gap;
+            int x = r == 0 ? startX + labelW : startX;
+            int cy = y + r * (rowH + gap);
+            for (int i = from; i < to; i++) {
+                drawCard(g, hand.get(i), x, cy, cardW, rowH);
+                x += cardW + gap;
+            }
         }
     }
 

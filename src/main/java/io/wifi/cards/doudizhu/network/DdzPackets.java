@@ -84,7 +84,7 @@ public final class DdzPackets {
         }
     }
 
-    /** 加入房间（C2S），roomCode 为 5 位房间码。 */
+    /** 加入房间（C2S），roomCode 为完整房间码（含前缀，如 DZ-AB12K；也兼容裸码）。 */
     public record JoinRoomC2S(String roomCode) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<JoinRoomC2S> TYPE = new CustomPacketPayload.Type<>(JOIN_ROOM);
         public static final StreamCodec<FriendlyByteBuf, JoinRoomC2S> CODEC = StreamCodec.of(

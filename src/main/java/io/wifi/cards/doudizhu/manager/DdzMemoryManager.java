@@ -1,5 +1,7 @@
 package io.wifi.cards.doudizhu.manager;
 
+import io.wifi.cards.common.GameInfo;
+import io.wifi.cards.common.GameRegistry;
 import io.wifi.cards.doudizhu.card.DdzCard;
 import io.wifi.cards.doudizhu.game.DdzGame;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
@@ -60,6 +62,13 @@ public final class DdzMemoryManager {
             error(player, "你已经在房间里了");
             return;
         }
+        // 跨游戏防护：一个玩家同时只能在一个小游戏中（房间成员或旁观），
+        // 防止开着斗地主牌局又加入 UNO/棋类房间造成双线对局状态混乱
+        GameInfo other = GameRegistry.busyInOtherGame(player, GameRegistry.GAME_DOUDIZHU);
+        if (other != null) {
+            error(player, "你正在【" + other.displayName() + "】中，请先退出该游戏再进入其他小游戏");
+            return;
+        }
         // 防御：房间总数上限，防止恶意客户端洪泛创建房间耗尽内存
         if (rooms.size() >= MAX_ROOMS) {
             error(player, "房间数量已达上限，请稍后再试");
@@ -85,7 +94,7 @@ public final class DdzMemoryManager {
                     + " 创建了房间 " + room.id + "（" + mode + " · " + ruleSet.displayName() + "）")
                     .append(Component.literal(" [点击加入]").withStyle(style -> style
                             .withColor(ChatFormatting.GREEN)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/doudizhu accept " + room.id))));
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames accept " + room.id))));
             server.getPlayerList().broadcastSystemMessage(message, false);
         }
     }
@@ -93,18 +102,24 @@ public final class DdzMemoryManager {
     public void joinRoom(ServerPlayer player, String code) {
         // 先退出旁观状态（旁观者建房/入房自动退出旁观）
         leaveSpectateInternal(player);
-        // 防御：房间码长度上限（房间码固定 5 位，杜绝超长输入）
+        // 防御：房间码长度上限（完整码前缀-5位共 8 字符，杜绝超长输入）
         if (code == null || code.length() > 16) {
             error(player, "房间码无效");
             return;
         }
-        DdzRoom room = rooms.get(code.toUpperCase().trim());
+        DdzRoom room = rooms.get(cleanCode(code));
         if (room == null) {
             error(player, "房间不存在：" + code);
             return;
         }
         if (currentRoom(player) != null) {
             error(player, "你已经在房间里了");
+            return;
+        }
+        // 跨游戏防护：其他小游戏有会话（成员或旁观）时拒绝加入
+        GameInfo other = GameRegistry.busyInOtherGame(player, GameRegistry.GAME_DOUDIZHU);
+        if (other != null) {
+            error(player, "你正在【" + other.displayName() + "】中，请先退出该游戏再进入其他小游戏");
             return;
         }
         if (room.isFull()) {
@@ -421,12 +436,12 @@ public final class DdzMemoryManager {
 
     /** 按房间码查找房间（管理命令用），不存在返回 null。 */
     public DdzRoom roomByCode(String code) {
-        return rooms.get(code.toUpperCase().trim());
+        return rooms.get(cleanCode(code));
     }
 
     /** 删除指定房间（通知成员后销毁）；返回错误信息或 null。 */
     public String deleteRoom(String code) {
-        DdzRoom room = rooms.get(code.toUpperCase().trim());
+        DdzRoom room = rooms.get(cleanCode(code));
         if (room == null) {
             return "房间不存在：" + code;
         }
@@ -454,7 +469,7 @@ public final class DdzMemoryManager {
         if (code == null || code.length() > 16) {
             return "房间码无效";
         }
-        DdzRoom room = rooms.get(code.toUpperCase().trim());
+        DdzRoom room = rooms.get(cleanCode(code));
         if (room == null) {
             return "房间不存在：" + code;
         }
@@ -467,6 +482,11 @@ public final class DdzMemoryManager {
         }
         if (currentRoom(player) != null) {
             return "你已在房间中，无法旁观";
+        }
+        // 跨游戏防护：其他小游戏有会话（成员或旁观）时拒绝旁观
+        GameInfo other = GameRegistry.busyInOtherGame(player, GameRegistry.GAME_DOUDIZHU);
+        if (other != null) {
+            return "你正在【" + other.displayName() + "】中，无法旁观其他小游戏";
         }
         String existing = spectatorRoomIds.get(player.getUUID());
         if (existing != null) {
@@ -518,12 +538,17 @@ public final class DdzMemoryManager {
     public String forceJoin(ServerPlayer target, String roomCode) {
         // 先退出旁观状态（强制入房同样要求退出旁观）
         leaveSpectateInternal(target);
-        DdzRoom room = rooms.get(roomCode.toUpperCase().trim());
+        DdzRoom room = rooms.get(cleanCode(roomCode));
         if (room == null) {
             return "房间不存在：" + roomCode;
         }
         if (currentRoom(target) != null) {
             return target.getGameProfile().getName() + " 已在其他房间";
+        }
+        // 跨游戏防护：强制入房同样要求退出其他小游戏
+        GameInfo other = GameRegistry.busyInOtherGame(target, GameRegistry.GAME_DOUDIZHU);
+        if (other != null) {
+            return target.getGameProfile().getName() + " 正在【" + other.displayName() + "】中，无法强制加入";
         }
         if (room.isFull()) {
             return "房间已满";
@@ -551,7 +576,7 @@ public final class DdzMemoryManager {
             Component msg = Component.literal("[斗地主] 房间 " + room.id + " 已开始，")
                     .append(Component.literal("[点击旁观]").withStyle(style -> style
                             .withColor(ChatFormatting.GREEN)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/doudizhu spectate " + room.id))));
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames spectate " + room.id))));
             host.getServer().getPlayerList().broadcastSystemMessage(msg, false);
         }
     }
@@ -593,8 +618,10 @@ public final class DdzMemoryManager {
     }
 
     private String generateCode() {
+        // 统一房间号格式：前缀-5位码（前缀见 GameRegistry，全服唯一区分所属游戏）
+        String prefix = GameRegistry.PREFIX_DOUDIZHU + "-";
         while (true) {
-            StringBuilder sb = new StringBuilder(5);
+            StringBuilder sb = new StringBuilder(prefix);
             for (int i = 0; i < 5; i++) {
                 sb.append(CODE_CHARS[RANDOM.nextInt(CODE_CHARS.length)]);
             }
@@ -603,6 +630,26 @@ public final class DdzMemoryManager {
                 return code;
             }
         }
+    }
+
+    /** 房间码规范化：去掉本游戏前缀（兼容 "DZ-XXXXX" 完整码与裸码 "XXXXX" 两种输入）。 */
+    private static String cleanCode(String code) {
+        String norm = code.toUpperCase().trim();
+        return norm.startsWith(GameRegistry.PREFIX_DOUDIZHU + "-") ? norm.substring(3) : norm;
+    }
+
+    /** 当前房间总数（菜单统计用）。 */
+    public int roomCount() {
+        return rooms.size();
+    }
+
+    /** 在线人数统计（房间成员 + 旁观者，菜单统计用）。 */
+    public int playerCount() {
+        int count = 0;
+        for (DdzRoom room : rooms.values()) {
+            count += room.size + room.spectators.size();
+        }
+        return count;
     }
 
     public DdzRoom currentRoom(ServerPlayer player) {

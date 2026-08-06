@@ -1,5 +1,8 @@
 package io.wifi.cards.doudizhu.gui;
 
+import io.wifi.cards.common.GameRegistry;
+import io.wifi.cards.common.client.GameMenuClient;
+import io.wifi.cards.common.network.CommonPackets.MenuQueryC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.CreateRoomC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.JoinRoomC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.LeaveRoomC2S;
@@ -45,9 +48,13 @@ public class DdzLobbyScreen extends Screen {
     public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
     }
 
-    /** 关闭大厅（Esc）：等待玩家中关闭时提示可通过命令/点击重新打开。 */
+    /** 关闭大厅（Esc）：等待玩家中关闭时提示可通过命令/点击重新打开；
+     *  从菜单进入本大厅后关闭时，若其它游戏有进行中的会话则恢复其界面。 */
     @Override
     public void onClose() {
+        if (GameMenuClient.tryRestoreOtherSession(GameRegistry.GAME_DOUDIZHU)) {
+            return;
+        }
         if (DdzClientState.INSTANCE.inRoom()) {
             DdzClientState.chatReopenHint("关闭大厅");
         }
@@ -98,6 +105,10 @@ public class DdzLobbyScreen extends Screen {
         clearWidgets(); // 滚动重建时防重复添加
         DdzClientState s = DdzClientState.INSTANCE;
         int cx = width / 2;
+        // 返回小游戏菜单（发刷新请求，服务端回发菜单数据打开菜单界面）
+        addRenderableWidget(Button.builder(Component.literal("主菜单"), b ->
+                        ClientPlayNetworking.send(new MenuQueryC2S()))
+                .bounds(width - 110, 32, 100, 20).build());
         if (!s.inRoom()) {
             // 两列紧凑布局：左列选项（模式/规则/公布/机器人），右列操作（创建/输入框/加入/规则介绍）
             int top = contentTop();
@@ -123,8 +134,8 @@ public class DdzLobbyScreen extends Screen {
                     ClientPlayNetworking.send(new CreateRoomC2S(flowerMode, (byte) ruleSet.ordinal(), announce, (byte) botCount)))
                     .bounds(rx, top, 160, 20).build());
             codeBox = new EditBox(this.font, rx, top + 24, 160, 20, Component.literal("房间码"));
-            codeBox.setMaxLength(5);
-            codeBox.setFilter(str -> str.chars().allMatch(Character::isLetterOrDigit));
+            codeBox.setMaxLength(8);
+            codeBox.setFilter(str -> str.chars().allMatch(ch -> Character.isLetterOrDigit(ch) || ch == '-'));
             addRenderableWidget(codeBox);
             addRenderableWidget(Button.builder(Component.literal("加入房间"), b ->
                     ClientPlayNetworking.send(new JoinRoomC2S(codeBox.getValue().trim().toUpperCase())))
@@ -153,7 +164,7 @@ public class DdzLobbyScreen extends Screen {
             // 提示区半透明黑底（位于内容区下方，不与按钮重叠）
             g.fill(cx - 180, top + 94, cx + 180, top + 126, 0x55000000);
             DdzGui.centeredShadow(g, this.font, width, "创建房间邀请好友一起玩，或输入房间码加入", top + 100, 0xFFAAAAAA);
-            DdzGui.centeredShadow(g, this.font, width, "提示：房主可用 /doudizhu invite <玩家名> 邀请", top + 114, 0xFF777777);
+            DdzGui.centeredShadow(g, this.font, width, "提示：房主可用 /cardgames invite <玩家名> 邀请", top + 114, 0xFF777777);
             if (maxScroll() > 0) {
                 DdzGui.centeredShadow(g, this.font, width, "内容超出屏幕，滚动滚轮查看", height - 14, 0xFF888888);
             }

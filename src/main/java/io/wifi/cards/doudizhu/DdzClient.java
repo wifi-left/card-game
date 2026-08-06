@@ -1,5 +1,6 @@
 package io.wifi.cards.doudizhu;
 
+import io.wifi.cards.common.client.GameMenuClient;
 import io.wifi.cards.doudizhu.gui.DdzClientState;
 import io.wifi.cards.doudizhu.gui.DdzGameScreen;
 import io.wifi.cards.doudizhu.gui.DdzLobbyScreen;
@@ -40,6 +41,8 @@ public final class DdzClient {
         registerReceivers();
         registerDisconnectCleanup();
         registerBgmTick();
+        // 注册小游戏菜单会话：菜单/其它大厅关闭时据此恢复斗地主界面
+        GameMenuClient.registerSession(DdzClientState.INSTANCE);
     }
 
     /**
@@ -100,8 +103,16 @@ public final class DdzClient {
                 ctx.client().execute(() -> state.onHistory(payload)));
         ClientPlayNetworking.registerGlobalReceiver(SpectatorHandsS2C.TYPE, (payload, ctx) ->
                 ctx.client().execute(() -> state.onSpectatorHands(payload)));
-        // 服务端命令 /doudizhu 触发：在主线程打开大厅
+        // 服务端命令 /doudizhu 或 /cardgames open 触发：在主线程打开大厅。
+        // OpenLobbyS2C 的语义是"你不在对局/旁观中"——但等待中的房间成员也会收到
+        // （重开大厅），此时本地房间状态必须保留（大厅渲染房间视图/离开按钮），
+        // 因此只清空调试旁观（roomCode="DEBUG"）的幽灵状态，其余情况直接开大厅
         ClientPlayNetworking.registerGlobalReceiver(OpenLobbyS2C.TYPE, (payload, ctx) ->
-                ctx.client().execute(() -> Minecraft.getInstance().setScreen(new DdzLobbyScreen())));
+                ctx.client().execute(() -> {
+                    if (DdzClientState.INSTANCE.debugSpectate()) {
+                        DdzClientState.INSTANCE.clearAll();
+                    }
+                    Minecraft.getInstance().setScreen(new DdzLobbyScreen());
+                }));
     }
 }

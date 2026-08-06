@@ -289,5 +289,17 @@
         "loop": true
       }
     ]
+  },
+  "uno_uno": {
+    "subtitle": "UNO：喊 UNO",
+    "sounds": [
+      "wifi_card_games:uno/001_uno"
+    ]
+  },
+  "uno_catch": {
+    "subtitle": "UNO：罚两张",
+    "sounds": [
+      "wifi_card_games:uno/002_penalty"
+    ]
   }
 }
