@@ -271,9 +271,11 @@ public class BoardGameScreen extends AbstractGameScreen {
         }
         // 中央第二/三行：轮到谁 + 倒计时 + 最近动作（与左/右第二行对齐；临期红色警示）
         if (s.phase == BoardPhase.PLAYING) {
+            // 截止刻未下发（开局/重连等待 TurnS2C 窗口）时不显示编造的倒计时
+            String timeText = s.turnEndGameTime > 0 ? "（剩余 " + Math.max(0, countdown) + " 秒）" : "";
             String turnText = s.isMyTurn()
-                    ? "轮到你（剩余 " + Math.max(0, countdown) + " 秒）"
-                    : "轮到 " + s.nameOf(s.currentSeat) + "（剩余 " + Math.max(0, countdown) + " 秒）";
+                    ? "轮到你" + timeText
+                    : "轮到 " + s.nameOf(s.currentSeat) + timeText;
             int turnColor;
             if (s.isMyTurn()) {
                 turnColor = countdown <= 10 ? 0xFFFF5555 : 0xFFFFFF55;

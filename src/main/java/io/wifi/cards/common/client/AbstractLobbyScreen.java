@@ -342,17 +342,27 @@ public abstract class AbstractLobbyScreen extends Screen {
     /** 大厅标题文字（子类提供，如"斗地主大厅"）。 */
     protected abstract String lobbyTitle();
 
-    /** 房间列表区（底板 + 提示 + 标题 + 行文本 + 滚动条 + 滚动提示；行操作按钮由 init 构建）。 */
+    /** 列表区底板（半透明黑底，覆盖提示两行 + 标题 + 列表行；空列表也画最小高度）。
+     *  在 super.render 之前调用——行操作按钮绘制在底板之上，不被底板压暗。 */
+    protected void drawRoomListPanel(GuiGraphics g) {
+        int lx = contentLeft();
+        int ly = listTop();
+        int maxRows = listMaxRows();
+        int shown = Math.min(lobbyRoomList().size(), maxRows);
+        g.fill(lx - 4, ly - 42, lx + 354, ly + Math.max(shown, 3) * ROW_H + 6, 0x44000000);
+    }
+
+    /** 房间视图底板（信息区 + 按钮区背景；super.render 之前调用，按钮绘制在底板之上）。 */
+    protected abstract void drawRoomViewBg(GuiGraphics g);
+
+    /** 房间列表区（提示 + 标题 + 行文本 + 滚动条 + 滚动提示；底板与行操作按钮分别由
+     *  drawRoomListPanel / init 绘制）。 */
     protected void drawRoomList(GuiGraphics g) {
         int lx = contentLeft();
         int ly = listTop();
         int maxRows = listMaxRows();
         List<? extends RoomEntry> list = lobbyRoomList();
         int shown = Math.min(list.size(), maxRows);
-        // 列表区底板（统一半透明黑底：提示两行 + 标题 + 列表行；与菜单/房间信息区视觉一致，
-        // 空列表也画最小高度，避免文本浮在游戏世界上）
-        int panelBottom = ly + Math.max(shown, 3) * ROW_H + 6;
-        g.fill(lx - 4, ly - 42, lx + 354, panelBottom, 0x44000000);
         // 提示两行（统一文案：邀请好友 + 邀请命令）
         g.drawCenteredString(this.font, "创建房间邀请好友一起玩，或输入房间码加入", width / 2, ly - 38, 0xFFAAAAAA);
         g.drawCenteredString(this.font, "提示：房主可用 /cardgames invite <玩家名> 邀请", width / 2, ly - 25, 0xFF777777);
@@ -391,12 +401,25 @@ public abstract class AbstractLobbyScreen extends Screen {
         return width / 2 + 178;
     }
 
-    private int scrollbarY() {
+    /** 滚动条轨道顶 y（未进房用列表区顶；房间视图由子类覆写为信息区底，随滚动偏移）。 */
+    protected int scrollbarTrackTop() {
         return listTop() - 14;
+    }
+
+    private int scrollbarY() {
+        return scrollbarTrackTop();
     }
 
     private int scrollbarH() {
         return height - 16 - scrollbarY();
+    }
+
+    /** 房间视图滚动条 + 滚动提示（子类房间渲染时调用；轨道顶由 scrollbarTrackTop 提供）。 */
+    protected void drawRoomScrollbar(GuiGraphics g) {
+        if (scrollLimit() > 0) {
+            GuiUtil.drawScrollbar(g, scrollbarX(), scrollbarY(), scrollbarH(), (int) -scroll, scrollLimit());
+            g.drawCenteredString(this.font, "内容超出屏幕，滚动滚轮查看", width / 2, height - 14, 0xFF888888);
+        }
     }
 
     /** 命中滚动条轨道（含滑块）区域（轨道宽 2px，判定放宽到 6px 便于点击）。 */

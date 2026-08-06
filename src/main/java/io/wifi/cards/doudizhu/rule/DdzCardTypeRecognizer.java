@@ -15,7 +15,7 @@ import java.util.TreeMap;
  * <p>含花牌（万能牌）：</p>
  * <ol>
  *   <li>特殊牌型优先：花牌+三张同值=含花牌炸弹（等于炸弹）</li>
- *   <li>花牌单出=单牌（大王值）</li>
+ *   <li>不允许出单张花牌：花牌必须与其他牌组合（不能单独作为单牌打出）</li>
  *   <li>枚举花牌替换值（3~大王）套用经典识别，记录全部合法解读</li>
  *   <li>解读按优先级排序：王炸 &gt; 炸弹/含花牌炸弹 &gt; 一般牌型（同优先级按关键值从大到小）</li>
  * </ol>
@@ -66,9 +66,10 @@ public final class DdzCardTypeRecognizer {
                 results.add(new DdzPlayResult(DdzCardType.SOFT_BOMB, tripleRank, cards));
             }
         }
-        // ② 花牌单出：当作最大的单牌（大王）
+        // ② 不允许出单张花牌：花牌必须与其他牌组合使用（若不短路，
+        // ③ 的替换值枚举会把单张花牌解读成任意单牌，变相允许裸花牌单出）
         if (cards.size() == 1) {
-            results.add(new DdzPlayResult(DdzCardType.SINGLE, 17, cards));
+            return results;
         }
         // ③ 枚举花牌替换值，套用经典识别
         List<Integer> plainRanks = new ArrayList<>(plain.size());

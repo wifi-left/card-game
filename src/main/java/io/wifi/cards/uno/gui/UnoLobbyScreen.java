@@ -142,6 +142,13 @@ public class UnoLobbyScreen extends AbstractLobbyScreen {
         return 30 + s.names.size() * 14 + 16;
     }
 
+    /** 房间视图底板（信息区 + 按钮区；super.render 之前绘制，按钮在底板之上）。 */
+    @Override
+    protected void drawRoomViewBg(GuiGraphics g) {
+        int cx = width / 2;
+        g.fill(cx - 200, roomTop(), cx + 200, roomBottom() + 4, 0x55000000);
+    }
+
     /** 房间内容区底部（信息面板 + 开始/离开/关闭界面按钮行）。 */
     private int roomBottom() {
         return roomTop() + roomInfoH() + 8 + 72;
@@ -150,6 +157,12 @@ public class UnoLobbyScreen extends AbstractLobbyScreen {
     /** 房间内容超高时允许的滚动量（0 = 无需滚动）。 */
     private int roomMaxScroll() {
         return Math.max(0, roomBottom() - (height - 30));
+    }
+
+    /** 房间视图滚动条轨道顶（信息区底，随滚动偏移）。 */
+    @Override
+    protected int scrollbarTrackTop() {
+        return roomTop() + roomInfoH() + 8;
     }
 
     // ---------------- 内容区控件 ----------------
@@ -209,24 +222,21 @@ public class UnoLobbyScreen extends AbstractLobbyScreen {
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         // 顶部标题条先绘制（主菜单按钮位于标题条内右上角，super.render 后渲染按钮盖住标题条半透明底）
         drawTitleBar(g);
+        // 底板先绘制：super.render 的按钮绘制在底板之上，不被半透明底压暗
+        if (!UnoClientState.INSTANCE.inRoom()) {
+            drawRoomListPanel(g);
+        } else {
+            drawRoomViewBg(g);
+        }
         // 背景与控件由 super 渲染（renderBackground 已覆盖为空，无全局虚化），自定义内容绘制在其上
         super.render(g, mouseX, mouseY, partialTick);
         UnoClientState s = UnoClientState.INSTANCE;
-        int cx = width / 2;
         if (!s.inRoom()) {
-            int top = contentTop();
-            int lx = cx - 172;
-            // 提示区半透明黑底（位于内容区下方，不与按钮重叠）
-            g.fill(cx - 180, top + 94, cx + 180, top + 126, 0x55000000);
-            UnoGui.centeredShadow(g, this.font, width, "创建房间邀请好友一起玩，或输入房间码加入", top + 100, 0xFFAAAAAA);
-            UnoGui.centeredShadow(g, this.font, width, "提示：房主可用 /cardgames invite <玩家名> 邀请", top + 114, 0xFF777777);
-            // 公开房间列表（标题 + 行文本 + 滚动条，点击行操作按钮加入/旁观、点房间码复制）
+            // 公开房间列表（标题 + 提示 + 行文本 + 滚动条，点击行操作按钮加入/旁观、点房间码复制）
             drawRoomList(g);
         } else {
-            // 房间信息区半透明黑底（随滚动偏移，覆盖到最底部提示行）
+            // 房间信息区 + 按钮区底板见 drawRoomViewBg（super.render 之前绘制）
             int top = roomTop();
-            int infoH = roomInfoH();
-            g.fill(cx - 200, top, cx + 200, top + infoH + 8, 0x55000000);
             UnoGui.centeredShadow(g, this.font, width, "房间 " + s.roomCode, top + 4, 0xFFFFFF88);
             UnoGui.centeredShadow(g, this.font, width, "玩家 " + s.roomSize() + " / 10", top + 20, 0xFFFFFFFF);
             for (int i = 0; i < s.names.size(); i++) {
@@ -239,9 +249,8 @@ public class UnoLobbyScreen extends AbstractLobbyScreen {
             UnoGui.centeredShadow(g, this.font, width,
                     s.isHost() ? "至少 2 人可开始游戏" : "等待房主开始游戏…",
                     top + 34 + s.names.size() * 14 + 6, 0xFFAAAAAA);
-            if (roomMaxScroll() > 0) {
-                UnoGui.centeredShadow(g, this.font, width, "内容超出屏幕，滚动滚轮查看", height - 14, 0xFF888888);
-            }
+            // 房间视图滚动条（成员多/小窗口内容超高时）
+            drawRoomScrollbar(g);
         }
     }
 }

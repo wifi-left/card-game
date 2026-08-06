@@ -315,6 +315,12 @@ public class DdzGame {
             return false;
         }
         if (cards == null || cards.isEmpty()) {
+            // 手牌只剩一张花牌（花牌不能单出、无任何合法牌型）时无法出牌，
+            // 首出/自由出牌权也允许跳过，避免死局（对手出完即获胜）
+            if (p.hand().size() == 1 && p.hand().get(0).isFlower()) {
+                doPass(p);
+                return true;
+            }
             if (lastPlaySeat < 0) {
                 reject(p, "地主必须先出牌");
                 return false;
@@ -323,16 +329,7 @@ public class DdzGame {
                 reject(p, "轮到你自由出牌，不能不出");
                 return false;
             }
-            passCount++;
-            addHistory(p.seat(), p.name(), "不出", "");
-            room.broadcast(new PassBroadcastS2C(p.name(), remainingCounts()));
-            if (passCount >= 2) {
-                // 两家都不出，上家获得自由出牌权
-                passCount = 0;
-                turn(lastPlaySeat);
-            } else {
-                turn(next(p.seat()));
-            }
+            doPass(p);
             return true;
         }
         // 出牌校验
@@ -349,8 +346,7 @@ public class DdzGame {
             reject(p, "牌型不合法或无法压过上家");
             return false;
         }
-        p.hand().removeAll(cards);
-        if (chosen.type.isBombLike()) {
+        p.hand().removeAll(cards);        if (chosen.type.isBombLike()) {
             multiplier *= 2; // 炸弹/含花牌炸弹/王炸当场翻倍
         }
         lastPlay = chosen;
@@ -367,6 +363,19 @@ public class DdzGame {
         }
         turn(next(p.seat()));
         return true;
+    }
+
+    /** 出牌阶段跳过（不出）：记 pass 数推进回合；两家连续不出时上家获得自由出牌权。 */
+    private void doPass(DdzPlayer p) {
+        passCount++;
+        addHistory(p.seat(), p.name(), "不出", "");
+        room.broadcast(new PassBroadcastS2C(p.name(), remainingCounts()));
+        if (passCount >= 2) {
+            passCount = 0;
+            turn(lastPlaySeat);
+        } else {
+            turn(next(p.seat()));
+        }
     }
 
     /** 开启/关闭指定玩家托管；开启且正轮到该玩家时立即自动行动。 */

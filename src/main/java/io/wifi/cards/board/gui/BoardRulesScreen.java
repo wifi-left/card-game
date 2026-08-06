@@ -11,6 +11,8 @@ import java.util.List;
  * 棋类规则介绍界面（黑白棋/五子棋/围棋 + 房间与托管说明）。
  * 内容超出一屏时可滚动查看（滚轮 + 右侧可拖拽滚动条），Esc 或"返回"按钮退出。
  * 从大厅打开时返回大厅；从棋盘界面打开时返回棋盘界面（渲染父级内容为背景）。
+ * 
+ * 原版模糊背景，以确保看得见文本
  */
 public class BoardRulesScreen extends AbstractSubScreen {
     private final List<String> lines = new ArrayList<>();
@@ -84,10 +86,10 @@ public class BoardRulesScreen extends AbstractSubScreen {
 
     @Override
     protected void renderContent(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        g.fill(0, 0, width, 26, 0x66000000);
+        // g.fill(0, 0, width, 26, 0x66000000);
         g.drawCenteredString(this.font, "棋类规则", width / 2, 9, 0xFFFFD700);
         // 内容区半透明黑底，滚动文本绘制在其上
-        g.fill(0, CONTENT_TOP, width, height - BOTTOM_BAR, 0x44000000);
+        // g.fill(0, CONTENT_TOP, width, height - BOTTOM_BAR, 0x44000000);
         g.enableScissor(0, CONTENT_TOP, width, height - BOTTOM_BAR);
         int y = CONTENT_TOP;
         int viewportBottom = height - BOTTOM_BAR;

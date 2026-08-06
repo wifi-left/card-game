@@ -2,6 +2,7 @@ package io.wifi.cards.uno.gui;
 
 import io.wifi.cards.common.GameRegistry;
 import io.wifi.cards.common.client.AbstractLobbyScreen;
+import io.wifi.cards.common.client.CardGameChatScreen;
 import io.wifi.cards.common.client.GameClientSession;
 import io.wifi.cards.uno.card.UnoCard;
 import io.wifi.cards.uno.card.UnoColor;
@@ -184,9 +185,10 @@ public final class UnoClientState implements GameClientSession {
         if (phase == UnoGamePhase.WAITING) {
             // 刚进入房间（或座位/人数变化）时强制重建大厅，刷新创建/加入/开始/离开等组件。
             // 人数变化必须重建：房主"开始游戏"按钮的可用性（≥2 人）随成员加入/离开变化，
-            // 否则朋友加入后按钮仍保持禁用
+            // 否则朋友加入后按钮仍保持禁用；聊天框打开中不强制弹回（打字输入不受打扰）
             boolean stateChanged = !wasInRoom || prevSeat != this.mySeat || prevSize != names.size();
-            if (!(mc.screen instanceof UnoLobbyScreen) || stateChanged) {
+            if (!(mc.screen instanceof CardGameChatScreen)
+                    && (!(mc.screen instanceof UnoLobbyScreen) || stateChanged)) {
                 mc.setScreen(new UnoLobbyScreen());
             }
         } else if (phase == UnoGamePhase.SETTLED) {
@@ -196,9 +198,10 @@ public final class UnoClientState implements GameClientSession {
             }
         } else if (!(mc.screen instanceof UnoGameScreen)
                 && !(mc.screen instanceof UnoRulesScreen)
-                && !(mc.screen instanceof UnoHistoryScreen)) {
+                && !(mc.screen instanceof UnoHistoryScreen)
+                && !(mc.screen instanceof CardGameChatScreen)) {
             // 打牌中：切到牌桌界面。规则/历史子界面（渲染牌桌为背景，状态实时同步）
-            // 不强制弹回，避免其他玩家断线/退出触发 RoomState 时被打断
+            // 与聊天框不强制弹回，避免其他玩家断线/退出触发 RoomState 时被打断
             mc.setScreen(new UnoGameScreen());
         }
     }

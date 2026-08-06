@@ -1,5 +1,7 @@
 package io.wifi.cards.uno.gui;
 
+import io.wifi.cards.common.GameRegistry;
+import io.wifi.cards.common.client.GameMenuClient;
 import io.wifi.cards.uno.network.UnoPackets.LeaveRoomC2S;
 import io.wifi.cards.uno.network.UnoPackets.NextGameC2S;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -24,6 +26,16 @@ public class UnoResultScreen extends Screen {
     /** 取消全局背景虚化：不再渲染模糊/纹理背景，仅由各内容区块绘制半透明黑色背景。 */
     @Override
     public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+    }
+
+    /** 关闭结算界面（Esc）：先恢复其它游戏的进行中会话，否则提示重开（房间仍在 SETTLED 保留）。 */
+    @Override
+    public void onClose() {
+        if (GameMenuClient.tryRestoreOtherSession(GameRegistry.GAME_UNO)) {
+            return;
+        }
+        UnoClientState.chatReopenHint("关闭结算界面");
+        super.onClose();
     }
 
     @Override
@@ -55,8 +67,8 @@ public class UnoResultScreen extends Screen {
         g.fill(0, 0, width, 26, 0x66000000);
         UnoGui.centeredShadow(g, this.font, width, "本局结算", 9, 0xFFFFD700);
         // 结算信息区半透明黑底（高度随人数自适应，最多 10 人时行不溢出面板；
-        // 封顶 height-110 保证矮窗口下面板不遮"再来一局/返回大厅"按钮）
-        int infoH = Math.min(50 + s.names.size() * 14 + 8, Math.max(60, height - 110));
+        // 封顶 height/2-30 保证矮窗口下面板不遮"再来一局/返回大厅"按钮行（y=height/2+44））
+        int infoH = Math.min(50 + s.names.size() * 14 + 8, Math.max(60, height / 2 - 30));
         g.fill(cx - 200, 30, cx + 200, 30 + infoH, 0x55000000);
         String title = "🎉 " + s.winnerName + " 出完了所有牌，获得胜利！";
         UnoGui.centeredShadow(g, this.font, width, title, 42, 0xFFFFD700);

@@ -1,5 +1,7 @@
 package io.wifi.cards.doudizhu.gui;
 
+import io.wifi.cards.common.GameRegistry;
+import io.wifi.cards.common.client.GameMenuClient;
 import io.wifi.cards.doudizhu.network.DdzPackets.LeaveRoomC2S;
 import io.wifi.cards.doudizhu.network.DdzPackets.NextGameC2S;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -24,6 +26,16 @@ public class DdzResultScreen extends Screen {
     /** 取消全局背景虚化：不再渲染模糊/纹理背景，仅由各内容区块绘制半透明黑色背景。 */
     @Override
     public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+    }
+
+    /** 关闭结算界面（Esc）：先恢复其它游戏的进行中会话，否则提示重开（房间仍在 SETTLED 保留）。 */
+    @Override
+    public void onClose() {
+        if (GameMenuClient.tryRestoreOtherSession(GameRegistry.GAME_DOUDIZHU)) {
+            return;
+        }
+        DdzClientState.chatReopenHint("关闭结算界面");
+        super.onClose();
     }
 
     @Override

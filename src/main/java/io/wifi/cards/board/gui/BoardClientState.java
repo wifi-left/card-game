@@ -2,6 +2,7 @@ package io.wifi.cards.board.gui;
 
 import io.wifi.cards.common.GameRegistry;
 import io.wifi.cards.common.client.AbstractLobbyScreen;
+import io.wifi.cards.common.client.CardGameChatScreen;
 import io.wifi.cards.common.client.GameClientSession;
 import io.wifi.cards.board.model.BoardGameType;
 import io.wifi.cards.board.model.BoardPhase;
@@ -133,6 +134,7 @@ public final class BoardClientState implements GameClientSession {
         this.debugMode = false; // 真实房间状态到达：退出调试旁观模式
         boolean wasInRoom = this.roomCode != null;
         int prevSeat = this.mySeat;
+        int prevSize = roomSize();
         this.roomCode = payload.roomCode();
         this.gameType = safeType(payload.gameType());
         this.size = payload.size() > 0 ? payload.size() : gameType.defaultSize;
@@ -144,13 +146,19 @@ public final class BoardClientState implements GameClientSession {
         copyBooleans(payload.connected(), connected);
         Minecraft mc = Minecraft.getInstance();
         if (phase == BoardPhase.WAITING) {
-            // 刚进入房间（或座位变化）时强制重建大厅，刷新创建/加入/离开等组件
-            boolean stateChanged = !wasInRoom || prevSeat != this.mySeat;
-            if (!(mc.screen instanceof BoardLobbyScreen) || stateChanged) {
+            // 刚进入房间（或座位/人数变化）时强制重建大厅，刷新创建/加入/离开等组件；
+            // 聊天框打开中不强制弹回（打字输入不受打扰）
+            boolean stateChanged = !wasInRoom || prevSeat != this.mySeat || prevSize != roomSize();
+            if (!(mc.screen instanceof CardGameChatScreen)
+                    && (!(mc.screen instanceof BoardLobbyScreen) || stateChanged)) {
                 mc.setScreen(new BoardLobbyScreen());
             }
-        } else if (!(mc.screen instanceof BoardGameScreen)) {
-            // 对局中/已结束均停留在棋盘界面（结算以横幅展示）
+        } else if (!(mc.screen instanceof BoardGameScreen)
+                && !(mc.screen instanceof BoardRulesScreen)
+                && !(mc.screen instanceof CardGameChatScreen)) {
+            // 对局中/已结束均停留在棋盘界面（结算以横幅展示）。
+            // 规则子界面（渲染棋盘为背景，状态实时同步）与聊天框不强制弹回，
+            // 避免其他玩家断线/退出触发 RoomState 时被打断
             mc.setScreen(new BoardGameScreen());
         }
     }

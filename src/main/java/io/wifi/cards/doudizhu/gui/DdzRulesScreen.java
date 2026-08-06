@@ -10,6 +10,7 @@ import java.util.List;
 /**
  * 规则介绍界面：玩法、牌型、大小、花牌模式差异、流程与结算说明。
  * 内容超出一屏时可滚动查看（滚轮 + 右侧可拖拽滚动条），Esc 或"返回"按钮退出。
+ * 原版模糊背景，以确保看得见文本
  */
 public class DdzRulesScreen extends AbstractSubScreen {
     private final List<String> lines = new ArrayList<>();
@@ -70,6 +71,7 @@ public class DdzRulesScreen extends AbstractSubScreen {
         lines.add("");
         lines.add("【花牌模式（万能牌）】55 张牌、底牌 4 张。");
         lines.add("花牌可当作任意一张牌（3~大王）参与组合；");
+        lines.add("不允许出单张花牌（花牌必须与其他牌组合）；");
         lines.add("花牌 + 三张同值 = 含花牌炸弹（等于炸弹）；");
         lines.add("花牌模式不允许三带二（四带二、飞机带翅膀、裸飞机均允许）。");
         lines.add("");
@@ -89,10 +91,10 @@ public class DdzRulesScreen extends AbstractSubScreen {
     @Override
     protected void renderContent(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         // 有父级时先渲染父级内容为背景（参考 DdzChatScreen），再绘制本界面
-        g.fill(0, 0, width, 26, 0x66000000);
+        // g.fill(0, 0, width, 26, 0x66000000);
         g.drawCenteredString(this.font, "斗地主规则", width / 2, 9, 0xFFFFD700);
         // 内容区半透明黑底（仅在有内容处），滚动文本绘制在其上
-        g.fill(0, CONTENT_TOP, width, height - BOTTOM_BAR, 0x44000000);
+        // g.fill(0, CONTENT_TOP, width, height - BOTTOM_BAR, 0x44000000);
         g.enableScissor(0, CONTENT_TOP, width, height - BOTTOM_BAR);
         int y = CONTENT_TOP;
         int viewportBottom = height - BOTTOM_BAR;

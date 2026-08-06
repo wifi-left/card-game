@@ -10,6 +10,7 @@ import java.util.List;
 /**
  * 规则介绍界面：玩法、出牌、功能牌、抽牌、UNO 喊牌、托管与结算说明。
  * 内容超出一屏时可滚动查看（滚轮 + 右侧可拖拽滚动条），Esc 或"返回"按钮退出。
+ * 原版模糊背景，以确保看得见文本
  */
 public class UnoRulesScreen extends AbstractSubScreen {
     private final List<String> lines = new ArrayList<>();
@@ -22,20 +23,12 @@ public class UnoRulesScreen extends AbstractSubScreen {
         super(parent, "UNO 规则");
     }
 
-
     // ---------------- 滚动计算 ----------------
-
-
-
-
 
     @Override
     public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         renderOriginalBackground(g, mouseX, mouseY, partialTick);
     }
-
-
-
 
     /** 内容总高（行数 × 行高；历史界面按换行后行数累计）。 */
     @Override
@@ -54,8 +47,6 @@ public class UnoRulesScreen extends AbstractSubScreen {
         lines.clear(); // resize（窗口/全屏变化）会再次调用 init→buildContent，先清空防内容翻倍
         buildLines();
     }
-
-
 
     private void buildLines() {
         lines.add("【玩法】2~10 人对局，房主点击「开始游戏」开局（至少 2 人）。");
@@ -89,10 +80,10 @@ public class UnoRulesScreen extends AbstractSubScreen {
 
     @Override
     protected void renderContent(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-        g.fill(0, 0, width, 26, 0x66000000);
+        // g.fill(0, 0, width, 26, 0x66000000);
         g.drawCenteredString(this.font, "UNO 规则", width / 2, 9, 0xFFFFD700);
         // 内容区半透明黑底（仅在有内容处），滚动文本绘制在其上
-        g.fill(0, CONTENT_TOP, width, height - BOTTOM_BAR, 0x44000000);
+        // g.fill(0, CONTENT_TOP, width, height - BOTTOM_BAR, 0x44000000);
         g.enableScissor(0, CONTENT_TOP, width, height - BOTTOM_BAR);
         int y = CONTENT_TOP;
         int viewportBottom = height - BOTTOM_BAR;
@@ -107,8 +98,5 @@ public class UnoRulesScreen extends AbstractSubScreen {
         drawScrollbar(g);
         drawScrollHint(g);
     }
-
-
-
 
 }

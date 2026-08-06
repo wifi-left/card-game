@@ -99,10 +99,10 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
         return Math.max(50, (height - 180) / 2) + (int) scroll;
     }
 
-    /** 棋类无提示区，列表区上移（含标题空间）。 */
+    /** 列表区相对内容区的纵向偏移（含提示两行 + 标题空间）。 */
     @Override
     protected int listTopOffset() {
-        return 118;
+        return 134;
     }
 
     /** 内容区底部 = 列表区 + 9 行（棋类布局，列表区固定行高）。 */
@@ -142,23 +142,60 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
     }
 
     @Override
-    protected int[] roomInfoCodeRect() {
-        if (!inRoomState()) {
-            return null;
-        }
-        // 等待房间信息区"房间 XXX（游戏·尺寸）"行（居中，y≈50，行高 9，放宽点击区）
-        return new int[]{width / 2 - 200, 46, width / 2 + 200, 59};
-    }
-
-    @Override
     protected void reopenHint() {
         BoardClientState.chatReopenHint("关闭大厅");
     }
 
-    /** 房间操作按钮（离开房间）区底部 y："关闭界面"按钮放在其下方。 */
+    /** 房间码点击区随滚动偏移（房间信息区首行）。 */
+    @Override
+    protected int[] roomInfoCodeRect() {
+        if (!inRoomState()) {
+            return null;
+        }
+        int sc = (int) scroll;
+        // 等待房间信息区"房间 XXX（游戏·尺寸）"行（居中，y≈50，行高 9，放宽点击区）
+        return new int[]{width / 2 - 200, 46 + sc, width / 2 + 200, 59 + sc};
+    }
+
+    /** 房间视图底板（信息区 + 金色边框 + 按钮区；super.render 之前绘制，按钮在底板之上）。 */
+    @Override
+    protected void drawRoomViewBg(GuiGraphics g) {
+        int sc = (int) scroll;
+        int cx = width / 2;
+        g.fill(cx - 200, 30 + sc, cx + 200, 124 + sc, 0x55000000);
+        g.fill(cx - 201, 29 + sc, cx + 201, 30 + sc, 0xFFB08A3B);
+        g.fill(cx - 201, 124 + sc, cx + 201, 125 + sc, 0xFFB08A3B);
+        g.fill(cx - 201, 29 + sc, cx - 200, 125 + sc, 0xFFB08A3B);
+        g.fill(cx + 200, 29 + sc, cx + 201, 125 + sc, 0xFFB08A3B);
+        g.fill(cx - 200, 124 + sc, cx + 200, roomBottom() + 6, 0x44000000);
+    }
+
+    /** 房间操作按钮（离开房间）区底部 y："关闭界面"按钮放在其下方（随房间区滚动）。 */
     @Override
     protected int roomActionBottomY() {
-        return Math.max(40, height / 2 + 56) + 26;
+        return Math.max(40, height / 2 + 56) + 26 + (int) scroll;
+    }
+
+    /** 房间视图内容超高（小窗口）时同样可滚动。 */
+    @Override
+    protected int scrollLimit() {
+        return inRoomState() ? roomMaxScroll() : maxScroll();
+    }
+
+    /** 房间内容区底部（信息面板 + 离开/关闭界面按钮行）。 */
+    private int roomBottom() {
+        return roomActionBottomY() + 20;
+    }
+
+    /** 房间内容超高时允许的滚动量（0 = 无需滚动）。 */
+    private int roomMaxScroll() {
+        return Math.max(0, roomBottom() - (height - 30));
+    }
+
+    /** 房间视图滚动条轨道顶（信息区底，随滚动偏移）。 */
+    @Override
+    protected int scrollbarTrackTop() {
+        return 124 + (int) scroll;
     }
 
     // ---------------- 内容区控件 ----------------
@@ -224,9 +261,10 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
                     Minecraft.getInstance().setScreen(new BoardRulesScreen(BoardLobbyScreen.this)))
                     .bounds(rx, top + 72, 160, 20).build());
         } else {
+            // 离开房间按钮：随滚动偏移（小窗口房间视图滚动时保持可见可点）
             addRenderableWidget(Button.builder(Component.literal("离开房间"), b ->
                     ClientPlayNetworking.send(new LeaveRoomC2S()))
-                    .bounds(cx - 80, Math.max(40, height / 2 + 56), 160, 20).build());
+                    .bounds(cx - 80, Math.max(40, height / 2 + 56) + (int) scroll, 160, 20).build());
         }
     }
 
@@ -286,6 +324,12 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         // 顶部标题条先绘制（主菜单按钮位于标题条内右上角，super.render 后渲染按钮盖住标题条半透明底）
         drawTitleBar(g);
+        // 底板先绘制：super.render 的按钮绘制在底板之上，不被半透明底压暗
+        if (!BoardClientState.INSTANCE.inRoom()) {
+            drawRoomListPanel(g);
+        } else {
+            drawRoomViewBg(g);
+        }
         // 背景与控件由 super 渲染（renderBackground 已覆盖为空，无全局虚化），自定义内容绘制在其上
         super.render(g, mouseX, mouseY, partialTick);
         BoardClientState s = BoardClientState.INSTANCE;
@@ -304,28 +348,26 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
             }
             // 区块标题（屏幕居中）
             BoardGui.centeredShadow(g, this.font, width, "创建房间", top - 12, 0xFFFFD700);
-            // 公开房间列表（标题 + 行文本 + 滚动条，点击行操作按钮加入/旁观、点房间码复制）
+            // 公开房间列表（标题 + 提示 + 行文本 + 滚动条，点击行操作按钮加入/旁观、点房间码复制）
             drawRoomList(g);
         } else {
-            // 房间信息区半透明黑底 + 金色边框
-            g.fill(cx - 200, 30, cx + 200, 124, 0x55000000);
-            g.fill(cx - 201, 29, cx + 201, 30, 0xFFB08A3B);
-            g.fill(cx - 201, 124, cx + 201, 125, 0xFFB08A3B);
-            g.fill(cx - 201, 29, cx - 200, 125, 0xFFB08A3B);
-            g.fill(cx + 200, 29, cx + 201, 125, 0xFFB08A3B);
-            BoardGui.centeredShadow(g, this.font, width, "等待房间（满 2 人自动开始）", 34, 0xFFFFD700);
+            // 房间信息区 + 按钮区底板见 drawRoomViewBg（super.render 之前绘制）
+            int sc = (int) scroll;
+            BoardGui.centeredShadow(g, this.font, width, "等待房间（满 2 人自动开始）", 34 + sc, 0xFFFFD700);
             BoardGui.centeredShadow(g, this.font, width,
-                    "房间 " + s.roomCode + "（" + s.gameType.displayName + sizeText() + "）", 50, 0xFFFFFF88);
-            BoardGui.centeredShadow(g, this.font, width, "玩家 " + s.roomSize() + " / 2", 64, 0xFFFFFFFF);
+                    "房间 " + s.roomCode + "（" + s.gameType.displayName + sizeText() + "）", 50 + sc, 0xFFFFFF88);
+            BoardGui.centeredShadow(g, this.font, width, "玩家 " + s.roomSize() + " / 2", 64 + sc, 0xFFFFFFFF);
             for (int i = 0; i < 2; i++) {
                 String line = (i == s.mySeat ? "▶ " : "  ") + (i + 1) + ". "
                         + (s.names[i] == null || s.names[i].isEmpty() ? "等待加入…" : s.names[i])
                         + "（" + s.sideName(i) + "方）";
-                BoardGui.centeredShadow(g, this.font, width, line, 80 + i * 14,
+                BoardGui.centeredShadow(g, this.font, width, line, 80 + i * 14 + sc,
                         i == s.mySeat ? 0xFFFFFF55 : 0xFFFFFFFF);
             }
             BoardGui.centeredShadow(g, this.font, width,
-                    "提示：房主可用 /cardgames invite <玩家名> 邀请好友", 114, 0xFFAAAAAA);
+                    "提示：房主可用 /cardgames invite <玩家名> 邀请", 114 + sc, 0xFFAAAAAA);
+            // 房间视图滚动条（小窗口内容超高时）
+            drawRoomScrollbar(g);
         }
     }
 

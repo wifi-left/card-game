@@ -29,6 +29,8 @@ public final class GameMenuClient {
     }
 
     public static void registerSession(GameClientSession session) {
+        // 按 gameId 去重：热重载/重复 init 时避免同一游戏注册多份（activeGameId/恢复会重复遍历）
+        SESSIONS.removeIf(s -> s.gameId().equals(session.gameId()));
         SESSIONS.add(session);
     }
 

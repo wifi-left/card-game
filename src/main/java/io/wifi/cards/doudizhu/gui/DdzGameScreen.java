@@ -109,8 +109,10 @@ public class DdzGameScreen extends AbstractGameScreen {
             stopBgm();
             return;
         }
+        // 聊天框为三游戏共用：仅当父级是斗地主牌桌时视为打牌上下文，
+        // 否则在 UNO/棋类对局中打开聊天框会误播斗地主 BGM
         boolean inGameUi = current instanceof DdzGameScreen
-                || current instanceof CardGameChatScreen
+                || (current instanceof CardGameChatScreen c && c.parent() instanceof DdzGameScreen)
                 || (current instanceof DdzRulesScreen r && r.isFromGame())
                 || (current instanceof DdzHistoryScreen h && h.isFromGame());
         if (inGameUi) {
@@ -316,6 +318,9 @@ public class DdzGameScreen extends AbstractGameScreen {
         } else {
             selected.addAll(play.stream().map(DdzCard::id).toList());
         }
+        // 选牌变化：强制重建出牌按钮可用性（签名仅区分空/非空两态，
+        // 错误组合 → 提示替换为合法组合后仍非空，不重建会导致按钮一直禁用）
+        buttonSignature = -1;
     }
 
     // ---------------- 鼠标选牌（事件驱动，与假滚动条同链路；路径采样防漏牌） ----------------
@@ -459,9 +464,10 @@ public class DdzGameScreen extends AbstractGameScreen {
         String rightText = nameLine(rightSeat);
         g.drawString(this.font, rightText, width - this.font.width(rightText) - 46, 11,
                 s.currentSeat == rightSeat ? 0xFFFFFF55 : 0xFFFFFFFF, true);
-        // 顶部正中央：当前阶段 + 轮到谁/倒计时
+        // 顶部正中央：当前阶段 + 轮到谁/倒计时（截止刻未下发/已过期时不显示，避免陈旧值）
         DdzGui.centeredShadow(g, this.font, width, phaseText(), 13, 0xFFFFD700);
-        if (s.phase == DdzGamePhase.CALLING || s.phase == DdzGamePhase.ROBBING || s.phase == DdzGamePhase.PLAYING) {
+        if ((s.phase == DdzGamePhase.CALLING || s.phase == DdzGamePhase.ROBBING || s.phase == DdzGamePhase.PLAYING)
+                && s.turnEndGameTime > 0) {
             String turnText = s.isMyTurn()
                     ? "轮到你（剩余 " + Math.max(0, countdown) + " 秒）"
                     : "轮到 " + s.nameOf(s.currentSeat) + "（剩余 " + Math.max(0, countdown) + " 秒）";
@@ -490,10 +496,11 @@ public class DdzGameScreen extends AbstractGameScreen {
         String rightText = nameLine(2);
         g.drawString(this.font, rightText, width - this.font.width(rightText) - 46, 11,
                 s.currentSeat == 2 ? 0xFFFFFF55 : 0xFFFFFFFF, true);
-        // 左侧标注旁观状态；中央为阶段 + 轮到谁/倒计时
+        // 左侧标注旁观状态；中央为阶段 + 轮到谁/倒计时（截止刻未下发/已过期时不显示，避免陈旧值）
         g.drawString(this.font, "旁观中", 6, 32, 0xFFAAAAAA, true);
         DdzGui.centeredShadow(g, this.font, width, phaseText(), 29, 0xFFFFD700);
-        if (s.phase == DdzGamePhase.CALLING || s.phase == DdzGamePhase.ROBBING || s.phase == DdzGamePhase.PLAYING) {
+        if ((s.phase == DdzGamePhase.CALLING || s.phase == DdzGamePhase.ROBBING || s.phase == DdzGamePhase.PLAYING)
+                && s.turnEndGameTime > 0) {
             String turnText = "轮到 " + s.nameOf(s.currentSeat) + "（剩余 " + Math.max(0, countdown) + " 秒）";
             DdzGui.centeredShadow(g, this.font, width, turnText, 45, 0xFFAAAAAA);
         }

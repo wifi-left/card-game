@@ -595,7 +595,10 @@ public class UnoGameScreen extends AbstractGameScreen {
             g.fill(x, y, x + w, y + 1, 0xFFFFFF55);
             g.fill(x, y + h - 1, x + w, y + h, 0xFFFFFF55);
         }
-        drawHead(g, s.playerUuids.get(seat), x + 4, y + 2, 16);
+        // 头像 UUID 与名字/张数守卫一致：playerUuids 长度不足（版本偏差）时跳过头像
+        if (seat < s.playerUuids.size()) {
+            drawHead(g, s.playerUuids.get(seat), x + 4, y + 2, 16);
+        }
         // 名字截断宽度预留右侧 UNO/可抓标记区（标记右对齐在 x+w-5 处，避免与名字相压）
         String name = s.nameOf(seat);
         name = this.font.plainSubstrByWidth(name, w - 60);

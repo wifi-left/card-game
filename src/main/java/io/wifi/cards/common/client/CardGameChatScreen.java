@@ -21,6 +21,11 @@ public class CardGameChatScreen extends ChatScreen {
         this.parent = parent;
     }
 
+    /** 打开聊天时的父级界面（BGM 归属判断用：斗地主 BGM 仅在父级为斗地主牌桌时保持）。 */
+    public Screen parent() {
+        return parent;
+    }
+
     /** 打开聊天：保留原版输入框初始化（背景音乐由 DdzGameScreen.tickBgm 统一管理，不在此处理）。 */
     @Override
     protected void init() {

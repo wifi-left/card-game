@@ -250,12 +250,10 @@ class DdzCardTypeRecognizerTest {
 
     @Test
     void flowerSingle() {
-        DdzPlayResult p = recognize(c(54)); // 花牌单出 = 大王
-        assertNotNull(p);
-        assertEquals(DdzCardType.SINGLE, p.type);
-        assertEquals(17, p.key);
-        assertTrue(p.canBeat(recognize(c(48)))); // 压单 2
-        assertFalse(p.canBeat(recognize(c(53)))); // 压不过真大王
+        // 不允许出单张花牌：花牌必须与其他牌组合，单独打出无任何合法解读
+        assertTrue(DdzCardTypeRecognizer.recognize(c(54)).isEmpty());
+        // 组合使用仍正常：花牌 + 一对 4 = 三张 4
+        assertEquals(DdzCardType.TRIPLE, recognize(c(54, 4, 5)).type);
     }
 
     @Test

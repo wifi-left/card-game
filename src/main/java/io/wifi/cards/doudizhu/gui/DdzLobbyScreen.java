@@ -107,23 +107,23 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
     }
 
     @Override
-    protected int[] roomInfoCodeRect() {
-        if (!inRoomState()) {
-            return null;
-        }
-        // 房间信息区"房间 XXX（模式 · 规则）"行（y≈34，行高 9，放宽点击区）
-        return new int[]{width / 2 - 200, 30, width / 2 + 200, 44};
-    }
-
-    @Override
     protected void reopenHint() {
         DdzClientState.chatReopenHint("关闭大厅");
     }
 
-    /** 房间操作按钮（离开房间）区底部 y："关闭界面"按钮放在其下方。 */
+    /** 房间视图底板（信息区 + 按钮区；super.render 之前绘制，按钮在底板之上）。 */
+    @Override
+    protected void drawRoomViewBg(GuiGraphics g) {
+        int sc = (int) scroll;
+        int cx = width / 2;
+        g.fill(cx - 200, 30 + sc, cx + 200, 130 + sc, 0x55000000);
+        g.fill(cx - 200, 130 + sc, cx + 200, roomBottom() + 6, 0x44000000);
+    }
+
+    /** 房间操作按钮（离开房间）区底部 y："关闭界面"按钮放在其下方（随房间区滚动）。 */
     @Override
     protected int roomActionBottomY() {
-        return Math.max(40, height / 2 + 56) + 26;
+        return Math.max(40, height / 2 + 56) + 26 + (int) scroll;
     }
 
     /** 房间视图内容超高（小窗口）时同样可滚动。 */
@@ -140,6 +140,23 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
     /** 房间内容超高时允许的滚动量（0 = 无需滚动）。 */
     private int roomMaxScroll() {
         return Math.max(0, roomBottom() - (height - 30));
+    }
+
+    /** 房间视图滚动条轨道顶（信息区底，随滚动偏移）。 */
+    @Override
+    protected int scrollbarTrackTop() {
+        return 130 + (int) scroll;
+    }
+
+    /** 房间码点击区随滚动偏移（房间信息区首行）。 */
+    @Override
+    protected int[] roomInfoCodeRect() {
+        if (!inRoomState()) {
+            return null;
+        }
+        int sc = (int) scroll;
+        // 房间信息区"房间 XXX（模式 · 规则）"行（y≈34，行高 9，放宽点击区）
+        return new int[]{width / 2 - 200, 30 + sc, width / 2 + 200, 44 + sc};
     }
 
     // ---------------- 内容区控件 ----------------
@@ -200,34 +217,35 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         // 顶部标题条先绘制（主菜单按钮位于标题条内右上角，super.render 后渲染按钮盖住标题条半透明底）
         drawTitleBar(g);
+        // 底板先绘制：super.render 的按钮绘制在底板之上，不被半透明底压暗
+        if (!DdzClientState.INSTANCE.inRoom()) {
+            drawRoomListPanel(g);
+        } else {
+            drawRoomViewBg(g);
+        }
         // 背景与控件由 super 渲染（renderBackground 已覆盖为空，无全局虚化），自定义内容绘制在其上
         super.render(g, mouseX, mouseY, partialTick);
         DdzClientState s = DdzClientState.INSTANCE;
-        int cx = width / 2;
         if (!s.inRoom()) {
-            int top = contentTop();
-            int lx = cx - 172;
-            // 提示区半透明黑底（位于内容区下方，不与按钮重叠）
-            g.fill(cx - 180, top + 94, cx + 180, top + 126, 0x55000000);
-            DdzGui.centeredShadow(g, this.font, width, "创建房间邀请好友一起玩，或输入房间码加入", top + 100, 0xFFAAAAAA);
-            DdzGui.centeredShadow(g, this.font, width, "提示：房主可用 /cardgames invite <玩家名> 邀请", top + 114, 0xFF777777);
-            // 公开房间列表（标题 + 行文本 + 滚动条，点击行操作按钮加入/旁观、点房间码复制）
+            // 公开房间列表（标题 + 提示 + 行文本 + 滚动条，点击行操作按钮加入/旁观、点房间码复制）
             drawRoomList(g);
         } else {
-            // 房间信息区半透明黑底（覆盖到最底部提示行 116 之下）
-            g.fill(cx - 200, 30, cx + 200, 130, 0x55000000);
+            // 房间信息区 + 按钮区底板见 drawRoomViewBg（super.render 之前绘制）
+            int sc = (int) scroll;
             DdzGui.centeredShadow(g, this.font, width,
                     "房间 " + s.roomCode + "（" + (s.flowerMode ? "花牌模式" : "经典模式")
                             + " · " + s.ruleSet.displayName() + "）",
-                    34, 0xFFFFFF88);
-            DdzGui.centeredShadow(g, this.font, width, "玩家 " + s.roomSize() + " / 3", 50, 0xFFFFFFFF);
+                    34 + sc, 0xFFFFFF88);
+            DdzGui.centeredShadow(g, this.font, width, "玩家 " + s.roomSize() + " / 3", 50 + sc, 0xFFFFFFFF);
             for (int i = 0; i < 3; i++) {
                 String line = (i == s.mySeat ? "▶ " : "  ") + (i + 1) + ". "
                         + (s.names[i] == null || s.names[i].isEmpty() ? "等待加入…" : s.names[i]);
-                DdzGui.centeredShadow(g, this.font, width, line, 68 + i * 14,
+                DdzGui.centeredShadow(g, this.font, width, line, 68 + i * 14 + sc,
                         i == s.mySeat ? 0xFFFFFF55 : 0xFFFFFFFF);
             }
-            DdzGui.centeredShadow(g, this.font, width, "满 3 人自动开始", 116, 0xFFAAAAAA);
+            DdzGui.centeredShadow(g, this.font, width, "满 3 人自动开始", 116 + sc, 0xFFAAAAAA);
+            // 房间视图滚动条（小窗口内容超高时）
+            drawRoomScrollbar(g);
         }
     }
 }

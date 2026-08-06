@@ -2,6 +2,7 @@ package io.wifi.cards.doudizhu.gui;
 
 import io.wifi.cards.common.GameRegistry;
 import io.wifi.cards.common.client.AbstractLobbyScreen;
+import io.wifi.cards.common.client.CardGameChatScreen;
 import io.wifi.cards.common.client.GameClientSession;
 import io.wifi.cards.doudizhu.card.DdzCard;
 import io.wifi.cards.doudizhu.model.DdzGamePhase;
@@ -172,19 +173,23 @@ public final class DdzClientState implements GameClientSession {
     public void onRoomState(RoomStateS2C payload) {
         boolean wasInRoom = this.roomCode != null;
         int prevSeat = this.mySeat;
+        int prevSize = roomSize();
         this.roomCode = payload.roomCode();
         this.flowerMode = payload.flowerMode();
         this.ruleSet = safeRuleSet(payload.ruleSet());
         this.phase = safePhase(payload.phaseOrdinal());
         this.mySeat = payload.mySeat();
-        System.arraycopy(payload.names(), 0, names, 0, 3);
-        System.arraycopy(payload.uuids(), 0, playerUuids, 0, 3);
-        System.arraycopy(payload.connected(), 0, connected, 0, 3);
+        // 防御性拷贝：源数组长度不足时其余座位填空（防版本不匹配崩溃）
+        copyInto(payload.names(), names);
+        copyInto(payload.uuids(), playerUuids);
+        copyBooleans(payload.connected(), connected);
         Minecraft mc = Minecraft.getInstance();
         if (phase == DdzGamePhase.WAITING) {
-            // 刚进入房间（或座位变化）时强制重建大厅，刷新创建/加入/离开等组件
-            boolean stateChanged = !wasInRoom || prevSeat != this.mySeat;
-            if (!(mc.screen instanceof DdzLobbyScreen) || stateChanged) {
+            // 刚进入房间（或座位/人数变化）时强制重建大厅，刷新创建/加入/离开等组件；
+            // 聊天框打开中不强制弹回（打字输入不受打扰）
+            boolean stateChanged = !wasInRoom || prevSeat != this.mySeat || prevSize != roomSize();
+            if (!(mc.screen instanceof CardGameChatScreen)
+                    && (!(mc.screen instanceof DdzLobbyScreen) || stateChanged)) {
                 mc.setScreen(new DdzLobbyScreen());
             }
         } else if (phase == DdzGamePhase.SETTLED) {
@@ -192,7 +197,12 @@ public final class DdzClientState implements GameClientSession {
             if (!(mc.screen instanceof DdzResultScreen)) {
                 mc.setScreen(new DdzResultScreen());
             }
-        } else if (!(mc.screen instanceof DdzGameScreen)) {
+        } else if (!(mc.screen instanceof DdzGameScreen)
+                && !(mc.screen instanceof DdzRulesScreen)
+                && !(mc.screen instanceof DdzHistoryScreen)
+                && !(mc.screen instanceof CardGameChatScreen)) {
+            // 打牌中：切到牌桌界面。规则/历史子界面（渲染牌桌为背景，状态实时同步）
+            // 与聊天框不强制弹回，避免其他玩家断线/退出触发 RoomState 时被打断
             mc.setScreen(new DdzGameScreen());
         }
     }
@@ -389,7 +399,9 @@ public final class DdzClientState implements GameClientSession {
         String[] names = payload.names();
         String[] types = payload.types();
         String[] cards = payload.cards();
-        for (int i = 0; i < names.length; i++) {
+        // 防御：并行数组取最短长度，防版本不匹配时越界
+        int n = Math.min(names.length, Math.min(types.length, cards.length));
+        for (int i = 0; i < n; i++) {
             historyLines.add(new HistoryLine(names[i], types[i], cards[i], "不出".equals(types[i])));
         }
     }
@@ -458,7 +470,12 @@ public final class DdzClientState implements GameClientSession {
         this.resultLandlordWin = payload.landlordWin();
         this.resultBaseScore = payload.baseScore();
         this.resultMultiplier = payload.multiplier();
-        this.resultDeltas = payload.scoreDeltas();
+        // 防御拷贝：scoreDeltas 长度不足时其余座位记 0（防版本不匹配渲染越界）
+        this.resultDeltas = new int[3];
+        int[] deltas = payload.scoreDeltas();
+        if (deltas != null) {
+            System.arraycopy(deltas, 0, resultDeltas, 0, Math.min(deltas.length, 3));
+        }
         Minecraft mc = Minecraft.getInstance();
         if (!(mc.screen instanceof DdzResultScreen)) {
             mc.setScreen(new DdzResultScreen());
@@ -572,6 +589,18 @@ public final class DdzClientState implements GameClientSession {
     }
 
     // ---- 防御性解析：S2C 序号越界时回退默认值（服务端可信，但防版本不匹配） ----
+
+    /** String 数组防御拷贝：源数组长度不足时其余座位填空。 */
+    private static void copyInto(String[] src, String[] dst) {
+        Arrays.fill(dst, "");
+        System.arraycopy(src, 0, dst, 0, Math.min(src.length, dst.length));
+    }
+
+    /** boolean 数组防御拷贝。 */
+    private static void copyBooleans(boolean[] src, boolean[] dst) {
+        Arrays.fill(dst, false);
+        System.arraycopy(src, 0, dst, 0, Math.min(src.length, dst.length));
+    }
 
     private static DdzGamePhase safePhase(byte ordinal) {
         DdzGamePhase[] values = DdzGamePhase.values();
