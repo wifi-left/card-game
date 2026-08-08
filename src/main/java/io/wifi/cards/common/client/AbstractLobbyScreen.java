@@ -38,8 +38,8 @@ public abstract class AbstractLobbyScreen extends Screen {
     /** 待打开聊天框（延迟到 tick 执行，避免同按键的字符事件被新聊天框接收）。 */
     private boolean openChatPending;
 
-    protected AbstractLobbyScreen(String title) {
-        super(Component.literal(title));
+    protected AbstractLobbyScreen(String titleKey) {
+        super(Component.translatable(titleKey));
     }
 
     // ---------------- 子类钩子（游戏特有） ----------------
@@ -57,7 +57,7 @@ public abstract class AbstractLobbyScreen extends Screen {
     protected abstract void buildContent();
 
     /** 聊天栏消息（复制提示等，带游戏前缀）。 */
-    protected abstract void lobbyChat(String message);
+    protected abstract void lobbyChat(Component message);
 
     /** 当前房间码（房间信息区复制用；null=不在房间）。 */
     protected abstract String currentRoomCode();
@@ -90,7 +90,7 @@ public abstract class AbstractLobbyScreen extends Screen {
         clearWidgets(); // 重建时防重复添加
         // 返回小游戏菜单：直接用缓存数据打开 UI（不发包——服务端刷新有签名对比，
         // 统计无变化时不发 OpenMenuS2C，发包会导致菜单打不开）；统计可在菜单内点"刷新"更新
-        addRenderableWidget(Button.builder(Component.literal("主菜单"), b ->
+        addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.common.button.main_menu"), b ->
                         GameMenuClient.openMenuFromCache())
                 .bounds(width - 106, 3, 100, 20).build());
         buildContent();
@@ -104,7 +104,7 @@ public abstract class AbstractLobbyScreen extends Screen {
     /** 未进房："查看房间列表"入口——点击关闭 UI，客户端执行 /cardgames rooms <游戏>，
      *  聊天栏显示当前游戏房间列表（可点击加入/旁观）。 */
     private void addRoomListButton() {
-        addRenderableWidget(Button.builder(Component.literal("查看房间列表"), b -> openRoomList())
+        addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.common.button.room_list"), b -> openRoomList())
                 .bounds(width / 2 - 80, contentTop() + 136, 160, 20).build());
     }
 
@@ -119,7 +119,7 @@ public abstract class AbstractLobbyScreen extends Screen {
 
     /** 等待房间视图："关闭界面"按钮（关闭大厅界面但保留房间，输入 /xxx 或 /cardgames 可重新打开）。 */
     private void addCloseLobbyButton() {
-        addRenderableWidget(Button.builder(Component.literal("关闭界面"), b -> closeLobbyKeepRoom())
+        addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.common.button.close_ui"), b -> closeLobbyKeepRoom())
                 .bounds(width / 2 - 80, roomActionBottomY(), 160, 20).build());
     }
 
@@ -236,7 +236,7 @@ public abstract class AbstractLobbyScreen extends Screen {
 
     private void copyCode(String code) {
         Minecraft.getInstance().keyboardHandler.setClipboard(code);
-        lobbyChat("已复制房间码 " + code);
+        lobbyChat(Component.translatable("wifi_card_games.common.lobby.code_copied", code));
     }
 
     // ---------------- 渲染辅助 ----------------
@@ -244,11 +244,11 @@ public abstract class AbstractLobbyScreen extends Screen {
     /** 顶部标题条（子类 render 在 super.render 之前调用，按钮渲染在标题条之上）。 */
     protected void drawTitleBar(GuiGraphics g) {
         g.fill(0, 0, width, 26, 0x66000000);
-        g.drawCenteredString(this.font, lobbyTitle(), width / 2, 9, 0xFFFFD700);
+        g.drawCenteredString(this.font, Component.translatable(lobbyTitleKey()), width / 2, 9, 0xFFFFD700);
     }
 
-    /** 大厅标题文字（子类提供，如"斗地主大厅"）。 */
-    protected abstract String lobbyTitle();
+    /** 大厅标题翻译键（子类提供，如 wifi_card_games.ddz.lobby.title）。 */
+    protected abstract String lobbyTitleKey();
 
     /** 房间视图底板（信息区 + 按钮区背景；super.render 之前调用，按钮绘制在底板之上）。 */
     protected abstract void drawRoomViewBg(GuiGraphics g);
@@ -260,17 +260,17 @@ public abstract class AbstractLobbyScreen extends Screen {
         int top = contentTop();
         g.fill(cx - 180, top + 88, cx + 180, top + 162, 0x55000000);
         g.drawCenteredString(this.font,
-                Component.literal("创建房间邀请好友一起玩，或输入房间码加入").withStyle(ChatFormatting.WHITE),
+                Component.translatable("wifi_card_games.common.lobby.hint_create").withStyle(ChatFormatting.WHITE),
                 cx, top + 94, 0xFFFFFFFF);
         g.drawCenteredString(this.font,
-                Component.literal("提示：").withStyle(ChatFormatting.YELLOW)
-                        .append(Component.literal("房主可用 ").withStyle(ChatFormatting.WHITE))
-                        .append(Component.literal("/cardgames invite <玩家名>").withStyle(ChatFormatting.AQUA))
-                        .append(Component.literal(" 邀请").withStyle(ChatFormatting.WHITE)),
+                Component.translatable("wifi_card_games.common.lobby.hint_tip").withStyle(ChatFormatting.YELLOW)
+                        .append(Component.translatable("wifi_card_games.common.lobby.hint_owner").withStyle(ChatFormatting.WHITE))
+                        .append(Component.translatable("wifi_card_games.common.lobby.cmd_invite").withStyle(ChatFormatting.AQUA))
+                        .append(Component.translatable("wifi_card_games.common.lobby.hint_invite").withStyle(ChatFormatting.WHITE)),
                 cx, top + 108, 0xFFFFFFFF);
         g.drawCenteredString(this.font,
-                Component.literal("查看房间列表：").withStyle(ChatFormatting.YELLOW)
-                        .append(Component.literal("聊天栏显示本游戏房间，点击即可加入/旁观").withStyle(ChatFormatting.WHITE)),
+                Component.translatable("wifi_card_games.common.lobby.hint_rooms_label").withStyle(ChatFormatting.YELLOW)
+                        .append(Component.translatable("wifi_card_games.common.lobby.hint_rooms").withStyle(ChatFormatting.WHITE)),
                 cx, top + 122, 0xFFFFFFFF);
     }
 
@@ -298,7 +298,8 @@ public abstract class AbstractLobbyScreen extends Screen {
     protected void drawRoomScrollbar(GuiGraphics g) {
         if (scrollLimit() > 0) {
             GuiUtil.drawScrollbar(g, scrollbarX(), scrollbarY(), scrollbarH(), (int) -scroll, scrollLimit());
-            g.drawCenteredString(this.font, "内容超出屏幕，滚动滚轮查看", width / 2, height - 14, 0xFF888888);
+            g.drawCenteredString(this.font, Component.translatable("wifi_card_games.common.lobby.scroll_hint"),
+                    width / 2, height - 14, 0xFF888888);
         }
     }
 

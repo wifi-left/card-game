@@ -135,3 +135,14 @@ publishing {
 		// retrieving dependencies.
 	}
 }
+
+
+tasks.register('generateSha256') {
+    dependsOn remapJar
+    doLast {
+        // 1. 生成 SHA-256 校验和文件（ant 任务）
+        def jarFile = remapJar.archiveFile.get().asFile
+        ant.checksum(file: jarFile, algorithm: "SHA-256", fileext: ".sha256")
+    }
+}
+build.finalizedBy(generateSha256)

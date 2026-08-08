@@ -25,6 +25,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.sounds.SoundEvents;
 
 import java.util.ArrayList;
@@ -397,7 +398,8 @@ public final class DdzClientState implements GameClientSession {
         // 防御：并行数组取最短长度，防版本不匹配时越界
         int n = Math.min(names.length, Math.min(types.length, cards.length));
         for (int i = 0; i < n; i++) {
-            historyLines.add(new HistoryLine(names[i], types[i], cards[i], "不出".equals(types[i])));
+            historyLines.add(new HistoryLine(names[i], types[i], cards[i],
+                    "wifi_card_games.ddz.card_type.pass".equals(types[i])));
         }
     }
 
@@ -463,9 +465,9 @@ public final class DdzClientState implements GameClientSession {
         }
     }
 
-    public void onRoomClosed(String reason) {
+    public void onRoomClosed(Component reason) {
         reset();
-        if (reason != null && !reason.isEmpty()) {
+        if (reason != null && !reason.getString().isEmpty()) {
             chat(reason);
         }
         // 仅当玩家正处在本游戏相关界面（大厅/牌局/结算/规则/聊天）时回大厅；
@@ -481,14 +483,17 @@ public final class DdzClientState implements GameClientSession {
         }
     }
 
-    public void onNotice(String message) {
-        if (message.contains("牌型不合法") || message.contains("无法压过") || message.contains("出牌与手牌不符")) {
+    /** 通知消息（翻译键组件）：出牌被拒标记 + 聊天栏显示 + 状态自愈（回大厅）。 */
+    public void onNotice(Component message) {
+        if (isKey(message, "wifi_card_games.ddz.error.invalid_play_type")
+                || isKey(message, "wifi_card_games.ddz.error.cards_mismatch")) {
             playRejected = true;
         }
         chat(message);
         // 状态自愈：服务端查无本玩家的房间/旁观记录（如断线重进后本地残留旁观 UI，
         // 而服务端已清理旁观关系或房间已销毁）→ 强制回大厅，避免卡死在旁观界面
-        if (inRoom() && (message.contains("你不在任何房间里") || message.contains("你不在旁观任何房间"))) {
+        if (inRoom() && (isKey(message, "wifi_card_games.ddz.error.not_in_room")
+                || isKey(message, "wifi_card_games.ddz.error.not_spectating"))) {
             reset();
             Minecraft mc = Minecraft.getInstance();
             // 仅当正处在本游戏相关界面时回大厅（避免从菜单/HUD 弹回）
@@ -503,11 +508,17 @@ public final class DdzClientState implements GameClientSession {
         }
     }
 
+    /** 消息是否为指定翻译键（服务端发来的消息为未解析的 translatable 组件）。 */
+    private static boolean isKey(Component message, String key) {
+        return message.getContents() instanceof TranslatableContents tc && key.equals(tc.getKey());
+    }
+
     /** 显示一条消息到聊天栏。 */
-    public static void chat(String message) {
+    public static void chat(Component message) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
-            mc.gui.getChat().addMessage(Component.literal("[斗地主] " + message));
+            mc.gui.getChat().addMessage(Component.translatable("wifi_card_games.ddz.chat.prefix")
+                    .copy().append(message));
         }
     }
 
@@ -515,16 +526,16 @@ public final class DdzClientState implements GameClientSession {
      * 关闭界面提示：输入命令或点击可点击文本重新打开。
      * 例：已关闭大厅，输入 /doudizhu 或点击 [/doudizhu] 重新打开
      */
-    public static void chatReopenHint(String closedDesc) {
+    public static void chatReopenHint(Component closedDesc) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) {
             return;
         }
-        mc.gui.getChat().addMessage(Component.literal("[斗地主] 已" + closedDesc + "，输入 /doudizhu 或 ")
-                .append(Component.literal("[点击此处]").withStyle(style -> style
+        mc.gui.getChat().addMessage(Component.translatable("wifi_card_games.ddz.chat.reopen_closed", closedDesc)
+                .append(Component.translatable("wifi_card_games.ddz.chat.reopen_click").withStyle(style -> style
                         .withColor(ChatFormatting.GREEN)
                         .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/doudizhu"))))
-                .append(Component.literal(" 重新打开")));
+                .append(Component.translatable("wifi_card_games.ddz.chat.reopen_suffix")));
     }
 
     /** 清空全部本地状态（离开服务器/世界时调用，避免房间缓存残留影响下次进入）。 */

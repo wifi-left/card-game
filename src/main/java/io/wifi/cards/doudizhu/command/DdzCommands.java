@@ -174,12 +174,12 @@ public final class DdzCommands {
     /** 旁观房间：/doudizhu spectate <房间码>（对局开始后的只读观看）。 */
     private static int spectate(CommandSourceStack source, String code) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
-        String error = DdzMemoryManager.INSTANCE.spectate(player, code);
+        Component error = DdzMemoryManager.INSTANCE.spectate(player, code);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("正在旁观房间 " + code + "，输入 /cardgames leave 退出旁观"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.info.spectating", code), false);
         return 1;
     }
 
@@ -192,27 +192,29 @@ public final class DdzCommands {
 
     private static int invite(CommandSourceStack source, ServerPlayer target) throws CommandSyntaxException {
         ServerPlayer owner = source.getPlayerOrException();
-        String error = invite(owner, target);
+        Component error = invite(owner, target);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("已向 " + target.getGameProfile().getName() + " 发送邀请"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.info.invite_sent",
+                target.getGameProfile().getName()), false);
         return 1;
     }
 
     /** 邀请玩家加入自己所在房间（/doudizhu invite 与 /cardgames invite 共用）；
-     *  成功时向目标发送可点击邀请消息，返回错误消息或 null。 */
-    public static String invite(ServerPlayer owner, ServerPlayer target) {
+     *  成功时向目标发送可点击邀请消息，返回错误消息组件或 null。 */
+    public static Component invite(ServerPlayer owner, ServerPlayer target) {
         DdzRoom room = DdzMemoryManager.INSTANCE.currentRoom(owner);
         if (room == null) {
-            return "你不在任何房间里，请先创建房间";
+            return Component.translatable("wifi_card_games.ddz.error.not_in_room_create");
         }
         if (room.size >= 3 || room.phase() != DdzGamePhase.WAITING) {
-            return "只能邀请玩家加入等待中的房间";
+            return Component.translatable("wifi_card_games.ddz.error.invite_waiting_only");
         }
-        Component message = Component.literal(owner.getGameProfile().getName() + " 邀请你加入斗地主房间[" + room.id + "] ")
-                .append(Component.literal("[接受邀请]").withStyle(style -> style
+        Component message = Component.translatable("wifi_card_games.ddz.chat.invite",
+                        owner.getGameProfile().getName(), room.id)
+                .append(Component.translatable("wifi_card_games.common.click.accept_invite").withStyle(style -> style
                         .withColor(ChatFormatting.GREEN)
                         .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames accept " + room.id))));
         target.sendSystemMessage(message);
@@ -246,7 +248,9 @@ public final class DdzCommands {
     private static int debugAuto(CommandSourceStack source, boolean enabled) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         DdzMemoryManager.INSTANCE.setTrust(player, enabled);
-        source.sendSuccess(() -> Component.literal("托管：" + (enabled ? "开启" : "关闭")), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.debug.trust_state",
+                Component.translatable(enabled
+                        ? "wifi_card_games.ddz.debug.enabled" : "wifi_card_games.ddz.debug.disabled")), false);
         return 1;
     }
 
@@ -259,7 +263,7 @@ public final class DdzCommands {
         }
         int seat = game.currentSeat();
         game.onCall(null, score);
-        source.sendSuccess(() -> Component.literal("已指挥座位 " + seat + " 叫分：" + score), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.debug.call_commanded", seat, score), false);
         return 1;
     }
 
@@ -272,7 +276,9 @@ public final class DdzCommands {
         }
         int seat = game.currentSeat();
         game.onRob(null, rob);
-        source.sendSuccess(() -> Component.literal("已指挥座位 " + seat + " 抢地主：" + (rob ? "抢" : "不抢")), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.debug.rob_commanded", seat,
+                Component.translatable(rob
+                        ? "wifi_card_games.ddz.debug.rob_yes" : "wifi_card_games.ddz.debug.rob_no")), false);
         return 1;
     }
 
@@ -290,14 +296,14 @@ public final class DdzCommands {
         int seat = game.currentSeat();
         List<DdzCard> cards = parseCards(cardsStr, game.handOf(seat));
         if (cards == null) {
-            source.sendFailure(Component.literal("牌串非法或该座位手牌中数量不足（字符：3-9 T J Q K A 2 X小王 D大王 F花牌）"));
+            source.sendFailure(Component.translatable("wifi_card_games.ddz.error.bad_cards_str"));
             return 0;
         }
         if (game.onPlay(null, cards)) {
-            source.sendSuccess(() -> Component.literal("已指挥座位 " + seat + " 出牌：" + cardsStr), false);
+            source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.debug.play_commanded", seat, cardsStr), false);
             return 1;
         }
-        source.sendFailure(Component.literal("该牌型不合法或无法压过上家，未出牌"));
+        source.sendFailure(Component.translatable("wifi_card_games.ddz.error.invalid_play"));
         return 0;
     }
 
@@ -310,10 +316,10 @@ public final class DdzCommands {
         }
         int seat = game.currentSeat();
         if (game.onPlay(null, null)) {
-            source.sendSuccess(() -> Component.literal("已指挥座位 " + seat + " 不出"), false);
+            source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.debug.pass_commanded", seat), false);
             return 1;
         }
-        source.sendFailure(Component.literal("该座位当前不能不出（如自由出牌权）"));
+        source.sendFailure(Component.translatable("wifi_card_games.ddz.error.cannot_pass"));
         return 0;
     }
 
@@ -326,17 +332,18 @@ public final class DdzCommands {
         } else {
             DdzRoom room = DdzMemoryManager.INSTANCE.currentRoom(executor);
             if (room == null) {
-                source.sendFailure(Component.literal("未指定房间码且你不在任何房间中"));
+                source.sendFailure(Component.translatable("wifi_card_games.ddz.error.no_code_no_room"));
                 return 0;
             }
             code = room.id;
         }
-        String error = DdzMemoryManager.INSTANCE.forceJoin(target, code);
+        Component error = DdzMemoryManager.INSTANCE.forceJoin(target, code);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("已强制 " + target.getGameProfile().getName() + " 加入房间 " + code), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.debug.force_joined",
+                target.getGameProfile().getName(), code), false);
         return 1;
     }
 
@@ -344,11 +351,13 @@ public final class DdzCommands {
      *  /doudizhu debug kick <玩家>。 */
     private static int debugKick(CommandSourceStack source, ServerPlayer target) {
         if (DdzMemoryManager.INSTANCE.currentRoom(target) == null) {
-            source.sendFailure(Component.literal(target.getGameProfile().getName() + " 不在任何房间中"));
+            source.sendFailure(Component.translatable("wifi_card_games.ddz.error.not_in_any_room",
+                    target.getGameProfile().getName()));
             return 0;
         }
         DdzMemoryManager.INSTANCE.leaveRoom(target);
-        source.sendSuccess(() -> Component.literal("已强制 " + target.getGameProfile().getName() + " 退出游戏"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.debug.kicked",
+                target.getGameProfile().getName()), false);
         return 1;
     }
 
@@ -361,35 +370,30 @@ public final class DdzCommands {
         int perPage = 10;
         int totalPages = Math.max(1, (rooms.size() + perPage - 1) / perPage);
         final int shownPage = Math.min(page, totalPages);
-        source.sendSuccess(() -> Component.literal(
-                "房间列表（共 " + rooms.size() + " 个，第 " + shownPage + "/" + totalPages + " 页）"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.rooms.header",
+                rooms.size(), shownPage, totalPages), false);
         int from = (shownPage - 1) * perPage;
         for (int i = from; i < Math.min(rooms.size(), from + perPage); i++) {
             DdzRoom room = rooms.get(i);
             final String code = room.id;
-            Component line = Component.literal((i + 1) + ". [" + code + "] 人数 " + room.size + "/3 · "
-                    + phaseName(room.phase()))
-                    .append(Component.literal(" [显示具体信息]").withStyle(style -> style
-                            .withColor(ChatFormatting.GREEN)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/doudizhu debug room " + code))))
-                    .append(Component.literal(" [删除房间]").withStyle(style -> style
-                            .withColor(ChatFormatting.RED)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/doudizhu debug roomdelete " + code))));
+            Component line = Component.translatable("wifi_card_games.ddz.rooms.line",
+                            i + 1, code, room.size,
+                            Component.translatable(phaseNameKey(room.phase())))
+                    .append(click("wifi_card_games.ddz.rooms.detail_click", "/doudizhu debug room " + code,
+                            ChatFormatting.GREEN))
+                    .append(click("wifi_card_games.ddz.rooms.delete_click", "/doudizhu debug roomdelete " + code,
+                            ChatFormatting.RED));
             source.sendSuccess(() -> line, false);
         }
         if (totalPages > 1) {
-            MutableComponent nav = Component.literal("翻页：");
+            MutableComponent nav = Component.translatable("wifi_card_games.ddz.rooms.page_label");
             if (shownPage > 1) {
-                nav.append(Component.literal(" [上一页]").withStyle(style -> style
-                        .withColor(ChatFormatting.YELLOW)
-                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                                "/doudizhu debug rooms " + (shownPage - 1)))));
+                nav.append(click("wifi_card_games.ddz.rooms.prev", "/doudizhu debug rooms " + (shownPage - 1),
+                        ChatFormatting.YELLOW));
             }
             if (shownPage < totalPages) {
-                nav.append(Component.literal(" [下一页]").withStyle(style -> style
-                        .withColor(ChatFormatting.YELLOW)
-                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                                "/doudizhu debug rooms " + (shownPage + 1)))));
+                nav.append(click("wifi_card_games.ddz.rooms.next", "/doudizhu debug rooms " + (shownPage + 1),
+                        ChatFormatting.YELLOW));
             }
             final MutableComponent navLine = nav;
             source.sendSuccess(() -> navLine, false);
@@ -401,89 +405,98 @@ public final class DdzCommands {
     private static int debugRoom(CommandSourceStack source, String code) {
         DdzRoom room = DdzMemoryManager.INSTANCE.roomByCode(code);
         if (room == null) {
-            source.sendFailure(Component.literal("房间不存在：" + code));
+            source.sendFailure(Component.translatable("wifi_card_games.ddz.error.room_not_found", code));
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("房间 " + room.id + "（"
-                + (room.flowerMode ? "花牌模式" : "经典模式") + " · " + room.ruleSet.displayName()
-                + "）· " + phaseName(room.phase())), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.room.header", room.id,
+                Component.translatable(room.flowerMode
+                        ? "wifi_card_games.ddz.mode.flower" : "wifi_card_games.ddz.mode.classic"),
+                Component.translatable(room.ruleSet.displayName()),
+                Component.translatable(phaseNameKey(room.phase()))), false);
         for (int i = 0; i < 3; i++) {
             String name = room.seatName(i);
             if (name.isEmpty()) {
                 continue;
             }
             final int seat = i;
-            final String line;
+            final Component line;
             if (room.isBot(i)) {
-                line = "  座位" + (i + 1) + "：" + name + "（机器人）";
+                line = Component.translatable("wifi_card_games.ddz.room.seat_bot", i + 1, name);
             } else {
                 boolean online = room.members[i] != null && DdzRoom.isOnline(room.members[i]);
                 boolean trusted = room.game != null && room.game.isTrusted(i);
-                line = "  座位" + (i + 1) + "：" + name + "（真人·" + (online ? "在线" : "离线")
-                        + (trusted ? "·托管中" : "") + "）";
+                line = Component.translatable("wifi_card_games.ddz.room.seat_real", i + 1, name,
+                        Component.translatable(online
+                                ? "wifi_card_games.ddz.room.online" : "wifi_card_games.ddz.room.offline"),
+                        trusted ? Component.translatable("wifi_card_games.ddz.room.trusting") : Component.empty());
             }
-            source.sendSuccess(() -> Component.literal(line), false);
+            source.sendSuccess(() -> line, false);
         }
         return 1;
     }
 
     /** 删除指定房间：/doudizhu debug roomdelete <房间码>。 */
     private static int debugRoomDelete(CommandSourceStack source, String code) {
-        String error = DdzMemoryManager.INSTANCE.deleteRoom(code);
+        Component error = DdzMemoryManager.INSTANCE.deleteRoom(code);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("已删除房间 " + code.toUpperCase()), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.debug.room_deleted", code.toUpperCase()), false);
         return 1;
     }
 
     /** 清空所有房间：/doudizhu debug roomclear。 */
     private static int debugRoomClear(CommandSourceStack source) {
         int count = DdzMemoryManager.INSTANCE.clearAllRooms();
-        source.sendSuccess(() -> Component.literal("已清空全部房间（共 " + count + " 个）"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.debug.rooms_cleared", count), false);
         return 1;
     }
 
-    /** 阶段中文名（管理命令/注册表房间摘要显示用）。 */
-    public static String phaseName(DdzGamePhase phase) {
+    /** 阶段翻译键（管理命令/注册表房间摘要显示用）。 */
+    public static String phaseNameKey(DdzGamePhase phase) {
         return switch (phase) {
-            case WAITING -> "等待中";
-            case DEALING -> "发牌中";
-            case CALLING -> "叫分阶段";
-            case ROBBING -> "抢地主阶段";
-            case PLAYING -> "出牌阶段";
-            case SETTLED -> "本局结束";
+            case WAITING -> "wifi_card_games.ddz.phase.waiting";
+            case DEALING -> "wifi_card_games.ddz.phase.dealing";
+            case CALLING -> "wifi_card_games.ddz.phase.calling";
+            case ROBBING -> "wifi_card_games.ddz.phase.robbing";
+            case PLAYING -> "wifi_card_games.ddz.phase.playing";
+            case SETTLED -> "wifi_card_games.ddz.phase.settled";
         };
     }
 
     /** 房间详细信息行（/cardgames roominfo 用）；房间不存在返回空列表。 */
-    public static List<String> roomDetail(String code) {
+    public static List<Component> roomDetail(String code) {
         DdzRoom r = DdzMemoryManager.INSTANCE.roomByCode(code);
         if (r == null) {
             return List.of();
         }
-        List<String> lines = new ArrayList<>();
-        lines.add((r.flowerMode ? "花牌模式" : "经典模式") + " · " + r.ruleSet.displayName()
-                + " · " + (r.announce ? "公开" : "未公开"));
-        lines.add("阶段：" + phaseName(r.phase()) + " · 玩家 " + r.size + "/3");
+        List<Component> lines = new ArrayList<>();
+        lines.add(Component.translatable("wifi_card_games.ddz.room.mode",
+                Component.translatable(r.flowerMode
+                        ? "wifi_card_games.ddz.mode.flower" : "wifi_card_games.ddz.mode.classic"),
+                Component.translatable(r.ruleSet.displayName()),
+                Component.translatable(r.announce
+                        ? "wifi_card_games.ddz.room.public" : "wifi_card_games.ddz.room.private")));
+        lines.add(Component.translatable("wifi_card_games.ddz.room.phase_players",
+                Component.translatable(phaseNameKey(r.phase())), r.size));
         for (int i = 0; i < 3; i++) {
             String name = r.seatName(i);
             if (name.isEmpty()) {
-                lines.add((i + 1) + ". 等待加入…");
+                lines.add(Component.translatable("wifi_card_games.ddz.room.empty_seat", i + 1));
                 continue;
             }
-            String extra;
+            Component extra;
             if (r.isBot(i)) {
-                extra = "（机器人）";
+                extra = Component.translatable("wifi_card_games.ddz.room.bot_tag");
             } else if (DdzRoom.isConnected(r.members[i])) {
-                extra = "";
+                extra = Component.empty();
             } else {
-                extra = "（离线·托管中）";
+                extra = Component.translatable("wifi_card_games.ddz.room.offline_trust");
             }
-            lines.add((i + 1) + ". " + name + extra);
+            lines.add(Component.translatable("wifi_card_games.ddz.room.seat", i + 1, name).append(extra));
         }
-        lines.add("旁观：" + r.spectators.size() + " 人");
+        lines.add(Component.translatable("wifi_card_games.ddz.room.spectators", r.spectators.size()));
         return lines;
     }
 
@@ -495,7 +508,9 @@ public final class DdzCommands {
             return 0;
         }
         game.setTrustSeat(seat, enabled);
-        source.sendSuccess(() -> Component.literal("已" + (enabled ? "开启" : "关闭") + " 座位 " + seat + " 的托管"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.debug.trust_toggled_seat",
+                Component.translatable(enabled
+                        ? "wifi_card_games.ddz.debug.enabled" : "wifi_card_games.ddz.debug.disabled"), seat), false);
         return 1;
     }
 
@@ -503,11 +518,15 @@ public final class DdzCommands {
     private static int debugTrust(CommandSourceStack source, ServerPlayer target, boolean enabled) {
         DdzGame game = DdzMemoryManager.INSTANCE.gameOf(target);
         if (game == null) {
-            source.sendFailure(Component.literal(target.getGameProfile().getName() + " 不在对局中"));
+            source.sendFailure(Component.translatable("wifi_card_games.ddz.error.not_in_game",
+                    target.getGameProfile().getName()));
             return 0;
         }
         game.setTrust(target, enabled);
-        source.sendSuccess(() -> Component.literal("已" + (enabled ? "开启" : "关闭") + " " + target.getGameProfile().getName() + " 的托管"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.debug.trust_toggled_player",
+                Component.translatable(enabled
+                        ? "wifi_card_games.ddz.debug.enabled" : "wifi_card_games.ddz.debug.disabled"),
+                target.getGameProfile().getName()), false);
         return 1;
     }
 
@@ -530,17 +549,19 @@ public final class DdzCommands {
             endTime = player.serverLevel().getGameTime() + 600; // 倒计时 30 秒演示
         }
         // 房间码固定 DEBUG：客户端据此显示「（调试）」标记；本调试不占任何真实房间/旁观关系
+        // 调试名用英文（服务端无法解析 mod 翻译键，直接传字面显示）
         ServerPlayNetworking.send(player, new RoomStateS2C("DEBUG", false, (byte) DdzGamePhase.PLAYING.ordinal(),
                 (byte) DdzRuleSet.STANDARD.ordinal(), (byte) -1,
-                new String[]{"调试A", "调试B", "调试C"}, new String[]{"", "", ""},
+                new String[]{"DebugA", "DebugB", "DebugC"},
+                new String[]{"", "", ""},
                 new boolean[]{true, true, true}));
         ServerPlayNetworking.send(player, new ReconnectS2C(
                 (byte) DdzGamePhase.PLAYING.ordinal(), new int[0], (byte) 0, (byte) 0, endTime,
-                2, (byte) 0, (byte) 1, (byte) 0, "调试A", bottom,
+                2, (byte) 0, (byte) 1, (byte) 0, "DebugA", bottom,
                 (byte) -1, "", new int[0], (byte) -1, 0,
                 new byte[]{(byte) h0.length, (byte) h1.length, (byte) h2.length}));
         ServerPlayNetworking.send(player, new SpectatorHandsS2C(h0, h1, h2));
-        source.sendSuccess(() -> Component.literal("已打开旁观界面调试（随机虚拟牌，仅本客户端可见，点「退出旁观」返回）"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.ddz.debug.spectateui_opened"), false);
         return 1;
     }
 
@@ -599,8 +620,15 @@ public final class DdzCommands {
     private static DdzGame gameOf(CommandSourceStack source, ServerPlayer player) throws CommandSyntaxException {
         DdzGame game = DdzMemoryManager.INSTANCE.gameOf(player);
         if (game == null) {
-            source.sendFailure(Component.literal("你不在任何对局中"));
+            source.sendFailure(Component.translatable("wifi_card_games.ddz.error.not_in_game_self"));
         }
         return game;
+    }
+
+    /** 可点击命令文本（label 为翻译键）。 */
+    private static MutableComponent click(String labelKey, String command, ChatFormatting color) {
+        return Component.translatable(labelKey).withStyle(style -> style
+                .withColor(color)
+                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command)));
     }
 }

@@ -8,6 +8,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.sounds.SoundEvents;
 
 import java.util.List;
@@ -49,7 +50,7 @@ public class GameMenuScreen extends Screen {
     private int dragStartScroll;
 
     public GameMenuScreen(List<Entry> entries) {
-        super(Component.literal("小游戏大厅"));
+        super(Component.translatable("wifi_card_games.menu.title"));
         this.entries = entries;
     }
 
@@ -67,7 +68,7 @@ public class GameMenuScreen extends Screen {
     protected void init() {
         // 刷新按钮放标题条内（列表从 y=40 开始，避免窄窗口下与列表重叠、吞掉点击）。
         // 客户端冷却 + 服务端限频双层防海量请求
-        refreshButton = Button.builder(Component.literal("刷新"), b -> {
+        refreshButton = Button.builder(Component.translatable("wifi_card_games.menu.refresh"), b -> {
             if (System.currentTimeMillis() - lastRefreshMillis < REFRESH_COOLDOWN_MS) {
                 return; // 冷却中（按钮已禁用，此处双保险）
             }
@@ -87,10 +88,10 @@ public class GameMenuScreen extends Screen {
         long remaining = REFRESH_COOLDOWN_MS - (System.currentTimeMillis() - lastRefreshMillis);
         if (remaining > 0) {
             refreshButton.active = false;
-            refreshButton.setMessage(Component.literal("刷新(" + ((remaining + 999) / 1000) + "s)"));
+            refreshButton.setMessage(Component.translatable("wifi_card_games.menu.refresh_cd", (remaining + 999) / 1000));
         } else {
             refreshButton.active = true;
-            refreshButton.setMessage(Component.literal("刷新"));
+            refreshButton.setMessage(Component.translatable("wifi_card_games.menu.refresh"));
         }
     }
 
@@ -203,11 +204,11 @@ public class GameMenuScreen extends Screen {
         // 标题条先绘制（刷新按钮位于标题条内，super.render 后渲染按钮会盖住标题条半透明底）
         int cx = width / 2;
         g.fill(0, 0, width, 26, 0x66000000);
-        g.drawCenteredString(this.font, "小游戏大厅", cx, 9, 0xFFFFD700);
+        g.drawCenteredString(this.font, Component.translatable("wifi_card_games.menu.title"), cx, 9, 0xFFFFD700);
         // 背景与控件由 super 渲染（renderBackground 已覆盖为空），自定义内容绘制在其上
         super.render(g, mouseX, mouseY, partialTick);
         if (entries.isEmpty()) {
-            g.drawCenteredString(this.font, "暂无可用小游戏", cx, listTop() + 20, 0xFFAAAAAA);
+            g.drawCenteredString(this.font, Component.translatable("wifi_card_games.menu.empty"), cx, listTop() + 20, 0xFFAAAAAA);
             return;
         }
         int left = listLeft();
@@ -234,20 +235,24 @@ public class GameMenuScreen extends Screen {
             }
             // 左侧图标（游戏名第一个字）
             g.fill(left + 8, y + 8, left + 38, y + 38, e.color());
-            g.drawCenteredString(this.font, e.icon(), left + 23, y + 17, 0xFFFFFFFF);
-            // 名称 + 简介
-            g.drawString(this.font, e.name() + (current ? "（当前）" : ""), left + 46, y + 8, 0xFFFFFFFF);
-            g.drawString(this.font, e.desc(), left + 46, y + 23, 0xFFAAAAAA);
+            g.drawCenteredString(this.font, Component.translatable(e.icon()), left + 23, y + 17, 0xFFFFFFFF);
+            // 名称 + 简介（名称/简介为翻译键，客户端解析显示）
+            MutableComponent name = Component.translatable(e.name());
+            if (current) {
+                name.append(Component.translatable("wifi_card_games.menu.current"));
+            }
+            g.drawString(this.font, name, left + 46, y + 8, 0xFFFFFFFF);
+            g.drawString(this.font, Component.translatable(e.desc()), left + 46, y + 23, 0xFFAAAAAA);
             // 右侧统计
-            String stats = "房间 " + e.roomCount() + " · 在线 " + e.playerCount();
+            Component stats = Component.translatable("wifi_card_games.menu.stats", e.roomCount(), e.playerCount());
             g.drawString(this.font, stats, left + LIST_W - 8 - this.font.width(stats), y + 15, 0xFFFFFF66);
         }
         // 底部提示
-        g.drawCenteredString(this.font, "点击进入游戏大厅 · ESC 返回 · 输入 /cardgames 打开", cx, height - 26, 0xFF777777);
+        g.drawCenteredString(this.font, Component.translatable("wifi_card_games.menu.footer_hint"), cx, height - 26, 0xFF777777);
         if (maxScroll() > 0) {
             // 滚动条（列表右缘外侧，滑块比例 = 可视/内容）
             GuiUtil.drawScrollbar(g, scrollbarX(), scrollbarY(), scrollbarH(), (int) scroll, maxScroll());
-            g.drawCenteredString(this.font, "滚动滚轮查看更多", cx, height - 14, 0xFF888888);
+            g.drawCenteredString(this.font, Component.translatable("wifi_card_games.menu.scroll_hint"), cx, height - 14, 0xFF888888);
         }
     }
 }

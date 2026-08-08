@@ -15,7 +15,7 @@ import net.minecraft.network.chat.Component;
  */
 public class DdzResultScreen extends Screen {
     public DdzResultScreen() {
-        super(Component.literal("本局结算"));
+        super(Component.translatable("wifi_card_games.ddz.result.title"));
     }
 
     @Override
@@ -34,7 +34,7 @@ public class DdzResultScreen extends Screen {
         if (GameMenuClient.tryRestoreOtherSession(GameRegistry.GAME_DOUDIZHU)) {
             return;
         }
-        DdzClientState.chatReopenHint("关闭结算界面");
+        DdzClientState.chatReopenHint(Component.translatable("wifi_card_games.ddz.reopen.closed_result"));
         super.onClose();
     }
 
@@ -44,15 +44,15 @@ public class DdzResultScreen extends Screen {
         DdzClientState s = DdzClientState.INSTANCE;
         if (s.mySeat < 0) {
             // 旁观者：无"再来一局"权限（新局由成员触发），仅提供退出旁观返回大厅
-            addRenderableWidget(Button.builder(Component.literal("退出旁观"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.ddz.button.exit_spectate"), b ->
                     ClientPlayNetworking.send(new LeaveRoomC2S()))
                     .bounds(cx - 55, height / 2 + 44, 110, 20).build());
             return;
         }
-        addRenderableWidget(Button.builder(Component.literal("再来一局"), b ->
+        addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.ddz.button.next_game"), b ->
                 ClientPlayNetworking.send(new NextGameC2S()))
                 .bounds(cx - 120, height / 2 + 44, 110, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("返回大厅"), b ->
+        addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.ddz.button.back_lobby"), b ->
                 ClientPlayNetworking.send(new LeaveRoomC2S()))
                 .bounds(cx + 10, height / 2 + 44, 110, 20).build());
     }
@@ -65,24 +65,30 @@ public class DdzResultScreen extends Screen {
         int cx = width / 2;
         // 顶部标题条
         g.fill(0, 0, width, 26, 0x66000000);
-        DdzGui.centeredShadow(g, this.font, width, "本局结算", 9, 0xFFFFD700);
+        DdzGui.centeredShadow(g, this.font, width, Component.translatable("wifi_card_games.ddz.result.title"), 9, 0xFFFFD700);
         // 结算信息区半透明黑底（覆盖到最底部玩家行 124 之下）
         g.fill(cx - 200, 30, cx + 200, 138, 0x55000000);
-        String title = s.resultLandlordWin ? "地主胜利！" : "农民胜利！";
-        DdzGui.centeredShadow(g, this.font, width, title, 40,
-                s.resultLandlordWin ? 0xFFFFFF55 : 0xFFFF5555);
-        DdzGui.centeredShadow(g, this.font, width, "地主：" + s.resultLandlordName, 58, 0xFFFFFFFF);
+        DdzGui.centeredShadow(g, this.font, width,
+                Component.translatable(s.resultLandlordWin
+                        ? "wifi_card_games.ddz.result.landlord_win" : "wifi_card_games.ddz.result.farmer_win"),
+                40, s.resultLandlordWin ? 0xFFFFFF55 : 0xFFFF5555);
+        DdzGui.centeredShadow(g, this.font, width,
+                Component.translatable("wifi_card_games.ddz.result.landlord", s.resultLandlordName), 58, 0xFFFFFFFF);
         int unit = s.resultBaseScore * s.resultMultiplier;
         DdzGui.centeredShadow(g, this.font, width,
-                "底分 " + s.resultBaseScore + " × 倍数 " + s.resultMultiplier + " = " + unit + " 分",
+                Component.translatable("wifi_card_games.ddz.result.score_detail",
+                        s.resultBaseScore, s.resultMultiplier, unit),
                 76, 0xFFFFFFFF);
         for (int i = 0; i < 3; i++) {
             if (s.names[i] == null || s.names[i].isEmpty()) {
                 continue;
             }
             String sign = s.resultDeltas[i] > 0 ? "+" : "";
-            String line = s.names[i] + "：" + sign + s.resultDeltas[i] + " 分"
-                    + (i == s.landlordSeat ? "（地主）" : "");
+            Component line = Component.literal(s.names[i])
+                    .append(Component.translatable("wifi_card_games.ddz.result.delta", sign + s.resultDeltas[i]));
+            if (i == s.landlordSeat) {
+                line = line.copy().append(Component.translatable("wifi_card_games.ddz.tag.landlord"));
+            }
             DdzGui.centeredShadow(g, this.font, width, line, 96 + i * 14,
                     i == s.mySeat ? 0xFFFFFF55 : 0xFFFFFFFF);
         }

@@ -18,6 +18,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.sounds.SoundEvents;
 
 import java.util.ArrayList;
@@ -84,9 +85,9 @@ public final class BoardClientState implements GameClientSession {
         return seat >= 0 && seat < 2 ? names[seat] : "";
     }
 
-    /** 座位 0/1 是否是黑/白方显示名（旁观者视角固定座位 0=黑 1=白）。 */
+    /** 座位 0/1 黑/白方显示名翻译键（旁观者视角固定座位 0=黑 1=白）。 */
     public String sideName(int seat) {
-        return seat == 0 ? "黑" : "白";
+        return seat == 0 ? "wifi_card_games.board.side.black" : "wifi_card_games.board.side.white";
     }
 
     /** 当前房间成员数（按座位名统计）。 */
@@ -177,7 +178,7 @@ public final class BoardClientState implements GameClientSession {
         this.phase = BoardPhase.PLAYING;
         this.currentSeat = payload.firstSeat();
         this.turnEndGameTime = 0; // 等待 TurnS2C 下发截止刻
-        this.lastAction = "游戏开始，黑方先手";
+        this.lastAction = "wifi_card_games.board.lastaction.game_start";
         this.lastMoveX = -1;
         this.lastMoveY = -1;
         this.winSeat = -1;
@@ -212,15 +213,15 @@ public final class BoardClientState implements GameClientSession {
         this.board = payload.board();
         this.lastMoveX = payload.x();
         this.lastMoveY = payload.y();
-        this.lastAction = nameOf(payload.seat()) + " 落子 (" + payload.x() + "," + payload.y() + ")";
+        this.lastAction = "wifi_card_games.board.lastaction.moved|" + nameOf(payload.seat()) + "|" + payload.x() + "|" + payload.y();
     }
 
     public void onPass(PassBroadcastS2C payload) {
-        this.lastAction = payload.name() + " 停一手";
+        this.lastAction = "wifi_card_games.board.lastaction.passed|" + payload.name();
     }
 
     public void onSurrender(SurrenderS2C payload) {
-        this.lastAction = payload.winnerName() + " 获胜（对方认输）";
+        this.lastAction = "wifi_card_games.board.lastaction.win_surrender|" + payload.winnerName();
     }
 
     public void onTurn(TurnS2C payload) {
@@ -249,9 +250,9 @@ public final class BoardClientState implements GameClientSession {
         }
     }
 
-    public void onRoomClosed(String reason) {
+    public void onRoomClosed(Component reason) {
         reset();
-        if (reason != null && !reason.isEmpty()) {
+        if (reason != null && !reason.getString().isEmpty()) {
             chat(reason);
         }
         // 仅当玩家正处在本游戏相关界面（大厅/牌局/结算/规则/聊天）时回大厅；
@@ -265,11 +266,12 @@ public final class BoardClientState implements GameClientSession {
         }
     }
 
-    public void onNotice(String message) {
+    public void onNotice(Component message) {
         chat(message);
         // 状态自愈：服务端查无本玩家的房间/旁观记录（如断线重进后本地残留旁观 UI，
         // 而服务端已清理旁观关系或房间已销毁）→ 强制回大厅，避免卡死在棋盘界面
-        if (inRoom() && (message.contains("你不在任何房间里") || message.contains("你不在旁观任何房间"))) {
+        if (inRoom() && (isKey(message, "wifi_card_games.board.error.not_in_room")
+                || isKey(message, "wifi_card_games.board.error.not_spectating"))) {
             reset();
             Minecraft mc = Minecraft.getInstance();
             // 仅当正处在本游戏相关界面时回大厅（避免从菜单/HUD 弹回）
@@ -294,7 +296,7 @@ public final class BoardClientState implements GameClientSession {
         this.mySeat = -1; // 旁观视角
         this.currentSeat = payload.currentSeat();
         this.turnEndGameTime = 0;
-        this.lastAction = "调试数据（无真实对局）";
+        this.lastAction = "wifi_card_games.board.lastaction.debug";
         this.lastMoveX = -1;
         this.lastMoveY = -1;
         copyInto(payload.names(), names);
@@ -312,26 +314,47 @@ public final class BoardClientState implements GameClientSession {
     }
 
     /** 显示一条消息到聊天栏。 */
-    public static void chat(String message) {
+    public static void chat(Component message) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
-            mc.gui.getChat().addMessage(Component.literal("[棋牌] " + message));
+            mc.gui.getChat().addMessage(Component.translatable("wifi_card_games.board.chat.prefix")
+                    .copy().append(message));
         }
     }
 
     /**
      * 关闭界面提示：输入命令或点击可点击文本重新打开。
      */
-    public static void chatReopenHint(String closedDesc) {
+    public static void chatReopenHint(Component closedDesc) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) {
             return;
         }
-        mc.gui.getChat().addMessage(Component.literal("[棋牌] 已" + closedDesc + "，输入 /chess 或 ")
-                .append(Component.literal("[点击此处]").withStyle(style -> style
+        mc.gui.getChat().addMessage(Component.translatable("wifi_card_games.board.chat.reopen_closed", closedDesc)
+                .append(Component.translatable("wifi_card_games.board.chat.reopen_click").withStyle(style -> style
                         .withColor(ChatFormatting.GREEN)
                         .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/chess"))))
-                .append(Component.literal(" 重新打开")));
+                .append(Component.translatable("wifi_card_games.board.chat.reopen_suffix")));
+    }
+
+    /** 消息是否为指定翻译键（服务端发来的消息为未解析的 translatable 组件）。 */
+    private static boolean isKey(Component message, String key) {
+        return message.getContents() instanceof TranslatableContents tc && key.equals(tc.getKey());
+    }
+
+    /** 解析 lastAction 管道文本（"key|arg1|arg2"）→ 翻译组件；无管道视为纯翻译键。 */
+    public static Component parseLastAction(String text) {
+        int pipe = text.indexOf('|');
+        if (pipe < 0) {
+            return Component.translatable(text);
+        }
+        String key = text.substring(0, pipe);
+        String[] rawArgs = text.substring(pipe + 1).split("\\|", -1);
+        Object[] args = new Object[rawArgs.length];
+        for (int i = 0; i < rawArgs.length; i++) {
+            args[i] = Component.translatable(rawArgs[i]);
+        }
+        return Component.translatable(key, args);
     }
 
     /** 清空全部本地状态（离开服务器/世界时调用，避免房间缓存残留影响下次进入）。 */

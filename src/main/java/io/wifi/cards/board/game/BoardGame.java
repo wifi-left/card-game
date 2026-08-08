@@ -8,6 +8,7 @@ import io.wifi.cards.board.network.BoardPackets.ReconnectS2C;
 import io.wifi.cards.board.network.BoardPackets.SurrenderS2C;
 import io.wifi.cards.board.network.BoardPackets.TurnS2C;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
 /**
@@ -119,9 +120,9 @@ public abstract class BoardGame {
         }
         byte winner = (byte) (1 - seat);
         winSeat = winner;
-        lastAction = room.seatName(seat) + " 认输";
+        lastAction = "wifi_card_games.board.lastaction.surrender|" + room.seatName(seat);
         room.broadcast(new SurrenderS2C(winner, room.seatName(winner)));
-        settle(winner, boardScore((byte) 1), boardScore((byte) 2), "认输");
+        settle(winner, boardScore((byte) 1), boardScore((byte) 2), "wifi_card_games.board.reason.surrender");
     }
 
     /** 玩家退出/断线：座位转托管；正轮到该座位时安排自动行动（延迟 1 秒）。 */
@@ -213,8 +214,8 @@ public abstract class BoardGame {
         blackScore = bScore;
         whiteScore = wScore;
         resultReason = switch (reason) {
-            case "认输" -> (byte) 1;
-            case "退出" -> (byte) 2;
+            case "wifi_card_games.board.reason.surrender" -> (byte) 1;
+            case "wifi_card_games.board.reason.quit" -> (byte) 2;
             default -> (byte) 0;
         };
         room.broadcast(new GameResultS2C(winnerSeat, winnerSeat >= 0 ? room.seatName(winnerSeat) : "",
@@ -266,7 +267,7 @@ public abstract class BoardGame {
         return room.seatOf(player);
     }
 
-    protected void reject(int seat, String message) {
+    protected void reject(int seat, Component message) {
         room.sendToSeat(seat, new NoticeS2C(message));
     }
 

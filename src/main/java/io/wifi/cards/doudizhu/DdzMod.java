@@ -10,6 +10,7 @@ import io.wifi.cards.doudizhu.network.DdzPackets;
 import io.wifi.cards.doudizhu.sound.DdzSounds;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,8 +33,8 @@ public final class DdzMod {
         // 登记到小游戏注册表：小游戏菜单 / 统一 /cardgames 命令 / 跨游戏防护自动生效
         GameRegistry.register(new GameInfo(
                 GameRegistry.GAME_DOUDIZHU, GameRegistry.PREFIX_DOUDIZHU,
-                "斗地主", "斗", 0xFFE53935,
-                "经典 / 花牌万能牌，3 人对局",
+                "wifi_card_games.ddz.name", "wifi_card_games.ddz.icon", 0xFFE53935,
+                "wifi_card_games.ddz.desc",
                 DdzCommands::openLobby,
                 (player, code) -> DdzMemoryManager.INSTANCE.joinRoom(player, code),
                 DdzMemoryManager.INSTANCE::spectate,
@@ -44,12 +45,16 @@ public final class DdzMod {
                 DdzMemoryManager.INSTANCE::roomCount,
                 DdzMemoryManager.INSTANCE::playerCount,
                 () -> DdzMemoryManager.INSTANCE.roomSnapshot().stream()
-                        .map(r -> r.id + " · 人数 " + r.size + "/3 · " + DdzCommands.phaseName(r.phase()))
+                        .map(r -> (Component) Component.literal(r.id + " · ")
+                                .append(Component.translatable("wifi_card_games.ddz.room.line",
+                                        r.size, Component.translatable(DdzCommands.phaseNameKey(r.phase())))))
                         .toList(),
                 // 房间列表行（/cardgames rooms）：管理员含未公开房间
                 includePrivate -> DdzMemoryManager.INSTANCE.roomSnapshot().stream()
                         .filter(r -> includePrivate || r.announce)
-                        .map(r -> new RoomBrief(r.id, "玩家 " + r.size + "/3 · " + DdzCommands.phaseName(r.phase()),
+                        .map(r -> new RoomBrief(r.id,
+                                Component.translatable("wifi_card_games.ddz.room.brief",
+                                        r.size, Component.translatable(DdzCommands.phaseNameKey(r.phase()))),
                                 (byte) (r.phase() == DdzGamePhase.WAITING ? 0
                                         : r.phase() == DdzGamePhase.SETTLED ? 2 : 1)))
                         .toList(),

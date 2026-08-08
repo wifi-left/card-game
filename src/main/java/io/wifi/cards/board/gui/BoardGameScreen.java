@@ -14,6 +14,8 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 
 /**
  * 棋类共用棋盘界面（黑白棋/五子棋/围棋共用一个 Screen，按游戏类型分支渲染；
@@ -50,7 +52,7 @@ public class BoardGameScreen extends AbstractGameScreen {
     private int hoverY = -1;
 
     public BoardGameScreen() {
-        super("棋牌对局");
+        super("wifi_card_games.board.game_screen.title");
         countdown = 60; // 棋类回合默认 60 秒（基类默认 30）
     }
 
@@ -67,15 +69,15 @@ public class BoardGameScreen extends AbstractGameScreen {
 
     @Override
     protected void reopenHint() {
-        BoardClientState.chatReopenHint("关闭对局界面");
+        BoardClientState.chatReopenHint(Component.translatable("wifi_card_games.board.reopen.closed_game"));
     }
 
     @Override
-    protected String exitConfirmFirstLine() {
+    protected String exitConfirmFirstLineKey() {
         // 围棋无托管：退出直接结束本局
         return BoardClientState.INSTANCE.gameType == BoardGameType.GO
-                ? "退出将直接结束本局（围棋无托管）"
-                : "退出后座位将由托管代打，对局继续";
+                ? "wifi_card_games.board.confirm.exit_go"
+                : "wifi_card_games.board.confirm.exit_trusted";
     }
 
     /** 关闭前：调试旁观模式清标记且不提示（屏幕仍正常关闭）。 */
@@ -248,34 +250,47 @@ public class BoardGameScreen extends AbstractGameScreen {
         g.fill(0, TOP_BAR - 1, width, TOP_BAR, 0xFFB08A3B); // 底部金色装饰线
         // 左：座位 0（黑方）；名字截断防窄窗口与中央标题重叠
         drawHead(g, s.playerUuids[0], 6, 6, 16);
-        String leftText = truncateName(s.names[0].isEmpty() ? "等待加入…" : s.names[0]) + "（黑）";
+        MutableComponent leftText = Component.literal(truncateName(
+                s.names[0].isEmpty() ? Component.translatable("wifi_card_games.board.top.waiting_join").getString()
+                        : s.names[0]))
+                .append(Component.translatable("wifi_card_games.board.top.side_black"));
         g.drawString(this.font, leftText, 26, 11, s.currentSeat == 0 ? 0xFFFFFF55 : 0xFFFFFFFF, true);
         // 右：座位 1（白方，右对齐）
         drawHead(g, s.playerUuids[1], width - 22, 6, 16);
-        String rightText = truncateName(s.names[1].isEmpty() ? "等待加入…" : s.names[1]) + "（白）";
+        MutableComponent rightText = Component.literal(truncateName(
+                s.names[1].isEmpty() ? Component.translatable("wifi_card_games.board.top.waiting_join").getString()
+                        : s.names[1]))
+                .append(Component.translatable("wifi_card_games.board.top.side_white"));
         g.drawString(this.font, rightText, width - this.font.width(rightText) - 26, 11,
                 s.currentSeat == 1 ? 0xFFFFFF55 : 0xFFFFFFFF, true);
         // 中央：游戏名 + 阶段（调试旁观模式标题带"（调试）"标记）
-        String title = s.gameType.displayName
-                + (s.gameType == BoardGameType.GO ? " " + s.size + " 路" : "")
-                + " · " + phaseText();
+        MutableComponent title = Component.translatable(s.gameType.displayName);
+        if (s.gameType == BoardGameType.GO) {
+            title.append(Component.translatable("wifi_card_games.board.top.go_size", s.size));
+        }
+        title.append(Component.translatable("wifi_card_games.board.top.sep"))
+                .append(Component.translatable(phaseTextKey()));
         if (s.debugMode) {
-            title = "（调试）" + title;
+            title = Component.translatable("wifi_card_games.board.top.debug_tag").copy().append(title);
         }
         BoardGui.centeredShadow(g, this.font, width, title, 8, 0xFFFFD700);
         // 左侧第二行：旁观/自己身份（与中央"轮到…"同一行高度对齐）
         if (isSpectator()) {
-            g.drawString(this.font, s.debugMode ? "旁观中（调试数据）" : "旁观中", 6, 32, 0xFFAAAAAA, true);
+            g.drawString(this.font, Component.translatable(s.debugMode
+                ? "wifi_card_games.board.top.spectating_debug" : "wifi_card_games.board.top.spectating"), 6, 32, 0xFFAAAAAA, true);
         } else {
-            g.drawString(this.font, "你（" + s.sideName(s.mySeat) + "方）", 6, 32, 0xFFFFFFFF, true);
+            g.drawString(this.font, Component.translatable("wifi_card_games.board.top.you_side",
+                Component.translatable(s.sideName(s.mySeat))), 6, 32, 0xFFFFFFFF, true);
         }
         // 中央第二/三行：轮到谁 + 倒计时 + 最近动作（与左/右第二行对齐；临期红色警示）
         if (s.phase == BoardPhase.PLAYING) {
             // 截止刻未下发（开局/重连等待 TurnS2C 窗口）时不显示编造的倒计时
-            String timeText = s.turnEndGameTime > 0 ? "（剩余 " + Math.max(0, countdown) + " 秒）" : "";
-            String turnText = s.isMyTurn()
-                    ? "轮到你" + timeText
-                    : "轮到 " + s.nameOf(s.currentSeat) + timeText;
+            Component timeText = s.turnEndGameTime > 0
+                    ? Component.translatable("wifi_card_games.board.top.time", Math.max(0, countdown))
+                    : Component.empty();
+            Component turnText = s.isMyTurn()
+                    ? Component.translatable("wifi_card_games.board.top.turn_you", timeText)
+                    : Component.translatable("wifi_card_games.board.top.turn_other", s.nameOf(s.currentSeat), timeText);
             int turnColor;
             if (s.isMyTurn()) {
                 turnColor = countdown <= 10 ? 0xFFFF5555 : 0xFFFFFF55;
@@ -283,17 +298,17 @@ public class BoardGameScreen extends AbstractGameScreen {
                 turnColor = countdown <= 10 ? 0xFFFF8888 : 0xFFAAAAAA;
             }
             BoardGui.centeredShadow(g, this.font, width, turnText, 32, turnColor);
-            BoardGui.centeredShadow(g, this.font, width, s.lastAction, 44, 0xFFAAAAAA);
+            BoardGui.centeredShadow(g, this.font, width, BoardClientState.parseLastAction(s.lastAction), 44, 0xFFAAAAAA);
         } else if (s.phase == BoardPhase.SETTLED) {
-            BoardGui.centeredShadow(g, this.font, width, s.lastAction, 44, 0xFFAAAAAA);
+            BoardGui.centeredShadow(g, this.font, width, BoardClientState.parseLastAction(s.lastAction), 44, 0xFFAAAAAA);
         }
     }
 
-    private String phaseText() {
+    private String phaseTextKey() {
         return switch (BoardClientState.INSTANCE.phase) {
-            case WAITING -> "等待游戏开始…";
-            case PLAYING -> "对局中";
-            case SETTLED -> "本局结束";
+            case WAITING -> "wifi_card_games.board.phase.gui_waiting";
+            case PLAYING -> "wifi_card_games.board.phase.gui_playing";
+            case SETTLED -> "wifi_card_games.board.phase.gui_settled";
         };
     }
 
@@ -410,15 +425,15 @@ public class BoardGameScreen extends AbstractGameScreen {
         }
         int cx = width / 2;
         int y = (int) Math.max(TOP_BAR + 8, boardOffsetY - 24);
-        String text;
+        Component text;
         if (s.winSeat < 0) {
-            text = "平局（黑 " + s.blackScore + " · 白 " + s.whiteScore + "）";
+            text = Component.translatable("wifi_card_games.board.result.draw", s.blackScore, s.whiteScore);
         } else if (s.resultReason == 1) {
-            text = s.winName + " 获胜（对方认输）";
+            text = Component.translatable("wifi_card_games.board.result.win_surrender", s.winName);
         } else if (s.resultReason == 2) {
-            text = s.winName + " 获胜（对方退出游戏）";
+            text = Component.translatable("wifi_card_games.board.result.win_quit", s.winName);
         } else {
-            text = s.winName + " 获胜（黑 " + s.blackScore + " · 白 " + s.whiteScore + "）";
+            text = Component.translatable("wifi_card_games.board.result.win_score", s.winName, s.blackScore, s.whiteScore);
         }
         g.fill(cx - 180, y - 4, cx + 180, y + 16, 0xAA000000);
         g.fill(cx - 181, y - 5, cx + 181, y - 4, 0xFFB08A3B); // 横幅金色边框
@@ -444,12 +459,12 @@ public class BoardGameScreen extends AbstractGameScreen {
         // 旁观模式：只读观看，仅提供「退出旁观」；调试旁观模式（无真实房间）提供「关闭」
         if (isSpectator()) {
             if (s.debugMode) {
-                actionButtons.add(button(x, y, "关闭", b -> {
+                actionButtons.add(button(x, y, "wifi_card_games.board.button.close", b -> {
                     BoardClientState.INSTANCE.debugMode = false; // 关闭按钮直接退出调试模式
                     Minecraft.getInstance().setScreen(null);
                 }, true));
             } else {
-                actionButtons.add(button(x, y, "退出旁观", b -> sendUnspectate(), true));
+                actionButtons.add(button(x, y, "wifi_card_games.board.button.exit_spectate", b -> sendUnspectate(), true));
             }
             return;
         }
@@ -457,25 +472,26 @@ public class BoardGameScreen extends AbstractGameScreen {
             if (confirmingExit) {
                 // 退出确认弹层：仅「确认退出 / 取消」（确认后座位转托管，对局继续；
                 // 围棋无托管，确认后直接结束本局）。回调只改字段，按钮由 tick 签名变化统一重建
-                actionButtons.add(button(x, y - 52, "确认退出", b -> {
+                actionButtons.add(button(x, y - 52, "wifi_card_games.board.button.confirm_exit", b -> {
                     confirmingExit = false;
                     sendLeave();
                 }, true));
-                actionButtons.add(button(x, y - 26, "取消", b -> confirmingExit = false, true));
+                actionButtons.add(button(x, y - 26, "wifi_card_games.common.button.cancel", b -> confirmingExit = false, true));
                 return;
             }
             // 常驻：退出（座位转托管）+ 认输（任意时刻可认输）；围棋轮到本人时提供「停一手」
-            actionButtons.add(button(x, y - 52, "退出", b -> confirmingExit = true, true));
-            actionButtons.add(button(x, y - 26, "认输", b -> sendSurrender(), true));
+            actionButtons.add(button(x, y - 52, "wifi_card_games.common.button.exit", b -> confirmingExit = true, true));
+            actionButtons.add(button(x, y - 26, "wifi_card_games.board.button.surrender", b -> sendSurrender(), true));
             if (s.gameType == BoardGameType.GO && s.isMyTurn()) {
-                actionButtons.add(button(x, y, "停一手", b -> sendPass(), true));
+                actionButtons.add(button(x, y, "wifi_card_games.board.button.pass", b -> sendPass(), true));
             }
         } else if (s.phase == BoardPhase.SETTLED) {
             // 围棋：房间存在退出者转的"（托管）"座位时无法开新局（无 AI），禁用再来一局
+            // 座位名不再拼「（托管）」标记：退出转托管的座位由 connected=false 标识（见 BoardRoom.quitToBot）
             boolean goBlocked = s.gameType == BoardGameType.GO
-                    && (s.names[0].endsWith("（托管）") || s.names[1].endsWith("（托管）"));
-            actionButtons.add(button(x, y - 26, "返回大厅", b -> sendLeave(), true));
-            actionButtons.add(button(x, y, "再来一局", b -> sendNext(), !goBlocked));
+                    && (s.connected[0] == false || s.connected[1] == false);
+            actionButtons.add(button(x, y - 26, "wifi_card_games.board.button.back_lobby", b -> sendLeave(), true));
+            actionButtons.add(button(x, y, "wifi_card_games.board.button.next_game", b -> sendNext(), !goBlocked));
         }
     }
 

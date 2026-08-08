@@ -23,6 +23,7 @@ import io.wifi.cards.doudizhu.network.DdzPackets.TurnS2C;
 import io.wifi.cards.doudizhu.rule.DdzAutoPlay;
 import io.wifi.cards.doudizhu.rule.DdzCardTypeRecognizer;
 import io.wifi.cards.doudizhu.rule.DdzPlayResult;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -185,15 +186,15 @@ public class DdzGame {
             return;
         }
         if (phase != DdzGamePhase.CALLING) {
-            reject(p, "现在不是叫分阶段");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.not_calling_phase"));
             return;
         }
         if (p.seat() != callSeat) {
-            reject(p, "还没轮到你叫分");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.not_your_call"));
             return;
         }
         if (score < 0 || score > 3 || (score > 0 && score <= maxScore)) {
-            reject(p, "叫分必须高于当前最高分");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.call_too_low"));
             return;
         }
         room.broadcast(new CallBroadcastS2C(p.name(), (byte) score, (byte) Math.max(maxScore, score)));
@@ -213,11 +214,11 @@ public class DdzGame {
                     // 全员托管/机器人且无人叫分：重发会陷入"不叫→重发"无限递归（栈溢出），
                     // 改为随机指定地主继续对局
                     int seat = random.nextInt(3);
-                    room.broadcast(new NoticeS2C("全员托管且无人叫分，随机指定地主"));
+                    room.broadcast(new NoticeS2C(Component.translatable("wifi_card_games.ddz.error.all_auto_random_landlord")));
                     becomeLandlord(seat, 1, 1);
                 } else {
                     // 三人均不叫：本局作废，重新发牌
-                    room.broadcast(new NoticeS2C("三人均未叫分，本局作废，重新发牌"));
+                    room.broadcast(new NoticeS2C(Component.translatable("wifi_card_games.ddz.error.no_call_restart")));
                     start();
                 }
                 return;
@@ -253,16 +254,16 @@ public class DdzGame {
             return;
         }
         if (phase != DdzGamePhase.ROBBING) {
-            reject(p, "现在不是抢地主阶段");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.not_robbing_phase"));
             return;
         }
         if (p.seat() != currentSeat) {
-            reject(p, "还没轮到你");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.not_your_turn"));
             return;
         }
         // 每位玩家最多表态一次；第一个抢地主的人（叫 3 分触发者）可抢两次
         if (robTurns[p.seat()] <= 0) {
-            reject(p, "你已经表态过了");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.already_robbed"));
             return;
         }
         robTurns[p.seat()]--;
@@ -307,11 +308,11 @@ public class DdzGame {
             return false;
         }
         if (phase != DdzGamePhase.PLAYING) {
-            reject(p, "现在不是出牌阶段");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.not_playing_phase"));
             return false;
         }
         if (p.seat() != currentSeat) {
-            reject(p, "还没轮到你出牌");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.not_your_play"));
             return false;
         }
         if (cards == null || cards.isEmpty()) {
@@ -322,11 +323,11 @@ public class DdzGame {
                 return true;
             }
             if (lastPlaySeat < 0) {
-                reject(p, "地主必须先出牌");
+                reject(p, Component.translatable("wifi_card_games.ddz.error.landlord_first"));
                 return false;
             }
             if (lastPlaySeat == p.seat()) {
-                reject(p, "轮到你自由出牌，不能不出");
+                reject(p, Component.translatable("wifi_card_games.ddz.error.free_lead_cannot_pass"));
                 return false;
             }
             doPass(p);
@@ -338,12 +339,12 @@ public class DdzGame {
             played.add(c.id());
         }
         if (played.size() != cards.size() || !p.hand().containsAll(cards)) {
-            reject(p, "出牌与手牌不符");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.cards_mismatch"));
             return false;
         }
         DdzPlayResult chosen = choosePlay(cards, lastPlay == null || lastPlaySeat == p.seat() ? null : lastPlay);
         if (chosen == null) {
-            reject(p, "牌型不合法或无法压过上家");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.invalid_play_type"));
             return false;
         }
         p.hand().removeAll(cards);        if (chosen.type.isBombLike()) {
@@ -368,7 +369,7 @@ public class DdzGame {
     /** 出牌阶段跳过（不出）：记 pass 数推进回合；两家连续不出时上家获得自由出牌权。 */
     private void doPass(DdzPlayer p) {
         passCount++;
-        addHistory(p.seat(), p.name(), "不出", "");
+        addHistory(p.seat(), p.name(), "wifi_card_games.ddz.card_type.pass", "");
         room.broadcast(new PassBroadcastS2C(p.name(), remainingCounts()));
         if (passCount >= 2) {
             passCount = 0;
@@ -436,19 +437,19 @@ public class DdzGame {
             return;
         }
         if (phase != DdzGamePhase.PLAYING) {
-            reject(p, "现在不能明牌");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.cannot_reveal_now"));
             return;
         }
         if (p.seat() != landlordSeat) {
-            reject(p, "只有地主可以明牌");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.reveal_landlord_only"));
             return;
         }
         if (revealed) {
-            reject(p, "本局已经明牌");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.already_revealed"));
             return;
         }
         if (lastPlaySeat >= 0) {
-            reject(p, "已出过牌，不能明牌");
+            reject(p, Component.translatable("wifi_card_games.ddz.error.played_no_reveal"));
             return;
         }
         revealed = true;
@@ -747,7 +748,7 @@ public class DdzGame {
         return null;
     }
 
-    private void reject(DdzPlayer p, String message) {
+    private void reject(DdzPlayer p, Component message) {
         room.sendToSeat(p.seat(), new NoticeS2C(message));
     }
 

@@ -15,21 +15,42 @@ public enum UnoValue {
     SEVEN("7"),
     EIGHT("8"),
     NINE("9"),
-    SKIP("跳过"),
-    REVERSE("反转"),
+    SKIP("wifi_card_games.uno.value.skip"),
+    REVERSE("wifi_card_games.uno.value.reverse"),
     DRAW2("+2"),
-    WILD("万能"),
-    WILD4("+4");
+    WILD("wifi_card_games.uno.value.wild"),
+    WILD4("wifi_card_games.uno.value.wild4");
 
-    private final String name;
+    private final String nameKey;
 
-    UnoValue(String name) {
-        this.name = name;
+    UnoValue(String nameKey) {
+        this.nameKey = nameKey;
     }
 
-    /** 牌面中央显示文字。 */
+    /** 牌面中央显示文字翻译键（数字为字面，展示时经 Component.translatable 解析）。 */
     public String displayName() {
-        return name;
+        return nameKey;
+    }
+
+    /** 卡片翻译键短名（wifi_card_games.uno.card.<color>_<value> 用）。 */
+    public String shortKey() {
+        return switch (this) {
+            case ZERO -> "0";
+            case ONE -> "1";
+            case TWO -> "2";
+            case THREE -> "3";
+            case FOUR -> "4";
+            case FIVE -> "5";
+            case SIX -> "6";
+            case SEVEN -> "7";
+            case EIGHT -> "8";
+            case NINE -> "9";
+            case SKIP -> "skip";
+            case REVERSE -> "reverse";
+            case DRAW2 -> "draw2";
+            case WILD -> "wild";
+            case WILD4 -> "wild4";
+        };
     }
 
     /** 是否为数字牌（0~9）。 */

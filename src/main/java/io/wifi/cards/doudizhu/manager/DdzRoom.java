@@ -121,7 +121,8 @@ public class DdzRoom extends Room {
         }
         String name = members[seat] != null ? members[seat].getGameProfile().getName() : "";
         members[seat] = null;
-        botNames[seat] = name.isEmpty() ? "机器人" : name + "（托管）";
+        // 座位名不再拼「（托管）」标记：客户端按 connected=false 自行附加翻译标记（见 DdzGameScreen.nameLine）
+        botNames[seat] = name.isEmpty() ? "Bot" : name;
     }
 
     /** 是否所有座位都是机器人（含退出游戏转机器人托管的座位），即房间内无在位真人。 */

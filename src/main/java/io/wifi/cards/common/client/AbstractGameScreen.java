@@ -47,8 +47,8 @@ public abstract class AbstractGameScreen extends Screen {
     /** 待打开聊天框（延迟到 tick 执行，避免同按键的字符事件被新聊天框接收）。 */
     private boolean openChatPending;
 
-    protected AbstractGameScreen(String title) {
-        super(Component.literal(title));
+    protected AbstractGameScreen(String titleKey) {
+        super(Component.translatable(titleKey));
     }
 
     @Override
@@ -94,8 +94,8 @@ public abstract class AbstractGameScreen extends Screen {
     /** 关闭对局界面提示（聊天栏重开提示，输入 /cardgames 或 /xxx 重新打开）。 */
     protected abstract void reopenHint();
 
-    /** 退出确认弹层第一行文案（按游戏/模式动态，如棋类围棋无托管）。 */
-    protected abstract String exitConfirmFirstLine();
+    /** 退出确认弹层第一行文案翻译键（按游戏/模式动态，如棋类围棋无托管）。 */
+    protected abstract String exitConfirmFirstLineKey();
 
     /** 窗口尺寸变化后的额外处理（如棋类重算棋盘变换）。 */
     protected void onScreenResized() {
@@ -191,9 +191,9 @@ public abstract class AbstractGameScreen extends Screen {
         }
     }
 
-    /** 操作按钮工厂（固定 90x20，可禁用）。 */
-    protected Button button(int x, int y, String label, Button.OnPress onPress, boolean active) {
-        Button b = Button.builder(Component.literal(label), onPress).bounds(x, y, 90, 20).build();
+    /** 操作按钮工厂（固定 90x20，可禁用）；label 为翻译键。 */
+    protected Button button(int x, int y, String labelKey, Button.OnPress onPress, boolean active) {
+        Button b = Button.builder(Component.translatable(labelKey), onPress).bounds(x, y, 90, 20).build();
         b.active = active;
         addRenderableWidget(b);
         return b;
@@ -201,13 +201,13 @@ public abstract class AbstractGameScreen extends Screen {
 
     /** 左下角"规则"子界面按钮（固定位置；打开动作由子类提供）。 */
     protected void addRulesButton(Runnable open) {
-        addRenderableWidget(Button.builder(Component.literal("规则"), b -> open.run())
+        addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.common.button.rules"), b -> open.run())
                 .bounds(8, height - 26, 60, 20).build());
     }
 
     /** 左下角"历史"子界面按钮（固定位置；打开动作由子类提供，通常先发 HistoryC2S）。 */
     protected void addHistoryButton(Runnable open) {
-        addRenderableWidget(Button.builder(Component.literal("历史"), b -> open.run())
+        addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.common.button.history"), b -> open.run())
                 .bounds(72, height - 26, 60, 20).build());
     }
 
@@ -218,8 +218,8 @@ public abstract class AbstractGameScreen extends Screen {
         int x0 = (width - w) / 2;
         int y0 = (height - h) / 2;
         g.fill(x0, y0, x0 + w, y0 + h, 0xE6000000); // 深色背景遮罩
-        g.drawCenteredString(this.font, exitConfirmFirstLine(), width / 2, y0 + 10, 0xFFFFD700);
-        g.drawCenteredString(this.font, "确定要退出游戏吗？", width / 2, y0 + 26, 0xFFFFFFFF);
+        g.drawCenteredString(this.font, Component.translatable(exitConfirmFirstLineKey()), width / 2, y0 + 10, 0xFFFFD700);
+        g.drawCenteredString(this.font, Component.translatable("wifi_card_games.common.confirm.exit_game"), width / 2, y0 + 26, 0xFFFFFFFF);
     }
 
     /**

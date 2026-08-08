@@ -13,6 +13,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
@@ -61,18 +62,19 @@ public final class UnoMemoryManager {
         // 先退出旁观状态（旁观者建房/入房自动退出旁观）
         leaveSpectateInternal(player);
         if (currentRoom(player) != null) {
-            error(player, "你已经在房间里了");
+            error(player, Component.translatable("wifi_card_games.uno.error.in_room"));
             return;
         }
         // 跨游戏防护：一个玩家同时只能在一个小游戏中（房间成员或旁观）
         GameInfo other = GameRegistry.busyInOtherGame(player, GameRegistry.GAME_UNO);
         if (other != null) {
-            error(player, "你正在【" + other.displayName() + "】中，请先退出该游戏再进入其他小游戏");
+            error(player, Component.translatable("wifi_card_games.common.error.busy_other_game",
+                    Component.translatable(other.displayName())));
             return;
         }
         // 防御：房间总数上限，防止恶意客户端洪泛创建房间耗尽内存
         if (rooms.size() >= MAX_ROOMS) {
-            error(player, "房间数量已达上限，请稍后再试");
+            error(player, Component.translatable("wifi_card_games.uno.error.too_many_rooms"));
             return;
         }
         UnoRoom room = new UnoRoom(generateCode(), announce);
@@ -87,18 +89,16 @@ public final class UnoMemoryManager {
         room.broadcastState();
         // 公布房间：全服聊天栏广播可点击加入消息
         if (announce && server != null) {
-            Component message = Component.literal("[UNO] " + player.getGameProfile().getName()
-                    + " 创建了房间 " + room.id)
-                    .append(Component.literal(" [点击加入]").withStyle(style -> style
-                            .withColor(ChatFormatting.GREEN)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames accept " + room.id))));
+            Component message = Component.translatable("wifi_card_games.uno.chat.room_created_broadcast",
+                            player.getGameProfile().getName(), room.id)
+                    .append(click(Component.translatable("wifi_card_games.common.click.join"),
+                            "/cardgames accept " + room.id));
             server.getPlayerList().broadcastSystemMessage(message, false);
         }
         // 无大厅 UI：直接提示房主房间已创建（可点击查看列表）
-        player.sendSystemMessage(Component.literal("已创建房间 " + room.id + "，等待玩家加入")
-                .append(Component.literal(" [房间列表]").withStyle(style -> style
-                        .withColor(ChatFormatting.GREEN)
-                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames rooms")))));
+        player.sendSystemMessage(Component.translatable("wifi_card_games.uno.chat.room_created", room.id)
+                .append(click(Component.translatable("wifi_card_games.common.click.room_list"),
+                        "/cardgames rooms")));
     }
 
     public void joinRoom(ServerPlayer player, String code) {
@@ -106,30 +106,31 @@ public final class UnoMemoryManager {
         leaveSpectateInternal(player);
         // 防御：房间码长度上限（完整码前缀-5位共 8 字符，杜绝超长输入）
         if (code == null || code.length() > 16) {
-            error(player, "房间码无效");
+            error(player, Component.translatable("wifi_card_games.uno.error.bad_code"));
             return;
         }
         UnoRoom room = rooms.get(fullCode(code));
         if (room == null) {
-            error(player, "房间不存在：" + code);
+            error(player, Component.translatable("wifi_card_games.uno.error.room_not_found", code));
             return;
         }
         if (currentRoom(player) != null) {
-            error(player, "你已经在房间里了");
+            error(player, Component.translatable("wifi_card_games.uno.error.in_room"));
             return;
         }
         // 跨游戏防护：其他小游戏有会话（成员或旁观）时拒绝加入
         GameInfo other = GameRegistry.busyInOtherGame(player, GameRegistry.GAME_UNO);
         if (other != null) {
-            error(player, "你正在【" + other.displayName() + "】中，请先退出该游戏再进入其他小游戏");
+            error(player, Component.translatable("wifi_card_games.common.error.busy_other_game",
+                    Component.translatable(other.displayName())));
             return;
         }
         if (room.isFull()) {
-            error(player, "房间已满");
+            error(player, Component.translatable("wifi_card_games.uno.error.room_full"));
             return;
         }
         if (room.phase() != UnoGamePhase.WAITING) {
-            error(player, "游戏已经开始，无法加入");
+            error(player, Component.translatable("wifi_card_games.uno.error.game_started"));
             return;
         }
         room.addPlayer(player);
@@ -141,24 +142,24 @@ public final class UnoMemoryManager {
     public void startGame(ServerPlayer player) {
         // 旁观者无权开始
         if (spectatorRoomIds.containsKey(player.getUUID())) {
-            error(player, "旁观者不能开始游戏");
+            error(player, Component.translatable("wifi_card_games.uno.error.spectator_no_start"));
             return;
         }
         UnoRoom room = currentRoom(player);
         if (room == null) {
-            error(player, "你不在任何房间里");
+            error(player, Component.translatable("wifi_card_games.uno.error.not_in_room"));
             return;
         }
         if (room.phase() != UnoGamePhase.WAITING) {
-            error(player, "游戏已经开始");
+            error(player, Component.translatable("wifi_card_games.uno.error.game_started_already"));
             return;
         }
         if (room.seatOf(player) != 0) {
-            error(player, "只有房主可以开始游戏");
+            error(player, Component.translatable("wifi_card_games.uno.error.host_only"));
             return;
         }
         if (room.size() < 2) {
-            error(player, "至少需要 2 名玩家才能开始（可创建房间时加入机器人）");
+            error(player, Component.translatable("wifi_card_games.uno.error.min_two_players"));
             return;
         }
         startGame(room);
@@ -180,7 +181,7 @@ public final class UnoMemoryManager {
         }
         UnoRoom room = currentRoom(player);
         if (room == null) {
-            error(player, "你不在任何房间里");
+            error(player, Component.translatable("wifi_card_games.uno.error.not_in_room"));
             return;
         }
         UnoGamePhase phase = room.phase();
@@ -200,10 +201,11 @@ public final class UnoMemoryManager {
         room.quitToBot(seat);
         playerRoomIds.remove(player.getUUID());
         room.game.setTrustSeat(seat, true); // 机器人托管代打（正轮到则立即行动）
-        ServerPlayNetworking.send(player, new RoomClosedS2C("你已退出游戏，座位由机器人托管"));
+        ServerPlayNetworking.send(player, new RoomClosedS2C(
+                Component.translatable("wifi_card_games.uno.error.quit_to_bot")));
         room.broadcastState();
         if (!room.hasRealPlayer()) {
-            destroyRoom(room, "房间内已无真人玩家，房间关闭");
+            destroyRoom(room, Component.translatable("wifi_card_games.uno.error.no_real_player"));
         }
     }
 
@@ -213,7 +215,7 @@ public final class UnoMemoryManager {
     public void nextGame(ServerPlayer player) {
         // 严格限制：旁观者无权开始新对局（新局只能由成员触发）
         if (spectatorRoomIds.containsKey(player.getUUID())) {
-            error(player, "旁观者不能开始新对局");
+            error(player, Component.translatable("wifi_card_games.uno.error.spectator_no_start_new"));
             return;
         }
         UnoRoom room = currentRoom(player);
@@ -234,7 +236,7 @@ public final class UnoMemoryManager {
     private UnoGame gameOfStrict(ServerPlayer player) {
         UnoGame game = gameOf(player);
         if (game == null && spectatorRoomIds.containsKey(player.getUUID())) {
-            error(player, "旁观者不能操作对局");
+            error(player, Component.translatable("wifi_card_games.uno.error.spectator_no_operate"));
         }
         return game;
     }
@@ -344,7 +346,8 @@ public final class UnoMemoryManager {
         UnoGamePhase phase = room.phase();
         if (phase == UnoGamePhase.WAITING) {
             // 等待中断线已按离开处理（会话已清除），理论不会到达；防御性兜底关闭房间
-            room.broadcast(new RoomClosedS2C(player.getGameProfile().getName() + " 重连发现旧房间，房间已关闭"));
+            room.broadcast(new RoomClosedS2C(Component.translatable(
+                    "wifi_card_games.uno.error.reconnect_old_room", player.getGameProfile().getName())));
             destroyRoomInternal(room);
             return;
         }
@@ -354,12 +357,14 @@ public final class UnoMemoryManager {
         int seat = room.replacePlayerByUuid(player.getUUID(), player);
         if (seat < 0) {
             // 找不到对应座位（理论不会发生）→ 防御性关闭房间
-            room.broadcast(new RoomClosedS2C(player.getGameProfile().getName() + " 重连失败，房间已关闭"));
+            room.broadcast(new RoomClosedS2C(Component.translatable(
+                    "wifi_card_games.uno.error.reconnect_failed", player.getGameProfile().getName())));
             destroyRoomInternal(room);
             return;
         }
         room.game.onPlayerReconnect(seat);
-        room.broadcast(new NoticeS2C(player.getGameProfile().getName() + " 已重连"));
+        room.broadcast(new NoticeS2C(Component.translatable(
+                    "wifi_card_games.uno.info.reconnected", player.getGameProfile().getName())));
         room.broadcastState();
         room.game.syncTo(seat);
     }
@@ -373,31 +378,31 @@ public final class UnoMemoryManager {
                 } catch (Throwable t) {
                     // 防御：单个房间状态机异常不得崩溃整个服务器——记录日志并关闭该房间
                     LOGGER.error("UNO 房间 {} tick 异常，房间已关闭", room.id, t);
-                    destroyRoom(room, "房间状态异常，已关闭");
+                    destroyRoom(room, Component.translatable("wifi_card_games.uno.error.room_broken"));
                     continue;
                 }
             }
             // 等待中的房间已无真人玩家（房主离开后只剩机器人）：无人能点击"开始游戏"，
             // 若不清理会形成永久僵尸房间——销毁
             if (room.phase() == UnoGamePhase.WAITING && !room.hasRealPlayer()) {
-                destroyRoom(room, "房间内已无真人玩家，房间关闭");
+                destroyRoom(room, Component.translatable("wifi_card_games.uno.error.no_real_player"));
                 continue;
             }
             // 全部座位为机器人（真人全部退出转托管，或开局即全机器人）：
             // 无在位真人游玩，结束本局并关闭房间。手动托管（座位仍为真人）不在此列。
             if (room.game != null && room.allBot()
                     && room.phase() != UnoGamePhase.WAITING && room.phase() != UnoGamePhase.SETTLED) {
-                destroyRoom(room, "房间内已无真人玩家，本局结束");
+                destroyRoom(room, Component.translatable("wifi_card_games.uno.error.all_bot_ended"));
                 continue;
             }
             if (room.game != null && room.allDisconnected()
                     && room.phase() != UnoGamePhase.WAITING && room.phase() != UnoGamePhase.SETTLED) {
-                destroyRoom(room, "所有玩家已离线，房间已解散");
+                destroyRoom(room, Component.translatable("wifi_card_games.uno.error.all_offline"));
                 continue;
             }
             if (room.phase() == UnoGamePhase.SETTLED && room.settledAtMillis > 0
                     && System.currentTimeMillis() - room.settledAtMillis > SETTLED_KEEP_MS) {
-                destroyRoom(room, "房间空闲过久，已解散");
+                destroyRoom(room, Component.translatable("wifi_card_games.uno.error.room_idle"));
             }
         }
     }
@@ -408,11 +413,11 @@ public final class UnoMemoryManager {
     public void addBots(ServerPlayer player, int count) {
         UnoRoom room = currentRoom(player);
         if (room == null) {
-            error(player, "你不在任何房间里，请先创建房间");
+            error(player, Component.translatable("wifi_card_games.uno.error.not_in_room_create"));
             return;
         }
         if (room.phase() != UnoGamePhase.WAITING) {
-            error(player, "只有等待中的房间可以添加假人");
+            error(player, Component.translatable("wifi_card_games.uno.error.bot_only_waiting"));
             return;
         }
         int canAdd = Math.min(Math.max(count, 1), UnoRoom.MAX_PLAYERS - room.size());
@@ -426,23 +431,23 @@ public final class UnoMemoryManager {
     public void removeBots(ServerPlayer player) {
         UnoRoom room = currentRoom(player);
         if (room == null) {
-            error(player, "你不在任何房间里");
+            error(player, Component.translatable("wifi_card_games.uno.error.not_in_room"));
             return;
         }
         if (room.botCount() == 0) {
-            error(player, "房间内没有假人");
+            error(player, Component.translatable("wifi_card_games.uno.error.no_bots"));
             return;
         }
         room.removeBots();
         if (room.phase() != UnoGamePhase.WAITING) {
             // 对局中移除假人：游戏实例持有开局时的座位快照，拆座会造成座位错位，
             // 直接结束本局并关闭房间（调试命令专用，对局中勿拆座）
-            destroyRoom(room, "调试假人已移除，房间关闭");
+            destroyRoom(room, Component.translatable("wifi_card_games.uno.error.bots_removed_closed"));
             return;
         }
         room.broadcastState();
         if (room.size() < 2) {
-            destroyRoom(room, "调试假人已移除，房间关闭");
+            destroyRoom(room, Component.translatable("wifi_card_games.uno.error.bots_removed_closed"));
         }
     }
 
@@ -460,13 +465,13 @@ public final class UnoMemoryManager {
         return rooms.get(fullCode(code));
     }
 
-    /** 删除指定房间（通知成员后销毁）；返回错误信息或 null。 */
-    public String deleteRoom(String code) {
+    /** 删除指定房间（通知成员后销毁）；返回错误消息组件或 null。 */
+    public Component deleteRoom(String code) {
         UnoRoom room = rooms.get(fullCode(code));
         if (room == null) {
-            return "房间不存在：" + code;
+            return Component.translatable("wifi_card_games.uno.error.room_not_found", code);
         }
-        room.broadcast(new RoomClosedS2C("管理员删除了房间"));
+        room.broadcast(new RoomClosedS2C(Component.translatable("wifi_card_games.uno.error.admin_deleted")));
         destroyRoomInternal(room);
         return null;
     }
@@ -475,7 +480,7 @@ public final class UnoMemoryManager {
     public int clearAllRooms() {
         int count = rooms.size();
         for (UnoRoom room : new ArrayList<>(rooms.values())) {
-            room.broadcast(new RoomClosedS2C("管理员清空了所有房间"));
+            room.broadcast(new RoomClosedS2C(Component.translatable("wifi_card_games.uno.error.admin_cleared")));
         }
         rooms.clear();
         playerRoomIds.clear();
@@ -485,29 +490,30 @@ public final class UnoMemoryManager {
 
     // ---------------- 旁观（对局开始后只读观看） ----------------
 
-    /** 请求旁观房间；返回错误信息或 null。 */
-    public String spectate(ServerPlayer player, String code) {
+    /** 请求旁观房间；返回错误消息组件或 null。 */
+    public Component spectate(ServerPlayer player, String code) {
         if (code == null || code.length() > 16) {
-            return "房间码无效";
+            return Component.translatable("wifi_card_games.uno.error.bad_code");
         }
         UnoRoom room = rooms.get(fullCode(code));
         if (room == null) {
-            return "房间不存在：" + code;
+            return Component.translatable("wifi_card_games.uno.error.room_not_found", code);
         }
         UnoGamePhase phase = room.phase();
         if (phase == UnoGamePhase.WAITING) {
-            return "游戏尚未开始，无法旁观";
+            return Component.translatable("wifi_card_games.uno.error.not_started");
         }
         if (phase == UnoGamePhase.SETTLED) {
-            return "本局已结束，无法旁观";
+            return Component.translatable("wifi_card_games.uno.error.game_settled");
         }
         if (currentRoom(player) != null) {
-            return "你已在房间中，无法旁观";
+            return Component.translatable("wifi_card_games.uno.error.in_room_no_spectate");
         }
         // 跨游戏防护：其他小游戏有会话（成员或旁观）时拒绝旁观
         GameInfo other = GameRegistry.busyInOtherGame(player, GameRegistry.GAME_UNO);
         if (other != null) {
-            return "你正在【" + other.displayName() + "】中，无法旁观其他小游戏";
+            return Component.translatable("wifi_card_games.common.error.busy_spectate",
+                    Component.translatable(other.displayName()));
         }
         String existing = spectatorRoomIds.get(player.getUUID());
         if (existing != null) {
@@ -517,7 +523,7 @@ public final class UnoMemoryManager {
                 room.game.syncToSpectator(player);
                 return null;
             }
-            return "你已在旁观其他房间";
+            return Component.translatable("wifi_card_games.uno.error.spectating_other");
         }
         room.addSpectator(player);
         spectatorRoomIds.put(player.getUUID(), room.id);
@@ -530,14 +536,15 @@ public final class UnoMemoryManager {
     public void leaveSpectate(ServerPlayer player) {
         String roomId = spectatorRoomIds.remove(player.getUUID());
         if (roomId == null) {
-            error(player, "你不在旁观任何房间");
+            error(player, Component.translatable("wifi_card_games.uno.error.not_spectating"));
             return;
         }
         UnoRoom room = rooms.get(roomId);
         if (room != null) {
             room.removeSpectator(player);
         }
-        ServerPlayNetworking.send(player, new RoomClosedS2C("已退出旁观"));
+        ServerPlayNetworking.send(player, new RoomClosedS2C(
+                Component.translatable("wifi_card_games.uno.info.left_spectate")));
     }
 
     /** 进入/加入房间前自动退出旁观（避免同时旁观与对局）。 */
@@ -554,28 +561,30 @@ public final class UnoMemoryManager {
     /**
      * 强制将指定玩家加入房间（调试用，无视客户端操作）。
      *
-     * @return 错误消息；null 表示成功
+     * @return 错误消息组件；null 表示成功
      */
-    public String forceJoin(ServerPlayer target, String roomCode) {
+    public Component forceJoin(ServerPlayer target, String roomCode) {
         // 先退出旁观状态（强制入房同样要求退出旁观）
         leaveSpectateInternal(target);
         UnoRoom room = rooms.get(fullCode(roomCode));
         if (room == null) {
-            return "房间不存在：" + roomCode;
+            return Component.translatable("wifi_card_games.uno.error.room_not_found", roomCode);
         }
         if (currentRoom(target) != null) {
-            return target.getGameProfile().getName() + " 已在其他房间";
+            return Component.translatable("wifi_card_games.uno.error.force_in_other_room",
+                    target.getGameProfile().getName());
         }
         // 跨游戏防护：强制入房同样要求退出其他小游戏
         GameInfo other = GameRegistry.busyInOtherGame(target, GameRegistry.GAME_UNO);
         if (other != null) {
-            return target.getGameProfile().getName() + " 正在【" + other.displayName() + "】中，无法强制加入";
+            return Component.translatable("wifi_card_games.common.error.force_join_busy",
+                    target.getGameProfile().getName(), Component.translatable(other.displayName()));
         }
         if (room.isFull()) {
-            return "房间已满";
+            return Component.translatable("wifi_card_games.uno.error.room_full");
         }
         if (room.phase() != UnoGamePhase.WAITING) {
-            return "游戏已经开始，无法加入";
+            return Component.translatable("wifi_card_games.uno.error.game_started");
         }
         room.addPlayer(target);
         playerRoomIds.put(target.getUUID(), room.id);
@@ -592,11 +601,11 @@ public final class UnoMemoryManager {
      */
     public void debugSpectatorUi(ServerPlayer player) {
         if (currentRoom(player) != null) {
-            error(player, "请先退出房间再使用旁观调试");
+            error(player, Component.translatable("wifi_card_games.uno.error.leave_room_first"));
             return;
         }
         if (spectatingRoomId(player) != null) {
-            error(player, "请先退出旁观再使用旁观调试");
+            error(player, Component.translatable("wifi_card_games.uno.error.leave_spectate_first"));
             return;
         }
         Random random = new Random();
@@ -605,7 +614,7 @@ public final class UnoMemoryManager {
         String[] names = new String[count];
         int[][] hands = new int[count][];
         for (int i = 0; i < count; i++) {
-            names[i] = "调试玩家" + (i + 1);
+            names[i] = "Debug" + (i + 1);
             List<UnoCard> deck = UnoDeck.create();
             Collections.shuffle(deck, random);
             int size;
@@ -649,10 +658,9 @@ public final class UnoMemoryManager {
         // 全服广播：房间已开始，其他玩家可点击旁观
         ServerPlayer host = room.members.get(0);
         if (host != null && host.getServer() != null) {
-            Component msg = Component.literal("[UNO] 房间 " + room.id + " 已开始，")
-                    .append(Component.literal("[点击旁观]").withStyle(style -> style
-                            .withColor(ChatFormatting.GREEN)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames spectate " + room.id))));
+            Component msg = Component.translatable("wifi_card_games.uno.chat.room_started", room.id)
+                    .append(click(Component.translatable("wifi_card_games.common.click.spectate"),
+                            "/cardgames spectate " + room.id));
             host.getServer().getPlayerList().broadcastSystemMessage(msg, false);
         }
     }
@@ -663,7 +671,7 @@ public final class UnoMemoryManager {
         playerRoomIds.remove(player.getUUID());
         if (room.size() < 2) {
             if (notifyOthers) {
-                room.broadcast(new RoomClosedS2C("有玩家离开，房间已解散"));
+                room.broadcast(new RoomClosedS2C(Component.translatable("wifi_card_games.uno.error.player_left")));
             }
             destroyRoomInternal(room);
         } else {
@@ -671,11 +679,11 @@ public final class UnoMemoryManager {
         }
         // 离开者本人回到大厅（空 reason 不弹提示）
         if (UnoRoom.isConnected(player)) {
-            ServerPlayNetworking.send(player, new RoomClosedS2C(""));
+            ServerPlayNetworking.send(player, new RoomClosedS2C(Component.empty()));
         }
     }
 
-    private void destroyRoom(UnoRoom room, String reason) {
+    private void destroyRoom(UnoRoom room, Component reason) {
         room.broadcast(new RoomClosedS2C(reason));
         destroyRoomInternal(room);
     }
@@ -750,9 +758,16 @@ public final class UnoMemoryManager {
         return room == null ? null : room.game;
     }
 
-    private static void error(ServerPlayer player, String message) {
+    private static void error(ServerPlayer player, Component message) {
         if (UnoRoom.isConnected(player)) {
             ServerPlayNetworking.send(player, new NoticeS2C(message));
         }
+    }
+
+    /** 可点击命令文本（绿色 + RUN_COMMAND）。 */
+    private static MutableComponent click(Component label, String command) {
+        return label.copy().withStyle(style -> style
+                .withColor(ChatFormatting.GREEN)
+                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command)));
     }
 }

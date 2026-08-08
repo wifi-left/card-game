@@ -1,252 +1,252 @@
 {
   "ddz_card_3": {
-    "subtitle": "斗地主：单张 3",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_3",
     "sounds": [
       "wifi_card_games:doudizhu/001_3"
     ]
   },
   "ddz_card_4": {
-    "subtitle": "斗地主：单张 4",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_4",
     "sounds": [
       "wifi_card_games:doudizhu/002_4"
     ]
   },
   "ddz_card_5": {
-    "subtitle": "斗地主：单张 5",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_5",
     "sounds": [
       "wifi_card_games:doudizhu/003_5"
     ]
   },
   "ddz_card_6": {
-    "subtitle": "斗地主：单张 6",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_6",
     "sounds": [
       "wifi_card_games:doudizhu/004_6"
     ]
   },
   "ddz_card_7": {
-    "subtitle": "斗地主：单张 7",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_7",
     "sounds": [
       "wifi_card_games:doudizhu/005_7"
     ]
   },
   "ddz_card_8": {
-    "subtitle": "斗地主：单张 8",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_8",
     "sounds": [
       "wifi_card_games:doudizhu/006_8"
     ]
   },
   "ddz_card_9": {
-    "subtitle": "斗地主：单张 9",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_9",
     "sounds": [
       "wifi_card_games:doudizhu/007_9"
     ]
   },
   "ddz_card_10": {
-    "subtitle": "斗地主：单张 10",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_10",
     "sounds": [
       "wifi_card_games:doudizhu/008_10"
     ]
   },
   "ddz_card_j": {
-    "subtitle": "斗地主：单张 J",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_j",
     "sounds": [
       "wifi_card_games:doudizhu/009_j"
     ]
   },
   "ddz_card_q": {
-    "subtitle": "斗地主：单张 Q",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_q",
     "sounds": [
       "wifi_card_games:doudizhu/010_q"
     ]
   },
   "ddz_card_k": {
-    "subtitle": "斗地主：单张 K",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_k",
     "sounds": [
       "wifi_card_games:doudizhu/011_k"
     ]
   },
   "ddz_card_a": {
-    "subtitle": "斗地主：单张 A",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_a",
     "sounds": [
       "wifi_card_games:doudizhu/012_a"
     ]
   },
   "ddz_card_2": {
-    "subtitle": "斗地主：单张 2",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_2",
     "sounds": [
       "wifi_card_games:doudizhu/013_2"
     ]
   },
   "ddz_card_sjoker": {
-    "subtitle": "斗地主：单张小王",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_sjoker",
     "sounds": [
       "wifi_card_games:doudizhu/014_small_king"
     ]
   },
   "ddz_card_bjoker": {
-    "subtitle": "斗地主：单张大王",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_bjoker",
     "sounds": [
       "wifi_card_games:doudizhu/015_big_king"
     ]
   },
   "ddz_card_flower": {
-    "subtitle": "斗地主：花牌",
+    "subtitle": "subtitles.wifi_card_games.ddz_card_flower",
     "sounds": [
       "wifi_card_games:doudizhu/016_flower"
     ]
   },
   "ddz_pair_3": {
-    "subtitle": "斗地主：对 3",
+    "subtitle": "subtitles.wifi_card_games.ddz_pair_3",
     "sounds": [
       "wifi_card_games:doudizhu/017_dui_3"
     ]
   },
   "ddz_pair_4": {
-    "subtitle": "斗地主：对 4",
+    "subtitle": "subtitles.wifi_card_games.ddz_pair_4",
     "sounds": [
       "wifi_card_games:doudizhu/018_dui_4"
     ]
   },
   "ddz_pair_5": {
-    "subtitle": "斗地主：对 5",
+    "subtitle": "subtitles.wifi_card_games.ddz_pair_5",
     "sounds": [
       "wifi_card_games:doudizhu/019_dui_5"
     ]
   },
   "ddz_pair_6": {
-    "subtitle": "斗地主：对 6",
+    "subtitle": "subtitles.wifi_card_games.ddz_pair_6",
     "sounds": [
       "wifi_card_games:doudizhu/020_dui_6"
     ]
   },
   "ddz_pair_7": {
-    "subtitle": "斗地主：对 7",
+    "subtitle": "subtitles.wifi_card_games.ddz_pair_7",
     "sounds": [
       "wifi_card_games:doudizhu/021_dui_7"
     ]
   },
   "ddz_pair_8": {
-    "subtitle": "斗地主：对 8",
+    "subtitle": "subtitles.wifi_card_games.ddz_pair_8",
     "sounds": [
       "wifi_card_games:doudizhu/022_dui_8"
     ]
   },
   "ddz_pair_9": {
-    "subtitle": "斗地主：对 9",
+    "subtitle": "subtitles.wifi_card_games.ddz_pair_9",
     "sounds": [
       "wifi_card_games:doudizhu/023_dui_9"
     ]
   },
   "ddz_pair_10": {
-    "subtitle": "斗地主：对 10",
+    "subtitle": "subtitles.wifi_card_games.ddz_pair_10",
     "sounds": [
       "wifi_card_games:doudizhu/024_dui_10"
     ]
   },
   "ddz_pair_j": {
-    "subtitle": "斗地主：对 J",
+    "subtitle": "subtitles.wifi_card_games.ddz_pair_j",
     "sounds": [
       "wifi_card_games:doudizhu/025_dui_j"
     ]
   },
   "ddz_pair_q": {
-    "subtitle": "斗地主：对 Q",
+    "subtitle": "subtitles.wifi_card_games.ddz_pair_q",
     "sounds": [
       "wifi_card_games:doudizhu/026_dui_q"
     ]
   },
   "ddz_pair_k": {
-    "subtitle": "斗地主：对 K",
+    "subtitle": "subtitles.wifi_card_games.ddz_pair_k",
     "sounds": [
       "wifi_card_games:doudizhu/027_dui_k"
     ]
   },
   "ddz_pair_a": {
-    "subtitle": "斗地主：对 A",
+    "subtitle": "subtitles.wifi_card_games.ddz_pair_a",
     "sounds": [
       "wifi_card_games:doudizhu/028_dui_a"
     ]
   },
   "ddz_pair_2": {
-    "subtitle": "斗地主：对 2",
+    "subtitle": "subtitles.wifi_card_games.ddz_pair_2",
     "sounds": [
       "wifi_card_games:doudizhu/029_dui_2"
     ]
   },
   "ddz_type_triple": {
-    "subtitle": "斗地主：三张",
+    "subtitle": "subtitles.wifi_card_games.ddz_type_triple",
     "sounds": [
       "wifi_card_games:doudizhu/030_three"
     ]
   },
   "ddz_type_triple_one": {
-    "subtitle": "斗地主：三带一",
+    "subtitle": "subtitles.wifi_card_games.ddz_type_triple_one",
     "sounds": [
       "wifi_card_games:doudizhu/031_three_with_one"
     ]
   },
   "ddz_type_triple_pair": {
-    "subtitle": "斗地主：三带二",
+    "subtitle": "subtitles.wifi_card_games.ddz_type_triple_pair",
     "sounds": [
       "wifi_card_games:doudizhu/032_three_with_two"
     ]
   },
   "ddz_type_straight": {
-    "subtitle": "斗地主：顺子",
+    "subtitle": "subtitles.wifi_card_games.ddz_type_straight",
     "sounds": [
       "wifi_card_games:doudizhu/033_shunzi"
     ]
   },
   "ddz_type_double_straight": {
-    "subtitle": "斗地主：连对",
+    "subtitle": "subtitles.wifi_card_games.ddz_type_double_straight",
     "sounds": [
       "wifi_card_games:doudizhu/034_liandui"
     ]
   },
   "ddz_type_plane": {
-    "subtitle": "斗地主：飞机",
+    "subtitle": "subtitles.wifi_card_games.ddz_type_plane",
     "sounds": [
       "wifi_card_games:doudizhu/035_feiji"
     ]
   },
   "ddz_type_plane_one": {
-    "subtitle": "斗地主：飞机带翅膀",
+    "subtitle": "subtitles.wifi_card_games.ddz_type_plane_one",
     "sounds": [
       "wifi_card_games:doudizhu/036_feijidaichibang"
     ]
   },
   "ddz_type_plane_pair": {
-    "subtitle": "斗地主：飞机带对",
+    "subtitle": "subtitles.wifi_card_games.ddz_type_plane_pair",
     "sounds": [
       "wifi_card_games:doudizhu/037_feijidaidui"
     ]
   },
   "ddz_type_four_two": {
-    "subtitle": "斗地主：四带二",
+    "subtitle": "subtitles.wifi_card_games.ddz_type_four_two",
     "sounds": [
       "wifi_card_games:doudizhu/038_sidaier"
     ]
   },
   "ddz_type_four_two_pairs": {
-    "subtitle": "斗地主：四带两对",
+    "subtitle": "subtitles.wifi_card_games.ddz_type_four_two_pairs",
     "sounds": [
       "wifi_card_games:doudizhu/039_sidailiangdui"
     ]
   },
   "ddz_type_bomb": {
-    "subtitle": "斗地主：炸弹",
+    "subtitle": "subtitles.wifi_card_games.ddz_type_bomb",
     "sounds": [
       "wifi_card_games:doudizhu/040_zhadan"
     ]
   },
   "ddz_type_rocket": {
-    "subtitle": "斗地主：王炸",
+    "subtitle": "subtitles.wifi_card_games.ddz_type_rocket",
     "sounds": [
       "wifi_card_games:doudizhu/041_wangzha"
     ]
   },
   "ddz_type_pass": {
-    "subtitle": "斗地主：不出",
+    "subtitle": "subtitles.wifi_card_games.ddz_type_pass",
     "sounds": [
       "wifi_card_games:doudizhu/042_buchu",
       "wifi_card_games:doudizhu/043_guo",
@@ -255,34 +255,34 @@
     ]
   },
   "ddz_call_1": {
-    "subtitle": "斗地主：叫一分",
+    "subtitle": "subtitles.wifi_card_games.ddz_call_1",
     "sounds": [
       "wifi_card_games:doudizhu/046_yifen",
       "wifi_card_games:doudizhu/047_jiaoyifen"
     ]
   },
   "ddz_call_2": {
-    "subtitle": "斗地主：叫二分",
+    "subtitle": "subtitles.wifi_card_games.ddz_call_2",
     "sounds": [
       "wifi_card_games:doudizhu/048_liangfen",
       "wifi_card_games:doudizhu/049_jiaoliangfen"
     ]
   },
   "ddz_call_3": {
-    "subtitle": "斗地主：叫三分",
+    "subtitle": "subtitles.wifi_card_games.ddz_call_3",
     "sounds": [
       "wifi_card_games:doudizhu/050_sanfen",
       "wifi_card_games:doudizhu/051_jiaosanfen"
     ]
   },
   "ddz_rob": {
-    "subtitle": "斗地主：抢地主",
+    "subtitle": "subtitles.wifi_card_games.ddz_rob",
     "sounds": [
       "wifi_card_games:doudizhu/052_qiangdizhu"
     ]
   },
   "ddz_bgm": {
-    "subtitle": "斗地主：背景音乐",
+    "subtitle": "subtitles.wifi_card_games.ddz_bgm",
     "sounds": [
       {
         "name": "wifi_card_games:doudizhu/bgm",
@@ -291,13 +291,13 @@
     ]
   },
   "uno_uno": {
-    "subtitle": "UNO：喊 UNO",
+    "subtitle": "subtitles.wifi_card_games.uno_uno",
     "sounds": [
       "wifi_card_games:uno/001_uno"
     ]
   },
   "uno_catch": {
-    "subtitle": "UNO：罚两张",
+    "subtitle": "subtitles.wifi_card_games.uno_catch",
     "sounds": [
       "wifi_card_games:uno/002_penalty"
     ]

@@ -26,6 +26,8 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.sounds.SoundEvents;
 
 import java.util.ArrayList;
@@ -76,7 +78,7 @@ public final class UnoClientState implements GameClientSession {
 
     // ---- 大厅房间列表 ----
     /** 中央事件提示行（最新一条）。 */
-    public String lastEvent = "";
+    public Component lastEvent = Component.empty();
     /** 服务端拒绝了最近一次出牌（GameScreen 消费后清空选中）。 */
     public boolean playRejected;
     /** 一条事件历史（历史界面文本行：玩家名 + 事件描述）。 */
@@ -227,7 +229,7 @@ public final class UnoClientState implements GameClientSession {
         this.declaredUno = new boolean[payload.remainingCounts().length];
         this.spectatorHands.clear(); // 新局/入房：清空旁观透视快照（防残留旧局数据）
         this.historyLines.clear(); // 新局：历史随服务端重建（打开历史界面时重新请求）
-        this.lastEvent = "游戏开始！";
+        this.lastEvent = Component.translatable("wifi_card_games.uno.event.game_start");
         Minecraft mc = Minecraft.getInstance();
         if (!(mc.screen instanceof UnoGameScreen)) {
             mc.setScreen(new UnoGameScreen());
@@ -255,7 +257,7 @@ public final class UnoClientState implements GameClientSession {
         this.myTrust = false; // 服务端随后补发 TrustStateS2C 修正
         this.winnerSeat = payload.winnerSeat();
         this.winnerName = payload.winnerName();
-        this.lastEvent = "";
+        this.lastEvent = Component.empty();
         this.historyLines.clear(); // 历史以快照为准不沿用旧局残留（打开历史界面时重新请求）
         Minecraft mc = Minecraft.getInstance();
         if (phase == UnoGamePhase.SETTLED) {
@@ -287,9 +289,14 @@ public final class UnoClientState implements GameClientSession {
             hand.removeIf(c -> c.id() == payload.cardId());
             this.drawnPlayable = false;
         }
-        String cardName = topCard.display();
-        this.lastEvent = payload.playerName() + " 打出 " + cardName
-                + (topCard.isWild() ? "（选" + topColor.displayName() + "）" : "");
+        this.lastEvent = Component.literal(payload.playerName())
+                .append(Component.translatable("wifi_card_games.uno.event.played",
+                        Component.translatable(topCard.display())));
+        if (topCard.isWild()) {
+            this.lastEvent = this.lastEvent.copy().append(
+                    Component.translatable("wifi_card_games.uno.event.color_pick",
+                            Component.translatable(topColor.displayName())));
+        }
         // 音效：打出（本人按键声，他人轻微提示音）
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
@@ -309,10 +316,10 @@ public final class UnoClientState implements GameClientSession {
             unoCatchable[mySeat] = false;
         }
         if (payload.cardIds().length == 1) {
-            String cardName = UnoCard.byId(payload.cardIds()[0]).display();
+            Component cardName = Component.translatable(UnoCard.byId(payload.cardIds()[0]).display());
             this.lastEvent = payload.playable()
-                    ? "抽到了 " + cardName + "，可以打出或跳过"
-                    : "抽到了 " + cardName + "，不能打出";
+                    ? Component.translatable("wifi_card_games.uno.event.draw_playable", cardName)
+                    : Component.translatable("wifi_card_games.uno.event.draw_not_playable", cardName);
         }
     }
 
@@ -324,7 +331,8 @@ public final class UnoClientState implements GameClientSession {
                 && remaining[payload.seat()] != 1) {
             unoCatchable[payload.seat()] = false;
         }
-        this.lastEvent = nameOf(payload.seat()) + " 抽了一张牌";
+        this.lastEvent = Component.literal(nameOf(payload.seat()))
+                .append(Component.translatable("wifi_card_games.uno.event.drew"));
     }
 
     /** 罚牌广播（+2/+4）：目标被罚抽并跳过。 */
@@ -335,7 +343,8 @@ public final class UnoClientState implements GameClientSession {
                 && remaining[payload.seat()] != 1) {
             unoCatchable[payload.seat()] = false;
         }
-        this.lastEvent = nameOf(payload.seat()) + " 被罚抽 " + payload.count() + " 张并跳过";
+        this.lastEvent = Component.literal(nameOf(payload.seat()))
+                .append(Component.translatable("wifi_card_games.uno.event.penalty", payload.count()));
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
             mc.player.playSound(SoundEvents.NOTE_BLOCK_BASS.value(), 0.8F, 1.0F);
@@ -347,7 +356,8 @@ public final class UnoClientState implements GameClientSession {
         if (payload.seat() == mySeat) {
             this.drawnPlayable = false;
         }
-        this.lastEvent = nameOf(payload.seat()) + " 跳过";
+        this.lastEvent = Component.literal(nameOf(payload.seat()))
+                .append(Component.translatable("wifi_card_games.uno.event.skipped"));
     }
 
     public void onTurn(TurnS2C payload) {
@@ -373,7 +383,8 @@ public final class UnoClientState implements GameClientSession {
         if (payload.seat() >= 0 && payload.seat() < declaredUno.length) {
             declaredUno[payload.seat()] = true;
         }
-        this.lastEvent = nameOf(payload.seat()) + " 喊了 UNO！";
+        this.lastEvent = Component.literal(nameOf(payload.seat()))
+                .append(Component.translatable("wifi_card_games.uno.event.declared_uno"));
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
             mc.player.playSound(SoundEvents.EXPERIENCE_ORB_PICKUP, 0.8F, 1.0F);
@@ -390,8 +401,10 @@ public final class UnoClientState implements GameClientSession {
         }
         this.remaining = toIntArray(payload.remainingCounts());
         this.lastEvent = payload.catcherSeat() >= 0
-                ? nameOf(payload.catcherSeat()) + " 抓住了 " + nameOf(payload.targetSeat()) + " 没喊 UNO，罚 2 张！"
-                : nameOf(payload.targetSeat()) + " 没喊 UNO，被自动罚 2 张！";
+                ? Component.literal(nameOf(payload.catcherSeat()))
+                        .append(Component.translatable("wifi_card_games.uno.event.caught", nameOf(payload.targetSeat())))
+                : Component.literal(nameOf(payload.targetSeat()))
+                        .append(Component.translatable("wifi_card_games.uno.event.auto_caught"));
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
             mc.player.playSound(SoundEvents.NOTE_BLOCK_BASS.value(), 1.0F, 0.5F);
@@ -415,9 +428,9 @@ public final class UnoClientState implements GameClientSession {
         }
     }
 
-    public void onRoomClosed(String reason) {
+    public void onRoomClosed(Component reason) {
         reset();
-        if (reason != null && !reason.isEmpty()) {
+        if (reason != null && !reason.getString().isEmpty()) {
             chat(reason);
         }
         // 仅当玩家正处在本游戏相关界面（大厅/牌局/结算/规则/聊天）时回大厅；
@@ -433,14 +446,16 @@ public final class UnoClientState implements GameClientSession {
         }
     }
 
-    public void onNotice(String message) {
-        if (message.contains("这张牌不能打") || message.contains("你手里没有这张牌")) {
+    public void onNotice(Component message) {
+        if (isKey(message, "wifi_card_games.uno.error.card_cannot_play")
+                || isKey(message, "wifi_card_games.uno.error.not_have_card")) {
             playRejected = true;
         }
         chat(message);
         // 状态自愈：服务端查无本玩家的房间/旁观记录（如断线重进后本地残留旁观 UI，
         // 而服务端已清理旁观关系或房间已销毁）→ 强制回大厅，避免卡死在旁观界面
-        if (inRoom() && (message.contains("你不在任何房间里") || message.contains("你不在旁观任何房间"))) {
+        if (inRoom() && (isKey(message, "wifi_card_games.uno.error.not_in_room")
+                || isKey(message, "wifi_card_games.uno.error.not_spectating"))) {
             reset();
             Minecraft mc = Minecraft.getInstance();
             // 仅当正处在本游戏相关界面时回大厅（避免从菜单/HUD 弹回）
@@ -473,7 +488,7 @@ public final class UnoClientState implements GameClientSession {
     public void onDebugSpectator(DebugSpectatorS2C payload) {
         reset();
         this.debugView = true;
-        this.roomCode = "调试";
+        this.roomCode = "DEBUG"; // 调试旁观标记（非真实房间码）
         this.mySeat = -1;
         this.phase = UnoGamePhase.PLAYING;
         names.clear();
@@ -501,7 +516,7 @@ public final class UnoClientState implements GameClientSession {
         this.turnEndGameTime = 0; // 调试数据无倒计时
         this.unoCatchable = copyBooleans(payload.unoCatchable());
         this.declaredUno = copyBooleans(payload.declaredUno());
-        this.lastEvent = "（调试）虚拟旁观数据，非真实对局";
+        this.lastEvent = Component.translatable("wifi_card_games.uno.debug.event_hint");
         Minecraft mc = Minecraft.getInstance();
         mc.setScreen(new UnoGameScreen());
     }
@@ -519,10 +534,11 @@ public final class UnoClientState implements GameClientSession {
     }
 
     /** 显示一条消息到聊天栏。 */
-    public static void chat(String message) {
+    public static void chat(Component message) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
-            mc.gui.getChat().addMessage(Component.literal("[UNO] " + message));
+            mc.gui.getChat().addMessage(Component.translatable("wifi_card_games.uno.chat.prefix")
+                    .copy().append(message));
         }
     }
 
@@ -530,16 +546,21 @@ public final class UnoClientState implements GameClientSession {
      * 关闭界面提示：输入命令或点击可点击文本重新打开。
      * 例：已关闭大厅，输入 /uno 或点击 [/uno] 重新打开
      */
-    public static void chatReopenHint(String closedDesc) {
+    public static void chatReopenHint(Component closedDesc) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) {
             return;
         }
-        mc.gui.getChat().addMessage(Component.literal("[UNO] 已" + closedDesc + "，输入 /uno 或 ")
-                .append(Component.literal("[点击此处]").withStyle(style -> style
+        mc.gui.getChat().addMessage(Component.translatable("wifi_card_games.uno.chat.reopen_closed", closedDesc)
+                .append(Component.translatable("wifi_card_games.uno.chat.reopen_click").withStyle(style -> style
                         .withColor(ChatFormatting.GREEN)
                         .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/uno"))))
-                .append(Component.literal(" 重新打开")));
+                .append(Component.translatable("wifi_card_games.uno.chat.reopen_suffix")));
+    }
+
+    /** 消息是否为指定翻译键（服务端发来的消息为未解析的 translatable 组件）。 */
+    private static boolean isKey(Component message, String key) {
+        return message.getContents() instanceof TranslatableContents tc && key.equals(tc.getKey());
     }
 
     /** 清空全部本地状态（离开服务器/世界时调用，避免房间缓存残留影响下次进入）。 */
@@ -567,7 +588,7 @@ public final class UnoClientState implements GameClientSession {
         declaredUno = new boolean[0];
         myTrust = false;
         spectatorHands.clear();
-        lastEvent = "";
+        lastEvent = Component.empty();
         playRejected = false;
         historyLines.clear();
         winnerSeat = -1;

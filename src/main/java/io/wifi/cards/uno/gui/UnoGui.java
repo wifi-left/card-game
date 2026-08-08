@@ -6,6 +6,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 
 /** GUI 绘制小工具（纯客户端）。 */
 public final class UnoGui {
@@ -13,12 +14,12 @@ public final class UnoGui {
     }
 
     /** 在 [0, screenWidth] 范围内居中绘制带阴影文本（阴影提升可读性）。 */
-    public static void centeredShadow(GuiGraphics g, Font font, int screenWidth, String text, int y, int color) {
+    public static void centeredShadow(GuiGraphics g, Font font, int screenWidth, Component text, int y, int color) {
         g.drawString(font, text, (screenWidth - font.width(text)) / 2, y, color, true);
     }
 
     /** 以 centerX 为屏幕中点居中绘制带阴影文本（用于非全宽区域，如中央信息面板）。 */
-    public static void centeredShadowAt(GuiGraphics g, Font font, int centerX, String text, int y, int color) {
+    public static void centeredShadowAt(GuiGraphics g, Font font, int centerX, Component text, int y, int color) {
         int x = centerX - font.width(text) / 2;
         g.drawString(font, text, Math.max(0, x), y, color, true);
     }
@@ -82,11 +83,11 @@ public final class UnoGui {
         int color = textColor(card);
         if (!card.isWild() && w >= 22) {
             // 左上角颜色字（小尺寸牌省略，只保留中央值）
-            g.drawString(font, card.color().symbol(), x + 2, y + 2, color, false);
+            g.drawString(font, Component.translatable(card.color().symbol()), x + 2, y + 2, color, false);
         }
-        String value = card.value().displayName();
+        Component value = Component.translatable(card.value().displayName());
         // 中央牌面值（长文字自动截断防溢出）
-        value = font.plainSubstrByWidth(value, Math.max(4, w - 2));
+        value = (Component) font.substrByWidth(value, Math.max(4, w - 2));
         g.drawString(font, value, x + (w - font.width(value)) / 2, y + (h - font.lineHeight) / 2, color, false);
     }
 

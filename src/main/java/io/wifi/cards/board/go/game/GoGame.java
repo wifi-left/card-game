@@ -8,6 +8,7 @@ import io.wifi.cards.board.network.BoardPackets.GameStartS2C;
 import io.wifi.cards.board.network.BoardPackets.MoveBroadcastS2C;
 import io.wifi.cards.board.network.BoardPackets.NoticeS2C;
 import io.wifi.cards.board.network.BoardPackets.PassBroadcastS2C;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Arrays;
@@ -50,7 +51,7 @@ public class GoGame extends BoardGame {
         lastCapturedY = -1;
         passCount = 0;
         skipCount = 0;
-        lastAction = "游戏开始，黑方先手";
+        lastAction = "wifi_card_games.board.lastaction.game_start";
         room.broadcast(new GameStartS2C(board, (byte) 0));
         turn(0);
     }
@@ -62,7 +63,7 @@ public class GoGame extends BoardGame {
         }
         int seat = seatOf(player);
         if (seat != currentSeat) {
-            reject(seat, "还没轮到你落子");
+            reject(seat, Component.translatable("wifi_card_games.board.error.not_your_move"));
             return;
         }
         // 落子前快照：单提时据此定位被提子位置（劫判定用）
@@ -70,7 +71,7 @@ public class GoGame extends BoardGame {
         int captured = GoRules.applyMove(board, size, x, y, colorOf(seat),
                 lastCapturedX, lastCapturedY);
         if (captured < 0) {
-            reject(seat, "该位置不能落子（占位/禁自杀/劫争）");
+            reject(seat, Component.translatable("wifi_card_games.board.error.go_invalid_move"));
             return;
         }
         if (captured == 1) {
@@ -88,8 +89,8 @@ public class GoGame extends BoardGame {
         }
         passCount = 0; // 落子重置连续停手
         skipCount = 0; // 落子重置连续跳过
-        lastAction = room.seatName(seat) + " 落子 (" + x + "," + y + ")"
-                + (captured > 0 ? "，提子 " + captured + " 颗" : "");
+        lastAction = "wifi_card_games.board.lastaction.go_moved|" + room.seatName(seat) + "|" + x + "|" + y
+                + (captured > 0 ? "|" + captured : "|0");
         room.broadcast(new MoveBroadcastS2C((byte) seat, (byte) x, (byte) y, board));
         turn(1 - seat);
     }
@@ -101,15 +102,15 @@ public class GoGame extends BoardGame {
         }
         int seat = seatOf(player);
         if (seat != currentSeat) {
-            reject(seat, "还没轮到你");
+            reject(seat, Component.translatable("wifi_card_games.board.error.not_your_turn"));
             return;
         }
         passCount++;
-        lastAction = room.seatName(seat) + " 停一手";
+        lastAction = "wifi_card_games.board.lastaction.passed|" + room.seatName(seat);
         room.broadcast(new PassBroadcastS2C((byte) seat, room.seatName(seat)));
         if (passCount >= 2) {
             // 双方连续停手：终局数子
-            finishByScore("双方连续停手");
+            finishByScore("wifi_card_games.board.reason.double_pass");
             return;
         }
         turn(1 - seat);
@@ -122,8 +123,8 @@ public class GoGame extends BoardGame {
             return;
         }
         byte winner = (byte) (1 - seat);
-        lastAction = room.seatName(seat) + " 退出游戏";
-        settle(winner, boardScore((byte) 1), boardScore((byte) 2), "退出");
+        lastAction = "wifi_card_games.board.lastaction.quit|" + room.seatName(seat);
+        settle(winner, boardScore((byte) 1), boardScore((byte) 2), "wifi_card_games.board.reason.quit");
     }
 
     /** 超时未落子/挂机座位：直接跳过轮到对方；连续 {@value #MAX_SKIP} 手无人落子则数子终局。 */
@@ -131,12 +132,13 @@ public class GoGame extends BoardGame {
     protected void autoAct(int seat) {
         skipCount++;
         if (skipCount >= MAX_SKIP) {
-            finishByScore("双方连续 " + MAX_SKIP + " 手未落子");
+            finishByScore("wifi_card_games.board.reason.timeout_end");
             return;
         }
         String name = room.seatName(seat);
-        lastAction = name + " 超时，跳过";
-        room.broadcast(new NoticeS2C(name + " 超时未落子，跳过"));
+        lastAction = "wifi_card_games.board.lastaction.timeout|" + name;
+        room.broadcast(new NoticeS2C(Component.translatable(
+                    "wifi_card_games.board.info.timeout_skip", name)));
         turn(1 - seat);
     }
 
@@ -146,7 +148,7 @@ public class GoGame extends BoardGame {
     private void finishByScore(String reason) {
         int[] score = GoRules.countScore(board.clone(), size);
         byte win = (byte) GoRules.winner(size, score[0], score[1]);
-        lastAction = "终局：黑 " + score[0] + " · 白 " + score[1] + "（黑贴 " + GoRules.KOMI + " 子）";
+        lastAction = "wifi_card_games.board.lastaction.go_end|" + score[0] + "|" + score[1] + "|" + GoRules.KOMI;
         settle(win, score[0], score[1], reason);
     }
 }

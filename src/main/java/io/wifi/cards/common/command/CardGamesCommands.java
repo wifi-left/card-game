@@ -123,7 +123,8 @@ public final class CardGamesCommands {
         ServerPlayer player = source.getPlayerOrException();
         GameInfo info = GameRegistry.byId(gameId);
         if (info == null) {
-            source.sendFailure(Component.literal("未知的游戏：" + gameId + "，可用：" + GameRegistry.gameIdsText()));
+            source.sendFailure(Component.translatable("wifi_card_games.common.error.unknown_game_avail",
+                    gameId, GameRegistry.gameIdsText()));
             return 0;
         }
         info.opener().accept(player);
@@ -135,7 +136,8 @@ public final class CardGamesCommands {
         ServerPlayer player = source.getPlayerOrException();
         GameInfo info = GameRegistry.gameOfCode(code);
         if (info == null) {
-            source.sendFailure(Component.literal("房间码无效：请使用完整房间码（如 " + GameRegistry.exampleCode() + "）"));
+            source.sendFailure(Component.translatable("wifi_card_games.common.error.bad_code",
+                    GameRegistry.exampleCode()));
             return 0;
         }
         info.joiner().accept(player, code);
@@ -147,16 +149,17 @@ public final class CardGamesCommands {
         ServerPlayer player = source.getPlayerOrException();
         GameInfo info = GameRegistry.gameOfCode(code);
         if (info == null) {
-            source.sendFailure(Component.literal("房间码无效：请使用完整房间码（如 " + GameRegistry.exampleCode() + "）"));
+            source.sendFailure(Component.translatable("wifi_card_games.common.error.bad_code",
+                    GameRegistry.exampleCode()));
             return 0;
         }
-        String error = info.spectater().apply(player, code);
+        Component error = info.spectater().apply(player, code);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("正在旁观" + info.displayName() + "房间 " + code.toUpperCase()
-                + "，输入 /cardgames leave 退出旁观"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.common.info.spectating",
+                Component.translatable(info.displayName()), code.toUpperCase()), false);
         return 1;
     }
 
@@ -165,11 +168,12 @@ public final class CardGamesCommands {
         ServerPlayer player = source.getPlayerOrException();
         GameInfo session = GameRegistry.currentGame(player);
         if (session == null) {
-            source.sendFailure(Component.literal("你不在任何小游戏的房间/旁观中"));
+            source.sendFailure(Component.translatable("wifi_card_games.common.error.not_in_any_game"));
             return 0;
         }
         session.leaver().accept(player);
-        source.sendSuccess(() -> Component.literal("已退出" + session.displayName()), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.common.info.left_game",
+                Component.translatable(session.displayName())), false);
         return 1;
     }
 
@@ -178,30 +182,29 @@ public final class CardGamesCommands {
         ServerPlayer owner = source.getPlayerOrException();
         GameInfo session = GameRegistry.currentGame(owner);
         if (session == null) {
-            source.sendFailure(Component.literal("你不在任何房间里，请先创建房间"));
+            source.sendFailure(Component.translatable("wifi_card_games.common.error.no_room_create_first"));
             return 0;
         }
-        String error = session.inviter().apply(owner, target);
+        Component error = session.inviter().apply(owner, target);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("已向 " + target.getGameProfile().getName() + " 发送邀请"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.common.info.invite_sent",
+                target.getGameProfile().getName()), false);
         return 1;
     }
 
     /** 聊天列出各游戏与房间/在线统计：/cardgames list。 */
     private static int list(CommandSourceStack source) throws CommandSyntaxException {
-        source.sendSuccess(() -> Component.literal("小游戏列表："), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.common.list.title"), false);
         for (GameInfo info : GameRegistry.all()) {
             final GameInfo f = info;
-            source.sendSuccess(() -> Component.literal("· [" + f.iconText() + "] " + f.displayName()
-                    + "（房间码前缀 " + f.prefix() + "-XXXXX）：房间 " + f.roomCount().getAsInt()
-                    + " · 在线 " + f.playerCount().getAsInt() + " ")
-                    .append(Component.literal("[打开]").withStyle(style -> style
-                            .withColor(ChatFormatting.GREEN)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                                    "/cardgames open " + f.gameId())))), false);
+            source.sendSuccess(() -> Component.translatable("wifi_card_games.common.list.line",
+                            Component.translatable(f.iconText()), Component.translatable(f.displayName()),
+                            f.prefix(), f.roomCount().getAsInt(), f.playerCount().getAsInt())
+                    .append(click("wifi_card_games.common.list.open", "/cardgames open " + f.gameId(),
+                            ChatFormatting.GREEN)), false);
         }
         return 1;
     }
@@ -239,28 +242,31 @@ public final class CardGamesCommands {
         int to = Math.min(all.size(), from + ROOMS_PAGE_SIZE);
         List<Component> lines = new ArrayList<>();
         // header：指定游戏时显示游戏名
-        String scopeName = gameId != null
-                ? GameRegistry.byId(gameId) != null ? GameRegistry.byId(gameId).displayName() : gameId
-                : "小游戏";
-        lines.add(Component.literal("=== " + scopeName + "房间（共 " + all.size() + " 个 · 第 "
-                + p + "/" + totalPages + " 页）==="));
+        Component scopeName = gameId != null
+                ? GameRegistry.byId(gameId) != null
+                    ? Component.translatable(GameRegistry.byId(gameId).displayName()) : Component.literal(gameId)
+                : Component.translatable("wifi_card_games.common.rooms.all");
+        lines.add(Component.translatable("wifi_card_games.common.rooms.header",
+                scopeName, all.size(), p, totalPages));
         if (all.isEmpty()) {
-            lines.add(Component.literal("暂无房间，进入大厅点击创建房间"));
+            lines.add(Component.translatable("wifi_card_games.common.rooms.empty"));
             return lines;
         }
         for (int i = from; i < to; i++) {
             RoomBrief b = all.get(i);
-            MutableComponent line = Component.literal("· " + b.code() + " " + b.line() + "  ");
+            MutableComponent line = Component.literal("· " + b.code() + " ")
+                    .append(b.line())
+                    .append(Component.literal("  "));
             if (b.status() == 0) {
-                line.append(click("[加入]", "/cardgames accept " + b.code(), ChatFormatting.GREEN));
+                line.append(click("wifi_card_games.common.rooms.join", "/cardgames accept " + b.code(), ChatFormatting.GREEN));
             } else if (b.status() == 1) {
-                line.append(click("[旁观]", "/cardgames spectate " + b.code(), ChatFormatting.GREEN));
+                line.append(click("wifi_card_games.common.rooms.spectate", "/cardgames spectate " + b.code(), ChatFormatting.GREEN));
             } else {
-                line.append(Component.literal("[已结束]").withStyle(ChatFormatting.GRAY));
+                line.append(Component.translatable("wifi_card_games.common.rooms.finished").withStyle(ChatFormatting.GRAY));
             }
             if (isOp) {
-                line.append(click(" [信息]", "/cardgames roominfo " + b.code(), ChatFormatting.AQUA));
-                line.append(click(" [删除]", "/cardgames roomdelete " + b.code(), ChatFormatting.RED));
+                line.append(click("wifi_card_games.common.rooms.info", "/cardgames roominfo " + b.code(), ChatFormatting.AQUA));
+                line.append(click("wifi_card_games.common.rooms.delete", "/cardgames roomdelete " + b.code(), ChatFormatting.RED));
             }
             lines.add(line);
         }
@@ -269,13 +275,13 @@ public final class CardGamesCommands {
             String navPrefix = gameId != null ? "/cardgames rooms " + gameId + " " : "/cardgames rooms ";
             MutableComponent nav = Component.literal("");
             if (p > 1) {
-                nav.append(click("[上一页]", navPrefix + (p - 1), ChatFormatting.YELLOW));
+                nav.append(click("wifi_card_games.common.rooms.prev", navPrefix + (p - 1), ChatFormatting.YELLOW));
             }
             if (p > 1 && p < totalPages) {
                 nav.append(Component.literal("  "));
             }
             if (p < totalPages) {
-                nav.append(click("[下一页]", navPrefix + (p + 1), ChatFormatting.YELLOW));
+                nav.append(click("wifi_card_games.common.rooms.next", navPrefix + (p + 1), ChatFormatting.YELLOW));
             }
             lines.add(nav);
         }
@@ -286,18 +292,19 @@ public final class CardGamesCommands {
     private static int roomInfo(CommandSourceStack source, String code) throws CommandSyntaxException {
         GameInfo info = GameRegistry.gameOfCode(code);
         if (info == null) {
-            source.sendFailure(Component.literal("房间码无效：请使用完整房间码（如 " + GameRegistry.exampleCode() + "）"));
+            source.sendFailure(Component.translatable("wifi_card_games.common.error.bad_code",
+                    GameRegistry.exampleCode()));
             return 0;
         }
-        List<String> lines = info.roomDetailer().apply(code);
+        List<Component> lines = info.roomDetailer().apply(code);
         if (lines.isEmpty()) {
-            source.sendFailure(Component.literal("房间不存在：" + code.toUpperCase()));
+            source.sendFailure(Component.translatable("wifi_card_games.common.error.room_not_found", code.toUpperCase()));
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("=== " + info.displayName() + " 房间 " + code.toUpperCase() + " ==="), false);
-        for (String line : lines) {
-            final String f = line;
-            source.sendSuccess(() -> Component.literal("· " + f), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.common.rooms.room_header",
+                Component.translatable(info.displayName()), code.toUpperCase()), false);
+        for (Component line : lines) {
+            source.sendSuccess(() -> Component.literal("· ").append(line), false);
         }
         return 1;
     }
@@ -307,9 +314,9 @@ public final class CardGamesCommands {
         return debugRoomDelete(source, code);
     }
 
-    /** 可点击命令文本（绿色/黄色等提示色 + RUN_COMMAND）。 */
-    private static MutableComponent click(String label, String command, ChatFormatting color) {
-        return Component.literal(label).withStyle(style -> style
+    /** 可点击命令文本（绿色/黄色等提示色 + RUN_COMMAND）；label 为翻译键。 */
+    private static MutableComponent click(String labelKey, String command, ChatFormatting color) {
+        return Component.translatable(labelKey).withStyle(style -> style
                 .withColor(color)
                 .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command)));
     }
@@ -320,18 +327,16 @@ public final class CardGamesCommands {
     private static int debugRooms(CommandSourceStack source) {
         for (GameInfo info : GameRegistry.all()) {
             final GameInfo f = info;
-            source.sendSuccess(() -> Component.literal("【" + f.displayName() + "】共 " + f.roomCount().getAsInt()
-                    + " 个房间（" + f.playerCount().getAsInt() + " 人在线） ")
-                    .append(Component.literal("[管理]").withStyle(style -> style
-                            .withColor(ChatFormatting.GREEN)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                                    "/" + f.gameId() + " debug rooms")))), false);
-            List<String> lines = f.roomLines().get();
+            source.sendSuccess(() -> Component.translatable("wifi_card_games.common.debug.rooms_header",
+                            Component.translatable(f.displayName()), f.roomCount().getAsInt(), f.playerCount().getAsInt())
+                    .append(click("wifi_card_games.common.debug.manage", "/" + f.gameId() + " debug rooms",
+                            ChatFormatting.GREEN)), false);
+            List<Component> lines = f.roomLines().get();
             if (lines.isEmpty()) {
-                source.sendSuccess(() -> Component.literal("  （无）"), false);
+                source.sendSuccess(() -> Component.translatable("wifi_card_games.common.debug.none"), false);
             } else {
-                for (String line : lines) {
-                    source.sendSuccess(() -> Component.literal("  " + line), false);
+                for (Component line : lines) {
+                    source.sendSuccess(() -> Component.literal("  ").append(line), false);
                 }
             }
         }
@@ -342,15 +347,17 @@ public final class CardGamesCommands {
     private static int debugRoomDelete(CommandSourceStack source, String code) {
         GameInfo info = GameRegistry.gameOfCode(code);
         if (info == null) {
-            source.sendFailure(Component.literal("房间码无效：请使用完整房间码（如 " + GameRegistry.exampleCode() + "）"));
+            source.sendFailure(Component.translatable("wifi_card_games.common.error.bad_code",
+                    GameRegistry.exampleCode()));
             return 0;
         }
-        String error = info.roomDeleter().apply(code);
+        Component error = info.roomDeleter().apply(code);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("已删除" + info.displayName() + "房间 " + code.toUpperCase()), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.common.debug.room_deleted",
+                Component.translatable(info.displayName()), code.toUpperCase()), false);
         return 1;
     }
 
@@ -361,7 +368,7 @@ public final class CardGamesCommands {
             total += info.roomClearer().getAsInt();
         }
         final int cleared = total;
-        source.sendSuccess(() -> Component.literal("已清空全部小游戏房间（共 " + cleared + " 个）"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.common.debug.rooms_cleared", cleared), false);
         return 1;
     }
 }

@@ -32,7 +32,7 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
     private int botCount;
 
     public DdzLobbyScreen() {
-        super("斗地主大厅");
+        super("wifi_card_games.ddz.lobby.title");
         // 记住上次开房间的选项（客户端 config 持久化），下次打开默认选中
         flowerMode = LobbyPrefs.getBool(GameRegistry.GAME_DOUDIZHU, "flowerMode", false);
         ruleSet = LobbyPrefs.getInt(GameRegistry.GAME_DOUDIZHU, "ruleSet", 0) == 1
@@ -64,8 +64,8 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
     }
 
     @Override
-    protected String lobbyTitle() {
-        return "斗地主大厅";
+    protected String lobbyTitleKey() {
+        return "wifi_card_games.ddz.lobby.title";
     }
 
     @Override
@@ -74,7 +74,7 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
     }
 
     @Override
-    protected void lobbyChat(String message) {
+    protected void lobbyChat(Component message) {
         DdzClientState.chat(message);
     }
 
@@ -85,7 +85,7 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
 
     @Override
     protected void reopenHint() {
-        DdzClientState.chatReopenHint("关闭大厅");
+        DdzClientState.chatReopenHint(Component.translatable("wifi_card_games.ddz.reopen.closed_lobby"));
     }
 
     /** 房间视图底板（信息区 + 按钮区；super.render 之前绘制，按钮在底板之上）。 */
@@ -150,42 +150,56 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
             int top = contentTop();
             int lx = cx - 172;
             int rx = cx + 12;
-            addRenderableWidget(Button.builder(Component.literal("模式：" + (flowerMode ? "花牌（万能牌）" : "经典")), b -> {
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.ddz.lobby.mode",
+                    Component.translatable(flowerMode
+                            ? "wifi_card_games.ddz.lobby.mode_flower" : "wifi_card_games.ddz.lobby.mode_classic")), b -> {
                 flowerMode = !flowerMode;
                 LobbyPrefs.set(GameRegistry.GAME_DOUDIZHU, "flowerMode", flowerMode);
-                b.setMessage(Component.literal("模式：" + (flowerMode ? "花牌（万能牌）" : "经典")));
+                b.setMessage(Component.translatable("wifi_card_games.ddz.lobby.mode",
+                        Component.translatable(flowerMode
+                                ? "wifi_card_games.ddz.lobby.mode_flower" : "wifi_card_games.ddz.lobby.mode_classic")));
             }).bounds(lx, top, 160, 20).build());
-            addRenderableWidget(Button.builder(Component.literal("规则：" + ruleSet.displayName()), b -> {
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.ddz.lobby.rule",
+                    Component.translatable(ruleSet.displayName())), b -> {
                 ruleSet = ruleSet == DdzRuleSet.STANDARD ? DdzRuleSet.FOLK : DdzRuleSet.STANDARD;
                 LobbyPrefs.set(GameRegistry.GAME_DOUDIZHU, "ruleSet", ruleSet.ordinal());
-                b.setMessage(Component.literal("规则：" + ruleSet.displayName()));
+                b.setMessage(Component.translatable("wifi_card_games.ddz.lobby.rule",
+                        Component.translatable(ruleSet.displayName())));
             }).bounds(lx, top + 24, 160, 20).build());
-            addRenderableWidget(Button.builder(Component.literal("公布房间：" + (announce ? "开" : "关")), b -> {
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.ddz.lobby.announce",
+                    Component.translatable(announce
+                            ? "wifi_card_games.ddz.lobby.on" : "wifi_card_games.ddz.lobby.off")), b -> {
                 announce = !announce;
                 LobbyPrefs.set(GameRegistry.GAME_DOUDIZHU, "announce", announce);
-                b.setMessage(Component.literal("公布房间：" + (announce ? "开" : "关")));
+                b.setMessage(Component.translatable("wifi_card_games.ddz.lobby.announce",
+                        Component.translatable(announce
+                                ? "wifi_card_games.ddz.lobby.on" : "wifi_card_games.ddz.lobby.off")));
             }).bounds(lx, top + 48, 160, 20).build());
-            addRenderableWidget(Button.builder(Component.literal("机器人：" + (botCount == 0 ? "关" : botCount + " 个")), b -> {
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.ddz.lobby.bots",
+                    botCount == 0 ? Component.translatable("wifi_card_games.ddz.lobby.bots_off")
+                            : Component.translatable("wifi_card_games.ddz.lobby.bots_n", botCount)), b -> {
                 botCount = (botCount + 1) % 3; // 关 → 1 个 → 2 个
                 LobbyPrefs.set(GameRegistry.GAME_DOUDIZHU, "botCount", botCount);
-                b.setMessage(Component.literal("机器人：" + (botCount == 0 ? "关" : botCount + " 个")));
+                b.setMessage(Component.translatable("wifi_card_games.ddz.lobby.bots",
+                        botCount == 0 ? Component.translatable("wifi_card_games.ddz.lobby.bots_off")
+                                : Component.translatable("wifi_card_games.ddz.lobby.bots_n", botCount)));
             }).bounds(lx, top + 72, 160, 20).build());
-            addRenderableWidget(Button.builder(Component.literal("创建房间"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.ddz.lobby.create"), b ->
                     ClientPlayNetworking.send(new CreateRoomC2S(flowerMode, (byte) ruleSet.ordinal(), announce, (byte) botCount)))
                     .bounds(rx, top, 160, 20).build());
-            codeBox = new EditBox(this.font, rx, top + 24, 160, 20, Component.literal("房间码"));
+            codeBox = new EditBox(this.font, rx, top + 24, 160, 20, Component.translatable("wifi_card_games.ddz.lobby.code_box"));
             codeBox.setMaxLength(8);
             codeBox.setFilter(str -> str.chars().allMatch(ch -> Character.isLetterOrDigit(ch) || ch == '-'));
             addRenderableWidget(codeBox);
-            addRenderableWidget(Button.builder(Component.literal("加入房间"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.ddz.lobby.join"), b ->
                     ClientPlayNetworking.send(new JoinRoomC2S(codeBox.getValue().trim().toUpperCase())))
                     .bounds(rx, top + 48, 160, 20).build());
-            addRenderableWidget(Button.builder(Component.literal("规则介绍"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.common.button.rules_intro"), b ->
                     Minecraft.getInstance().setScreen(new DdzRulesScreen()))
                     .bounds(rx, top + 72, 160, 20).build());
         } else {
             // 离开房间按钮：随滚动偏移（小窗口房间视图滚动时保持可见可点）
-            addRenderableWidget(Button.builder(Component.literal("离开房间"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.ddz.lobby.leave"), b ->
                     ClientPlayNetworking.send(new LeaveRoomC2S()))
                     .bounds(cx - 80, Math.max(40, height / 2 + 56) + (int) scroll, 160, 20).build());
         }
@@ -210,17 +224,24 @@ public class DdzLobbyScreen extends AbstractLobbyScreen {
             // 房间信息区 + 按钮区底板见 drawRoomViewBg（super.render 之前绘制）
             int sc = (int) scroll;
             DdzGui.centeredShadow(g, this.font, width,
-                    "房间 " + s.roomCode + "（" + (s.flowerMode ? "花牌模式" : "经典模式")
-                            + " · " + s.ruleSet.displayName() + "）",
+                    Component.translatable("wifi_card_games.ddz.lobby.room_header", s.roomCode,
+                            Component.translatable(s.flowerMode
+                                    ? "wifi_card_games.ddz.mode.flower" : "wifi_card_games.ddz.mode.classic"),
+                            Component.translatable(s.ruleSet.displayName())),
                     34 + sc, 0xFFFFFF88);
-            DdzGui.centeredShadow(g, this.font, width, "玩家 " + s.roomSize() + " / 3", 50 + sc, 0xFFFFFFFF);
+            DdzGui.centeredShadow(g, this.font, width,
+                    Component.translatable("wifi_card_games.ddz.lobby.players", s.roomSize()), 50 + sc, 0xFFFFFFFF);
             for (int i = 0; i < 3; i++) {
-                String line = (i == s.mySeat ? "▶ " : "  ") + (i + 1) + ". "
-                        + (s.names[i] == null || s.names[i].isEmpty() ? "等待加入…" : s.names[i]);
+                Component line = Component.literal(i == s.mySeat ? "▶ " : "  ")
+                        .append(Component.literal((i + 1) + ". "))
+                        .append(s.names[i] == null || s.names[i].isEmpty()
+                                ? Component.translatable("wifi_card_games.ddz.lobby.waiting_join")
+                                : Component.literal(s.names[i]));
                 DdzGui.centeredShadow(g, this.font, width, line, 68 + i * 14 + sc,
                         i == s.mySeat ? 0xFFFFFF55 : 0xFFFFFFFF);
             }
-            DdzGui.centeredShadow(g, this.font, width, "满 3 人自动开始", 116 + sc, 0xFFAAAAAA);
+            DdzGui.centeredShadow(g, this.font, width,
+                    Component.translatable("wifi_card_games.ddz.lobby.auto_start"), 116 + sc, 0xFFAAAAAA);
             // 房间视图滚动条（小窗口内容超高时）
             drawRoomScrollbar(g);
         }

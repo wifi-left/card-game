@@ -11,6 +11,7 @@ import io.wifi.cards.uno.network.UnoPackets;
 import io.wifi.cards.uno.sound.UnoSounds;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,8 +34,8 @@ public final class UnoMod {
         // 登记到小游戏注册表：小游戏菜单 / 统一 /cardgames 命令 / 跨游戏防护自动生效
         GameRegistry.register(new GameInfo(
                 GameRegistry.GAME_UNO, GameRegistry.PREFIX_UNO,
-                "UNO", "U", 0xFFFFB300,
-                "2~10 人，功能牌与 UNO 抓捕",
+                "wifi_card_games.uno.name", "wifi_card_games.uno.icon", 0xFFFFB300,
+                "wifi_card_games.uno.desc",
                 UnoCommands::openLobby,
                 (player, code) -> UnoMemoryManager.INSTANCE.joinRoom(player, code),
                 UnoMemoryManager.INSTANCE::spectate,
@@ -45,14 +46,16 @@ public final class UnoMod {
                 UnoMemoryManager.INSTANCE::roomCount,
                 UnoMemoryManager.INSTANCE::playerCount,
                 () -> UnoMemoryManager.INSTANCE.roomSnapshot().stream()
-                        .map(r -> r.id + " · 人数 " + r.size() + "/" + UnoRoom.MAX_PLAYERS
-                                + " · " + UnoCommands.phaseName(r.phase()))
+                        .map(r -> (Component) Component.literal(r.id + " · ")
+                                .append(Component.translatable("wifi_card_games.uno.room.line",
+                                        r.size(), Component.translatable(UnoCommands.phaseNameKey(r.phase())))))
                         .toList(),
                 // 房间列表行（/cardgames rooms）：管理员含未公开房间
                 includePrivate -> UnoMemoryManager.INSTANCE.roomSnapshot().stream()
                         .filter(r -> includePrivate || r.announce)
-                        .map(r -> new RoomBrief(r.id, "玩家 " + r.size() + "/" + UnoRoom.MAX_PLAYERS
-                                        + " · " + UnoCommands.phaseName(r.phase()),
+                        .map(r -> new RoomBrief(r.id,
+                                Component.translatable("wifi_card_games.uno.room.brief",
+                                        r.size(), Component.translatable(UnoCommands.phaseNameKey(r.phase()))),
                                 (byte) (r.phase() == UnoGamePhase.WAITING ? 0
                                         : r.phase() == UnoGamePhase.SETTLED ? 2 : 1)))
                         .toList(),

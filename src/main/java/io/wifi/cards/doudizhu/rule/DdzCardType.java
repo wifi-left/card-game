@@ -10,29 +10,29 @@ package io.wifi.cards.doudizhu.rule;
  * 由房间规则集（标准/民间）与花牌模式决定，见 {@link DdzRuleSet#allows}。</p>
  */
 public enum DdzCardType {
-    PASS(0, "不出"),
-    SINGLE(1, "单张"),
-    PAIR(1, "对子"),
-    TRIPLE(1, "三张"),
-    TRIPLE_WITH_ONE(1, "三带一"),
-    TRIPLE_WITH_PAIR(1, "三带二"),
-    STRAIGHT(1, "顺子"),
-    DOUBLE_STRAIGHT(1, "连对"),
-    PLANE(1, "飞机"),
-    PLANE_WITH_SINGLES(1, "飞机带翅膀"),
-    PLANE_WITH_PAIRS(1, "飞机带对"),
-    FOUR_WITH_TWO_SINGLES(1, "四带二"),
-    FOUR_WITH_TWO_PAIRS(1, "四带两对"),
-    SOFT_BOMB(2, "含花牌炸弹"),
-    BOMB(2, "炸弹"),
-    ROCKET(3, "王炸");
+    PASS(0, "wifi_card_games.ddz.card_type.pass"),
+    SINGLE(1, "wifi_card_games.ddz.card_type.single"),
+    PAIR(1, "wifi_card_games.ddz.card_type.pair"),
+    TRIPLE(1, "wifi_card_games.ddz.card_type.triple"),
+    TRIPLE_WITH_ONE(1, "wifi_card_games.ddz.card_type.triple_with_one"),
+    TRIPLE_WITH_PAIR(1, "wifi_card_games.ddz.card_type.triple_with_pair"),
+    STRAIGHT(1, "wifi_card_games.ddz.card_type.straight"),
+    DOUBLE_STRAIGHT(1, "wifi_card_games.ddz.card_type.double_straight"),
+    PLANE(1, "wifi_card_games.ddz.card_type.plane"),
+    PLANE_WITH_SINGLES(1, "wifi_card_games.ddz.card_type.plane_with_singles"),
+    PLANE_WITH_PAIRS(1, "wifi_card_games.ddz.card_type.plane_with_pairs"),
+    FOUR_WITH_TWO_SINGLES(1, "wifi_card_games.ddz.card_type.four_with_two_singles"),
+    FOUR_WITH_TWO_PAIRS(1, "wifi_card_games.ddz.card_type.four_with_two_pairs"),
+    SOFT_BOMB(2, "wifi_card_games.ddz.card_type.soft_bomb"),
+    BOMB(2, "wifi_card_games.ddz.card_type.bomb"),
+    ROCKET(3, "wifi_card_games.ddz.card_type.rocket");
 
     private final int level;
-    private final String displayName;
+    private final String displayNameKey;
 
-    DdzCardType(int level, String displayName) {
+    DdzCardType(int level, String displayNameKey) {
         this.level = level;
-        this.displayName = displayName;
+        this.displayNameKey = displayNameKey;
     }
 
     public int level() {
@@ -43,7 +43,8 @@ public enum DdzCardType {
         return level >= 2;
     }
 
+    /** 牌型显示名翻译键（展示时经 Component.translatable 解析）。 */
     public String displayName() {
-        return displayName;
+        return displayNameKey;
     }
 }

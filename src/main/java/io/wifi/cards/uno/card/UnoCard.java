@@ -87,11 +87,15 @@ public final class UnoCard {
         return value.isWild();
     }
 
+    /**
+     * 牌面显示翻译键：每张牌一个键（如 wifi_card_games.uno.card.r_5 / y_skip / wild / wild4），
+     * 展示时经 Component.translatable 解析。
+     */
     public String display() {
         if (isWild()) {
-            return value == UnoValue.WILD4 ? "万能+4" : "万能";
+            return "wifi_card_games.uno.card." + (value == UnoValue.WILD4 ? "wild4" : "wild");
         }
-        return color.symbol() + value.displayName();
+        return "wifi_card_games.uno.card." + color.shortKey() + "_" + value.shortKey();
     }
 
     @Override

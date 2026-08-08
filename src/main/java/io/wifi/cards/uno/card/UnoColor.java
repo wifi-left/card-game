@@ -5,21 +5,21 @@ package io.wifi.cards.uno.card;
  * ordinal 即网络传输值：0 红 / 1 黄 / 2 绿 / 3 蓝 / 4 无（选色时只允许 0~3）。
  */
 public enum UnoColor {
-    RED("红"),
-    YELLOW("黄"),
-    GREEN("绿"),
-    BLUE("蓝"),
+    RED("wifi_card_games.uno.color.red"),
+    YELLOW("wifi_card_games.uno.color.yellow"),
+    GREEN("wifi_card_games.uno.color.green"),
+    BLUE("wifi_card_games.uno.color.blue"),
     NONE("");
 
-    private final String symbol;
+    private final String symbolKey;
 
-    UnoColor(String symbol) {
-        this.symbol = symbol;
+    UnoColor(String symbolKey) {
+        this.symbolKey = symbolKey;
     }
 
-    /** 牌面左上角颜色字（万能牌为空）。 */
+    /** 牌面左上角颜色字翻译键（万能牌为空）。 */
     public String symbol() {
-        return symbol;
+        return symbolKey;
     }
 
     /** 是否为四色之一（可用于选色）。 */
@@ -27,13 +27,18 @@ public enum UnoColor {
         return this != NONE;
     }
 
-    /** 选色显示名（万能牌选色弹层）。 */
+    /** 选色显示名翻译键（万能牌选色弹层）。 */
     public String displayName() {
+        return symbolKey;
+    }
+
+    /** 卡片翻译键短名（wifi_card_games.uno.card.<color>_<value> 用）。 */
+    public String shortKey() {
         return switch (this) {
-            case RED -> "红";
-            case YELLOW -> "黄";
-            case GREEN -> "绿";
-            case BLUE -> "蓝";
+            case RED -> "r";
+            case YELLOW -> "y";
+            case GREEN -> "g";
+            case BLUE -> "b";
             default -> "";
         };
     }

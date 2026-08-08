@@ -8,6 +8,7 @@ import io.wifi.cards.board.network.BoardPackets.MoveBroadcastS2C;
 import io.wifi.cards.board.network.BoardPackets.PassBroadcastS2C;
 import io.wifi.cards.board.othello.rule.OthelloAi;
 import io.wifi.cards.board.othello.rule.OthelloRules;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Arrays;
@@ -31,7 +32,7 @@ public class OthelloGame extends BoardGame {
         over = false;
         winSeat = -1;
         Arrays.fill(trusted, false); // 新局重置托管：上局托管状态不得残留到下一局
-        lastAction = "游戏开始，黑方先手";
+        lastAction = "wifi_card_games.board.lastaction.game_start";
         room.broadcast(new GameStartS2C(board, (byte) 0));
         turn(0);
     }
@@ -43,14 +44,14 @@ public class OthelloGame extends BoardGame {
         }
         int seat = seatOf(player);
         if (seat != currentSeat) {
-            reject(seat, "还没轮到你落子");
+            reject(seat, Component.translatable("wifi_card_games.board.error.not_your_move"));
             return;
         }
         if (!OthelloRules.applyMove(board, size, x, y, colorOf(seat))) {
-            reject(seat, "该位置不能落子");
+            reject(seat, Component.translatable("wifi_card_games.board.error.othello_invalid_move"));
             return;
         }
-        lastAction = room.seatName(seat) + " 落子 (" + x + "," + y + ")";
+        lastAction = "wifi_card_games.board.lastaction.moved|" + room.seatName(seat) + "|" + x + "|" + y;
         room.broadcast(new MoveBroadcastS2C((byte) seat, (byte) x, (byte) y, board));
         advanceAfterMove(seat);
     }
@@ -58,7 +59,7 @@ public class OthelloGame extends BoardGame {
     @Override
     public void onPass(ServerPlayer player) {
         // 标准规则：有棋可下时必须落子，停一手由服务端自动处理（无合法着时换边）
-        reject(seatOf(player), "有棋可下时不能停一手");
+        reject(seatOf(player), Component.translatable("wifi_card_games.board.error.othello_no_pass"));
     }
 
     /** 落子后推进：对方无合法着 → 自动停一手，本方继续；双方均无着 → 终局数子。 */
@@ -70,7 +71,7 @@ public class OthelloGame extends BoardGame {
             return;
         }
         room.broadcast(new PassBroadcastS2C((byte) next, room.seatName(next)));
-        lastAction = room.seatName(next) + " 无棋可下，停一手";
+        lastAction = "wifi_card_games.board.lastaction.no_move_pass|" + room.seatName(next);
         if (OthelloRules.legalMoves(board, size, colorOf(seat)).isEmpty()) {
             finish();
         } else {
@@ -82,13 +83,13 @@ public class OthelloGame extends BoardGame {
     private void finish() {
         int black = OthelloRules.count(board, OthelloRules.BLACK);
         int white = OthelloRules.count(board, OthelloRules.WHITE);
-        lastAction = "终局：黑 " + black + " · 白 " + white;
+        lastAction = "wifi_card_games.board.lastaction.othello_end|" + black + "|" + white;
         if (black > white) {
-            settle((byte) 0, black, white, "终局");
+            settle((byte) 0, black, white, "wifi_card_games.board.reason.finish");
         } else if (white > black) {
-            settle((byte) 1, black, white, "终局");
+            settle((byte) 1, black, white, "wifi_card_games.board.reason.finish");
         } else {
-            settle((byte) -1, black, white, "终局");
+            settle((byte) -1, black, white, "wifi_card_games.board.reason.finish");
         }
     }
 
@@ -98,7 +99,7 @@ public class OthelloGame extends BoardGame {
         if (move == null) {
             // 托管方无合法着：自动停一手；对方也无着则终局
             room.broadcast(new PassBroadcastS2C((byte) seat, room.seatName(seat)));
-            lastAction = room.seatName(seat) + " 无棋可下，停一手";
+            lastAction = "wifi_card_games.board.lastaction.no_move_pass|" + room.seatName(seat);
             if (OthelloRules.legalMoves(board, size, colorOf(1 - seat)).isEmpty()) {
                 finish();
             } else {

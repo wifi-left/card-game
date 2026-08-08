@@ -22,7 +22,7 @@ import java.util.List;
 public class DdzHistoryScreen extends AbstractSubScreen {
 
     public DdzHistoryScreen(Screen parent) {
-        super(parent, "出牌历史");
+        super(parent, "wifi_card_games.ddz.history.title");
     }
 
     // ---------------- 滚动计算（与规则界面一致） ----------------
@@ -42,20 +42,32 @@ public class DdzHistoryScreen extends AbstractSubScreen {
         return Math.max(80, width - SCROLLBAR_RIGHT - 16);
     }
 
-    /** 构建一行历史文本：玩家（金）+" 出了 "+牌（青）+"（"+牌型（绿）+")"；"不出"行只高亮玩家名。 */
+    /** 构建一行历史文本：玩家（金）+" 出了 "+牌（青）+"（"+牌型（绿）+"）"；"不出"行只高亮玩家名。
+     * 牌型名为翻译键，牌面文本中的王/花牌也是翻译键，均经 Component.translatable 解析。 */
     private MutableComponent buildLineText(HistoryLine line) {
         MutableComponent text = Component.literal(line.name()).withStyle(ChatFormatting.GOLD);
         if (line.pass()) {
-            return text.append(Component.literal(" 不出").withStyle(ChatFormatting.GRAY));
+            return text.append(Component.translatable("wifi_card_games.ddz.action.pass").withStyle(ChatFormatting.GRAY));
         }
         return text
-                .append(Component.literal(" 出了 ").withStyle(ChatFormatting.GRAY))
-                .append(Component.literal(line.cardsText()).withStyle(ChatFormatting.AQUA))
-                .append(Component.literal("（").withStyle(ChatFormatting.GRAY))
-                .append(Component.literal(line.typeName()).withStyle(ChatFormatting.GREEN))
-                .append(Component.literal("）").withStyle(ChatFormatting.GRAY));
+                .append(Component.translatable("wifi_card_games.ddz.history.played").withStyle(ChatFormatting.GRAY))
+                .append(Component.literal(translateCardTokens(line.cardsText())).withStyle(ChatFormatting.AQUA))
+                .append(Component.translatable("wifi_card_games.ddz.history.bracket_open").withStyle(ChatFormatting.GRAY))
+                .append(Component.translatable(line.typeName()).withStyle(ChatFormatting.GREEN))
+                .append(Component.translatable("wifi_card_games.ddz.history.bracket_close").withStyle(ChatFormatting.GRAY));
     }
 
+    /** 牌面文本（空格分隔的牌）中的王/花牌为翻译键，逐 token 解析为显示文本。 */
+    private static String translateCardTokens(String cardsText) {
+        StringBuilder sb = new StringBuilder();
+        for (String token : cardsText.split(" ")) {
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(Component.translatable(token).getString());
+        }
+        return sb.toString();
+    }
     /** 超宽文本按可用宽度换行拆分（每段保留各自样式颜色）。 */
     private List<FormattedCharSequence> wrapLine(HistoryLine line) {
         return this.font.split(buildLineText(line), maxWidth());
@@ -89,7 +101,7 @@ public class DdzHistoryScreen extends AbstractSubScreen {
     @Override
     protected void renderContent(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         g.fill(0, 0, width, 26, 0x66000000);
-        g.drawCenteredString(this.font, "出牌历史", width / 2, 9, 0xFFFFD700);
+        g.drawCenteredString(this.font, Component.translatable("wifi_card_games.ddz.history.title"), width / 2, 9, 0xFFFFD700);
         // 内容区半透明黑底（仅在有内容处），滚动文本绘制在其上
         g.fill(0, CONTENT_TOP, width, height - BOTTOM_BAR, 0x44000000);
         g.enableScissor(0, CONTENT_TOP, width, height - BOTTOM_BAR);

@@ -20,6 +20,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
@@ -153,12 +154,12 @@ public final class BoardCommands {
     /** 旁观房间：/chess spectate <房间码>（对局开始后的只读观看）。 */
     private static int spectate(CommandSourceStack source, String code) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
-        String error = BoardMemoryManager.INSTANCE.spectate(player, code);
+        Component error = BoardMemoryManager.INSTANCE.spectate(player, code);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("正在旁观房间 " + code + "，输入 /cardgames leave 退出旁观"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.board.info.spectating", code), false);
         return 1;
     }
 
@@ -171,28 +172,30 @@ public final class BoardCommands {
 
     private static int invite(CommandSourceStack source, ServerPlayer target) throws CommandSyntaxException {
         ServerPlayer owner = source.getPlayerOrException();
-        String error = invite(owner, target);
+        Component error = invite(owner, target);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("已向 " + target.getGameProfile().getName() + " 发送邀请"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.board.info.invite_sent",
+                target.getGameProfile().getName()), false);
         return 1;
     }
 
     /** 邀请玩家加入自己所在房间（/chess invite 与 /cardgames invite 共用）；
      *  成功时向目标发送可点击邀请消息，返回错误消息或 null。 */
-    public static String invite(ServerPlayer owner, ServerPlayer target) {
+    public static Component invite(ServerPlayer owner, ServerPlayer target) {
         BoardRoom room = BoardMemoryManager.INSTANCE.currentRoom(owner);
         if (room == null) {
-            return "你不在任何房间里，请先创建房间";
+            return Component.translatable("wifi_card_games.board.error.not_in_room_create");
         }
         if (room.isFull() || room.phase() != BoardPhase.WAITING) {
-            return "只能邀请玩家加入等待中的房间";
+            return Component.translatable("wifi_card_games.board.error.invite_waiting_only");
         }
-        Component message = Component.literal(owner.getGameProfile().getName() + " 邀请你加入棋牌房间["
-                + room.id + "]（" + room.gameType.displayName + "） ")
-                .append(Component.literal("[接受邀请]").withStyle(style -> style
+        Component message = Component.translatable("wifi_card_games.board.chat.invite",
+                        owner.getGameProfile().getName(), room.id,
+                        Component.translatable(room.gameType.displayName))
+                .append(Component.translatable("wifi_card_games.common.click.accept_invite").withStyle(style -> style
                         .withColor(ChatFormatting.GREEN)
                         .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames accept " + room.id))));
         target.sendSystemMessage(message);
@@ -229,7 +232,8 @@ public final class BoardCommands {
             return 0;
         }
         game.onMove(null, x, y);
-        source.sendSuccess(() -> Component.literal("已指挥座位 " + game.currentSeat() + " 落子：" + x + "," + y), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.board.debug.move_commanded",
+                game.currentSeat(), x, y), false);
         return 1;
     }
 
@@ -241,7 +245,8 @@ public final class BoardCommands {
             return 0;
         }
         game.onPass(null);
-        source.sendSuccess(() -> Component.literal("已指挥座位 " + game.currentSeat() + " 停一手"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.board.debug.pass_commanded",
+                game.currentSeat()), false);
         return 1;
     }
 
@@ -253,7 +258,8 @@ public final class BoardCommands {
             return 0;
         }
         game.onSurrender(null);
-        source.sendSuccess(() -> Component.literal("已指挥座位 " + game.currentSeat() + " 认输"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.board.debug.surrender_commanded",
+                game.currentSeat()), false);
         return 1;
     }
 
@@ -263,11 +269,11 @@ public final class BoardCommands {
         ServerPlayer player = source.getPlayerOrException();
         BoardMemoryManager m = BoardMemoryManager.INSTANCE;
         if (m.currentRoom(player) != null || m.spectatingRoomId(player) != null) {
-            source.sendFailure(Component.literal("对局/旁观中无法打开调试界面"));
+            source.sendFailure(Component.translatable("wifi_card_games.board.error.debug_ui_busy"));
             return 0;
         }
         ServerPlayNetworking.send(player, randomDebugUi());
-        source.sendSuccess(() -> Component.literal("已打开调试旁观界面（随机虚拟对局，无真实房间）"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.board.debug.ui_opened"), false);
         return 1;
     }
 
@@ -308,7 +314,7 @@ public final class BoardCommands {
             }
         }
         return new DebugUiS2C((byte) type.ordinal(), (byte) size, board,
-                new String[]{"调试者A", "调试者B"}, (byte) RANDOM.nextInt(2));
+                new String[]{"DebugA", "DebugB"}, (byte) RANDOM.nextInt(2));
     }
 
     /** 强制将指定玩家加入房间：/chess debug forcejoin <玩家> [房间码]（缺省用执行者所在房间）。 */
@@ -320,28 +326,31 @@ public final class BoardCommands {
         } else {
             BoardRoom room = BoardMemoryManager.INSTANCE.currentRoom(executor);
             if (room == null) {
-                source.sendFailure(Component.literal("未指定房间码且你不在任何房间中"));
+                source.sendFailure(Component.translatable("wifi_card_games.board.error.no_code_no_room"));
                 return 0;
             }
             code = room.id;
         }
-        String error = BoardMemoryManager.INSTANCE.forceJoin(target, code);
+        Component error = BoardMemoryManager.INSTANCE.forceJoin(target, code);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("已强制 " + target.getGameProfile().getName() + " 加入房间 " + code), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.board.debug.force_joined",
+                target.getGameProfile().getName(), code), false);
         return 1;
     }
 
     /** 强制指定玩家退出游戏（对局中座位转机器人托管；房间无真人则关闭）：/chess debug kick <玩家>。 */
     private static int debugKick(CommandSourceStack source, ServerPlayer target) {
         if (BoardMemoryManager.INSTANCE.currentRoom(target) == null) {
-            source.sendFailure(Component.literal(target.getGameProfile().getName() + " 不在任何房间中"));
+            source.sendFailure(Component.translatable("wifi_card_games.board.error.not_in_any_room",
+                    target.getGameProfile().getName()));
             return 0;
         }
         BoardMemoryManager.INSTANCE.leaveRoom(target);
-        source.sendSuccess(() -> Component.literal("已强制 " + target.getGameProfile().getName() + " 退出游戏"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.board.debug.kicked",
+                target.getGameProfile().getName()), false);
         return 1;
     }
 
@@ -350,18 +359,20 @@ public final class BoardCommands {
     /** 房间列表（每行带 [显示具体信息][删除房间] 快捷点击）：/chess debug rooms。 */
     private static int debugRooms(CommandSourceStack source) {
         List<BoardRoom> rooms = BoardMemoryManager.INSTANCE.roomSnapshot();
-        source.sendSuccess(() -> Component.literal("房间列表（共 " + rooms.size() + " 个）"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.board.rooms.header", rooms.size()), false);
         for (BoardRoom room : rooms) {
             final String code = room.id;
-            Component line = Component.literal(room.id + " [" + room.gameType.displayName
-                    + (room.gameType == BoardGameType.GO ? room.size + "路" : "") + "] "
-                    + room.count + "/2 · " + phaseName(room.phase()))
-                    .append(Component.literal(" [显示具体信息]").withStyle(style -> style
-                            .withColor(ChatFormatting.GREEN)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/chess debug room " + code))))
-                    .append(Component.literal(" [删除房间]").withStyle(style -> style
-                            .withColor(ChatFormatting.RED)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/chess debug roomdelete " + code))));
+            Component line = Component.translatable("wifi_card_games.board.rooms.line",
+                            room.id, Component.translatable(room.gameType.displayName),
+                            room.gameType == BoardGameType.GO
+                                    ? Component.translatable("wifi_card_games.board.size_go_short", room.size)
+                                    : Component.empty(),
+                            room.count,
+                            Component.translatable(phaseNameKey(room.phase())))
+                    .append(click("wifi_card_games.board.rooms.detail_click", "/chess debug room " + code,
+                            ChatFormatting.GREEN))
+                    .append(click("wifi_card_games.board.rooms.delete_click", "/chess debug roomdelete " + code,
+                            ChatFormatting.RED));
             source.sendSuccess(() -> line, false);
         }
         return 1;
@@ -371,87 +382,107 @@ public final class BoardCommands {
     private static int debugRoom(CommandSourceStack source, String code) {
         BoardRoom room = BoardMemoryManager.INSTANCE.roomByCode(code);
         if (room == null) {
-            source.sendFailure(Component.literal("房间不存在：" + code));
+            source.sendFailure(Component.translatable("wifi_card_games.board.error.room_not_found", code));
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("房间 " + room.id + "（" + room.gameType.displayName
-                + (room.gameType == BoardGameType.GO ? " " + room.size + "路" : "")
-                + "）· " + phaseName(room.phase())), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.board.room.header",
+                room.id, Component.translatable(room.gameType.displayName),
+                room.gameType == BoardGameType.GO
+                        ? Component.translatable("wifi_card_games.board.size_go", room.size) : Component.empty(),
+                Component.translatable(phaseNameKey(room.phase()))), false);
         for (int i = 0; i < 2; i++) {
             String name = room.seatName(i);
             if (name.isEmpty()) {
                 continue;
             }
             final int seat = i;
-            final String line;
+            final Component line;
             if (room.isBot(i)) {
-                line = "  座位" + (i + 1) + "：" + name + "（机器人）";
+                line = Component.translatable("wifi_card_games.board.room.seat_bot", i + 1, name);
             } else {
                 boolean online = room.members[i] != null && BoardRoom.isConnected(room.members[i]);
-                line = "  座位" + (i + 1) + "：" + name + "（真人·" + (online ? "在线" : "离线") + "）";
+                line = Component.translatable("wifi_card_games.board.room.seat_real", i + 1, name,
+                        Component.translatable(online
+                                ? "wifi_card_games.board.room.online" : "wifi_card_games.board.room.offline"));
             }
-            source.sendSuccess(() -> Component.literal(line), false);
+            source.sendSuccess(() -> line, false);
         }
         return 1;
     }
 
     /** 删除指定房间：/chess debug roomdelete <房间码>。 */
     private static int debugRoomDelete(CommandSourceStack source, String code) {
-        String error = BoardMemoryManager.INSTANCE.deleteRoom(code);
+        Component error = BoardMemoryManager.INSTANCE.deleteRoom(code);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("已删除房间 " + code.toUpperCase()), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.board.debug.room_deleted", code.toUpperCase()), false);
         return 1;
     }
 
     /** 清空所有房间：/chess debug roomclear。 */
     private static int debugRoomClear(CommandSourceStack source) {
         int count = BoardMemoryManager.INSTANCE.clearAllRooms();
-        source.sendSuccess(() -> Component.literal("已清空全部房间（共 " + count + " 个）"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.board.debug.rooms_cleared", count), false);
         return 1;
     }
 
-    /** 阶段中文名（管理命令/注册表房间摘要显示用）。 */
-    public static String phaseName(BoardPhase phase) {
+    /** 阶段翻译键（管理命令/注册表房间摘要显示用）。 */
+    public static String phaseNameKey(BoardPhase phase) {
         return switch (phase) {
-            case WAITING -> "等待中";
-            case PLAYING -> "对局中";
-            case SETTLED -> "本局结束";
+            case WAITING -> "wifi_card_games.board.phase.waiting";
+            case PLAYING -> "wifi_card_games.board.phase.playing";
+            case SETTLED -> "wifi_card_games.board.phase.settled";
         };
     }
 
     /** 房间详细信息行（/cardgames roominfo 用）；房间不存在返回空列表。 */
-    public static List<String> roomDetail(String code) {
+    public static List<Component> roomDetail(String code) {
         BoardRoom r = BoardMemoryManager.INSTANCE.roomByCode(code);
         if (r == null) {
             return List.of();
         }
-        List<String> lines = new ArrayList<>();
-        lines.add(r.gameType.displayName
-                + (r.gameType == BoardGameType.GO ? " " + r.size + " 路" : " · " + r.size + "×" + r.size)
-                + " · " + (r.announce ? "公开" : "未公开"));
-        lines.add("阶段：" + phaseName(r.phase()) + " · 玩家 " + r.count + "/2");
+        List<Component> lines = new ArrayList<>();
+        lines.add(Component.translatable("wifi_card_games.board.room.mode",
+                Component.translatable(r.gameType.displayName),
+                r.gameType == BoardGameType.GO
+                        ? Component.translatable("wifi_card_games.board.size_go_detail", r.size)
+                        : Component.translatable("wifi_card_games.board.size_rect_detail", r.size),
+                Component.translatable(r.announce
+                        ? "wifi_card_games.board.room.public" : "wifi_card_games.board.room.private")));
+        lines.add(Component.translatable("wifi_card_games.board.room.phase_players",
+                Component.translatable(phaseNameKey(r.phase())), r.count));
         for (int i = 0; i < 2; i++) {
             String name = r.seatName(i);
             if (name.isEmpty()) {
-                lines.add((i + 1) + ". 等待加入…");
+                lines.add(Component.translatable("wifi_card_games.board.room.empty_seat", i + 1));
                 continue;
             }
-            String extra = r.isBot(i) ? "（机器人）"
-                    : (BoardRoom.isConnected(r.members[i]) ? "" : "（离线）");
-            lines.add((i + 1) + ". " + name + "（" + (i == 0 ? "黑" : "白") + "方）" + extra);
+            Component extra = r.isBot(i) ? Component.translatable("wifi_card_games.board.room.bot_tag")
+                    : (BoardRoom.isConnected(r.members[i]) ? Component.empty()
+                            : Component.translatable("wifi_card_games.board.room.offline_tag"));
+            lines.add(Component.translatable("wifi_card_games.board.room.seat", i + 1, name,
+                    Component.translatable(i == 0
+                            ? "wifi_card_games.board.side.black" : "wifi_card_games.board.side.white"))
+                    .append(extra));
         }
-        lines.add("旁观：" + r.spectators.size() + " 人");
+        lines.add(Component.translatable("wifi_card_games.board.room.spectators", r.spectators.size()));
         return lines;
     }
 
     private static BoardGame gameOf(CommandSourceStack source, ServerPlayer player) throws CommandSyntaxException {
         BoardGame game = BoardMemoryManager.INSTANCE.gameOf(player);
         if (game == null) {
-            source.sendFailure(Component.literal("你不在任何对局中"));
+            source.sendFailure(Component.translatable("wifi_card_games.board.error.not_in_game_self"));
         }
         return game;
+    }
+
+    /** 可点击命令文本（label 为翻译键）。 */
+    private static MutableComponent click(String labelKey, String command, ChatFormatting color) {
+        return Component.translatable(labelKey).withStyle(style -> style
+                .withColor(color)
+                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command)));
     }
 }

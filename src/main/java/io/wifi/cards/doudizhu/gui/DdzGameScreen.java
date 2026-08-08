@@ -26,6 +26,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.RandomSource;
 
@@ -57,7 +58,7 @@ public class DdzGameScreen extends AbstractGameScreen {
     private boolean dragArmed;
 
     public DdzGameScreen() {
-        super("斗地主");
+        super("wifi_card_games.ddz.name");
     }
 
     /** 旁观模式：服务端以 mySeat=-1 表示只读旁观（无手牌、无操作权）。 */
@@ -73,12 +74,12 @@ public class DdzGameScreen extends AbstractGameScreen {
 
     @Override
     protected void reopenHint() {
-        DdzClientState.chatReopenHint("关闭牌局界面");
+        DdzClientState.chatReopenHint(Component.translatable("wifi_card_games.ddz.reopen.closed_game"));
     }
 
     @Override
-    protected String exitConfirmFirstLine() {
-        return "退出后座位将由机器人托管，对局继续";
+    protected String exitConfirmFirstLineKey() {
+        return "wifi_card_games.ddz.confirm.exit_first_line";
     }
 
     @Override
@@ -177,7 +178,7 @@ public class DdzGameScreen extends AbstractGameScreen {
         // 旁观模式：只读观看，仅提供「退出旁观」——置于左下角「规则/历史」按钮上方，
         // 宽度恰好 = 规则(60) + 间隔(4) + 历史(60) = 124，与两按钮左右对齐
         if (isSpectator()) {
-            Button exitBtn = Button.builder(Component.literal("退出旁观"), b -> sendUnspectate())
+            Button exitBtn = Button.builder(Component.translatable("wifi_card_games.ddz.button.exit_spectate"), b -> sendUnspectate())
                     .bounds(8, height - 50, 124, 20).build();
             actionButtons.add(exitBtn);
             addRenderableWidget(exitBtn);
@@ -188,48 +189,57 @@ public class DdzGameScreen extends AbstractGameScreen {
             if (confirmingExit) {
                 // 退出确认弹层：仅「确认退出 / 取消」（确认后座位转机器人托管，对局继续）。
                 // 回调只改字段，按钮由 tick 签名变化统一重建（避免点击遍历期间增删 widget）
-                actionButtons.add(button(x - 95, y - 26, "确认退出", b -> {
+                actionButtons.add(button(x - 95, y - 26, "wifi_card_games.ddz.button.confirm_exit", b -> {
                     confirmingExit = false;
                     sendLeave();
                 }, true));
-                actionButtons.add(button(x, y - 26, "取消", b -> confirmingExit = false, true));
+                actionButtons.add(button(x, y - 26, "wifi_card_games.common.button.cancel", b -> confirmingExit = false, true));
                 return;
             }
-            actionButtons.add(button(x - 95, y - 26, "退出", b -> confirmingExit = true, true));
-            actionButtons.add(button(x, y - 26, s.myTrust ? "取消托管" : "托管", b -> sendTrust(), true));
+            actionButtons.add(button(x - 95, y - 26, "wifi_card_games.common.button.exit", b -> confirmingExit = true, true));
+            actionButtons.add(button(x, y - 26, s.myTrust ? "wifi_card_games.ddz.button.trust_off" : "wifi_card_games.ddz.button.trust_on", b -> sendTrust(), true));
         }
         if (!s.isMyTurn()) {
             return;
         }
         switch (s.phase) {
             case CALLING -> {
-                actionButtons.add(button(x, y, "不叫", b -> sendCall((byte) 0), true));
-                actionButtons.add(button(x, y + 26, "叫1分", b -> sendCall((byte) 1), s.callMaxScore < 1));
-                actionButtons.add(button(x, y + 52, "叫2分", b -> sendCall((byte) 2), s.callMaxScore < 2));
-                actionButtons.add(button(x, y + 78, "叫3分", b -> sendCall((byte) 3), s.callMaxScore < 3));
+                actionButtons.add(button(x, y, "wifi_card_games.ddz.button.no_call", b -> sendCall((byte) 0), true));
+                actionButtons.add(callButton(x, y + 26, 1, s.callMaxScore < 1));
+                actionButtons.add(callButton(x, y + 52, 2, s.callMaxScore < 2));
+                actionButtons.add(callButton(x, y + 78, 3, s.callMaxScore < 3));
             }
             case ROBBING -> {
-                actionButtons.add(button(x, y, "不抢 ❌", b -> sendRob(false), true));
-                actionButtons.add(button(x, y + 26, "抢地主 🔥", b -> sendRob(true), true));
+                actionButtons.add(button(x, y, "wifi_card_games.ddz.button.no_rob", b -> sendRob(false), true));
+                actionButtons.add(button(x, y + 26, "wifi_card_games.ddz.button.rob", b -> sendRob(true), true));
             }
             case PLAYING -> {
                 // 出牌按钮始终显示；选中牌为合法牌型且能压过上家时才可用（本地预检，与服务端同引擎）
-                actionButtons.add(button(x, y, "出牌", b -> sendPlay(), canPlaySelected()));
+                actionButtons.add(button(x, y, "wifi_card_games.ddz.button.play", b -> sendPlay(), canPlaySelected()));
                 boolean canReveal = s.landlordSeat == s.mySeat && !s.revealed && s.lastPlaySeat < 0;
                 if (canReveal) {
-                    actionButtons.add(button(x, y + 26, "明牌", b -> sendReveal(), true));
-                    actionButtons.add(button(x, y + 52, "不出", b -> sendPass(),
+                    actionButtons.add(button(x, y + 26, "wifi_card_games.ddz.button.reveal", b -> sendReveal(), true));
+                    actionButtons.add(button(x, y + 52, "wifi_card_games.ddz.button.pass", b -> sendPass(),
                             s.lastPlaySeat >= 0 && s.lastPlaySeat != s.mySeat));
-                    actionButtons.add(button(x, y + 78, "提示", b -> hint(), true));
+                    actionButtons.add(button(x, y + 78, "wifi_card_games.ddz.button.hint", b -> hint(), true));
                 } else {
-                    actionButtons.add(button(x, y + 26, "不出", b -> sendPass(),
+                    actionButtons.add(button(x, y + 26, "wifi_card_games.ddz.button.pass", b -> sendPass(),
                             s.lastPlaySeat >= 0 && s.lastPlaySeat != s.mySeat));
-                    actionButtons.add(button(x, y + 52, "提示", b -> hint(), true));
+                    actionButtons.add(button(x, y + 52, "wifi_card_games.ddz.button.hint", b -> hint(), true));
                 }
             }
             default -> {
             }
         }
+    }
+
+    /** 叫分按钮（"叫N分"，带参数翻译）。 */
+    private Button callButton(int x, int y, int score, boolean active) {
+        Button b = Button.builder(Component.translatable("wifi_card_games.ddz.button.call", score),
+                btn -> sendCall((byte) score)).bounds(x, y, 90, 20).build();
+        b.active = active;
+        addRenderableWidget(b);
+        return b;
     }
 
     /**
@@ -318,7 +328,7 @@ public class DdzGameScreen extends AbstractGameScreen {
         List<DdzCard> play = DdzAutoPlay.findPlay(s.hand, target, s.flowerMode, s.ruleSet);
         selected.clear();
         if (play == null) {
-            DdzClientState.chat("没有能出的牌，可以选“不出”");
+            DdzClientState.chat(Component.translatable("wifi_card_games.ddz.chat.no_play_hint"));
         } else {
             selected.addAll(play.stream().map(DdzCard::id).toList());
         }
@@ -459,22 +469,29 @@ public class DdzGameScreen extends AbstractGameScreen {
         g.drawString(this.font, nameLine(leftSeat), 46, 11,
                 s.currentSeat == leftSeat ? 0xFFFFFF55 : 0xFFFFFFFF, true);
         drawHead(g, s.playerUuids[s.mySeat], 6, 32, 16);
-        String me = "你" + (s.mySeat == s.landlordSeat ? "（地主）" : "") + "：" + s.hand.size() + " 张"
-                + (s.myTrust ? "（托管中）" : "");
+        Component me = Component.translatable("wifi_card_games.ddz.tag.you");
+        if (s.mySeat == s.landlordSeat) {
+            me = me.copy().append(Component.translatable("wifi_card_games.ddz.tag.landlord"));
+        }
+        me = me.copy().append(Component.translatable("wifi_card_games.ddz.tag.cards", s.hand.size()));
+        if (s.myTrust) {
+            me = me.copy().append(Component.translatable("wifi_card_games.ddz.tag.trusting"));
+        }
         g.drawString(this.font, me, 26, 35, 0xFFFFFFFF, true);
         // 右侧：右对手（头像+牌背叠+名字右对齐）
         drawHead(g, s.playerUuids[rightSeat], width - 22, 6, 16);
         drawCardBacks(g, width - 42, 9, s.countOf(rightSeat));
-        String rightText = nameLine(rightSeat);
+        Component rightText = nameLine(rightSeat);
         g.drawString(this.font, rightText, width - this.font.width(rightText) - 46, 11,
                 s.currentSeat == rightSeat ? 0xFFFFFF55 : 0xFFFFFFFF, true);
         // 顶部正中央：当前阶段 + 轮到谁/倒计时（截止刻未下发/已过期时不显示，避免陈旧值）
         DdzGui.centeredShadow(g, this.font, width, phaseText(), 13, 0xFFFFD700);
         if ((s.phase == DdzGamePhase.CALLING || s.phase == DdzGamePhase.ROBBING || s.phase == DdzGamePhase.PLAYING)
                 && s.turnEndGameTime > 0) {
-            String turnText = s.isMyTurn()
-                    ? "轮到你（剩余 " + Math.max(0, countdown) + " 秒）"
-                    : "轮到 " + s.nameOf(s.currentSeat) + "（剩余 " + Math.max(0, countdown) + " 秒）";
+            Component turnText = s.isMyTurn()
+                    ? Component.translatable("wifi_card_games.ddz.turn.you", Math.max(0, countdown))
+                    : Component.translatable("wifi_card_games.ddz.turn.other", s.nameOf(s.currentSeat),
+                            Math.max(0, countdown));
             DdzGui.centeredShadow(g, this.font, width, turnText, 29,
                     s.isMyTurn() ? 0xFFFFFF55 : 0xFFAAAAAA);
         }
@@ -489,24 +506,26 @@ public class DdzGameScreen extends AbstractGameScreen {
                 s.currentSeat == 0 ? 0xFFFFFF55 : 0xFFFFFFFF, true);
         // 座位 1：中（头像+牌背+名字整块居中，名字恒在牌背右侧，不与牌背重叠；长名截断防溢出）
         drawHead(g, s.playerUuids[1], width / 2 - 8, 6, 16);
-        String midText = nameLine(1);
-        midText = this.font.plainSubstrByWidth(midText, Math.max(40, width / 2 - 80));
+        Component midText = nameLine(1);
+        midText = (Component) this.font.substrByWidth(midText, Math.max(40, width / 2 - 80));
         drawCardBacks(g, width / 2 + 10, 9, s.countOf(1));
         g.drawString(this.font, midText, width / 2 + 30, 11,
                 s.currentSeat == 1 ? 0xFFFFFF55 : 0xFFFFFFFF, true);
         // 座位 2：右（头像 + 牌背叠 + 名字右对齐）
         drawHead(g, s.playerUuids[2], width - 22, 6, 16);
         drawCardBacks(g, width - 42, 9, s.countOf(2));
-        String rightText = nameLine(2);
+        Component rightText = nameLine(2);
         g.drawString(this.font, rightText, width - this.font.width(rightText) - 46, 11,
                 s.currentSeat == 2 ? 0xFFFFFF55 : 0xFFFFFFFF, true);
         // 左侧标注旁观状态；中央为阶段 + 轮到谁/倒计时（截止刻未下发/已过期时不显示，避免陈旧值）
-        g.drawString(this.font, "旁观中", 6, 32, 0xFFAAAAAA, true);
+        g.drawString(this.font, Component.translatable("wifi_card_games.ddz.spectating"), 6, 32, 0xFFAAAAAA, true);
         DdzGui.centeredShadow(g, this.font, width, phaseText(), 29, 0xFFFFD700);
         if ((s.phase == DdzGamePhase.CALLING || s.phase == DdzGamePhase.ROBBING || s.phase == DdzGamePhase.PLAYING)
                 && s.turnEndGameTime > 0) {
-            String turnText = "轮到 " + s.nameOf(s.currentSeat) + "（剩余 " + Math.max(0, countdown) + " 秒）";
-            DdzGui.centeredShadow(g, this.font, width, turnText, 45, 0xFFAAAAAA);
+            DdzGui.centeredShadow(g, this.font, width,
+                    Component.translatable("wifi_card_games.ddz.turn.other", s.nameOf(s.currentSeat),
+                            Math.max(0, countdown)),
+                    45, 0xFFAAAAAA);
         }
     }
 
@@ -527,22 +546,36 @@ public class DdzGameScreen extends AbstractGameScreen {
     }
 
     /** 当前阶段标题（顶部正中央显示）；旁观 UI 调试时附加「（调试）」标记。 */
-    private String phaseText() {
+    private Component phaseText() {
         DdzClientState s = DdzClientState.INSTANCE;
-        String base = switch (s.phase) {
-            case WAITING -> "等待游戏开始…";
-            case DEALING -> "发牌中…";
-            case CALLING -> "叫分阶段" + (s.callMaxScore > 0 ? "（当前最高 " + s.callMaxScore + " 分）" : "");
-            case ROBBING -> "抢地主阶段（连续不抢 " + s.consecutivePasses + "/2，当前倍数 ×" + s.multiplier + "）";
-            case PLAYING -> "出牌阶段（倍数 ×" + s.multiplier + "，底分 " + s.baseScore + "）";
-            case SETTLED -> "本局结束";
+        MutableComponent base = switch (s.phase) {
+            case WAITING -> Component.translatable("wifi_card_games.ddz.phase.gui_waiting");
+            case DEALING -> Component.translatable("wifi_card_games.ddz.phase.gui_dealing");
+            case CALLING -> Component.translatable("wifi_card_games.ddz.phase.gui_calling",
+                    s.callMaxScore > 0
+                            ? Component.translatable("wifi_card_games.ddz.phase.call_max", s.callMaxScore)
+                            : Component.empty());
+            case ROBBING -> Component.translatable("wifi_card_games.ddz.phase.gui_robbing",
+                    s.consecutivePasses, s.multiplier);
+            case PLAYING -> Component.translatable("wifi_card_games.ddz.phase.gui_playing",
+                    s.multiplier, s.baseScore);
+            case SETTLED -> Component.translatable("wifi_card_games.ddz.phase.gui_settled");
         };
-        return s.debugSpectate() ? base + "（调试）" : base;
+        return s.debugSpectate() ? base.copy().append(Component.translatable("wifi_card_games.ddz.debug_tag")) : base;
     }
 
-    private String nameLine(int seat) {
+    private Component nameLine(int seat) {
         DdzClientState s = DdzClientState.INSTANCE;
-        return s.nameOf(seat) + (seat == s.landlordSeat ? "（地主）" : "") + "：" + s.countOf(seat) + " 张";
+        MutableComponent line = Component.literal(s.nameOf(seat));
+        if (seat == s.landlordSeat) {
+            line.append(Component.translatable("wifi_card_games.ddz.tag.landlord"));
+        }
+        // 退出转托管/掉线托管的座位（非在线成员）：附加「（托管）」标记
+        if (seat != s.mySeat && !s.connected[seat]) {
+            line.append(Component.translatable("wifi_card_games.ddz.tag.managed"));
+        }
+        line.append(Component.translatable("wifi_card_games.ddz.tag.cards", s.countOf(seat)));
+        return line;
     }
 
     private void drawCenter(GuiGraphics g) {
@@ -556,13 +589,19 @@ public class DdzGameScreen extends AbstractGameScreen {
         g.fill(panelX, 58, panelX + panelW, panelBottom, 0x55000000);
 
         // 最近一次表态
-        String actionText = null;
+        Component actionText = null;
         if (s.lastCallScore >= 0 && !s.lastCallName.isEmpty()) {
-            actionText = s.lastCallName + (s.lastCallScore == 0 ? " 不叫" : " 叫了 " + s.lastCallScore + " 分");
+            actionText = Component.literal(s.lastCallName)
+                    .append(Component.translatable(s.lastCallScore == 0
+                            ? "wifi_card_games.ddz.action.no_call"
+                            : "wifi_card_games.ddz.action.called", s.lastCallScore));
         } else if (!s.lastRobName.isEmpty() && s.phase == DdzGamePhase.ROBBING) {
-            actionText = s.lastRobName + (s.lastRob ? " 抢地主！" : " 不抢");
+            actionText = Component.literal(s.lastRobName)
+                    .append(Component.translatable(s.lastRob
+                            ? "wifi_card_games.ddz.action.robbed" : "wifi_card_games.ddz.action.no_rob"));
         } else if (!s.lastPassName.isEmpty()) {
-            actionText = s.lastPassName + " 不出";
+            actionText = Component.literal(s.lastPassName)
+                    .append(Component.translatable("wifi_card_games.ddz.action.pass"));
         }
         if (actionText != null) {
             DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, actionText, 62, 0xFFFFD700);
@@ -575,11 +614,15 @@ public class DdzGameScreen extends AbstractGameScreen {
             int labelY = i == 0 ? 74 : 106;
             if (e.pass()) {
                 // 不出（跳过）：只渲染文本行，不占牌行位置（与出牌行保持同一行高节奏）
-                DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, e.name() + " 不出", labelY, 0xFFFFD700);
+                DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2,
+                        Component.literal(e.name()).append(Component.translatable("wifi_card_games.ddz.action.pass")),
+                        labelY, 0xFFFFD700);
                 continue;
             }
             int cardY = labelY + 10;
-            String label = e.name() + " 出了 " + (e.type() != null ? e.type().displayName() : "");
+            Component label = Component.literal(e.name())
+                    .append(Component.translatable("wifi_card_games.ddz.action.played",
+                            e.type() != null ? Component.translatable(e.type().displayName()) : Component.empty()));
             DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, label, labelY, 0xFFFFFFFF);
             int n = e.cards().size();
             // 宽牌型（如 20 张飞机带翅膀）动态缩小牌宽并按需重叠，保证不溢出面板
@@ -594,11 +637,12 @@ public class DdzGameScreen extends AbstractGameScreen {
 
         // 底牌（地主确定后亮出）
         if (s.landlordSeat >= 0 && !s.bottomCards.isEmpty()) {
-            StringBuilder sb = new StringBuilder("底牌：");
+            StringBuilder sb = new StringBuilder();
             for (DdzCard c : s.bottomCards) {
-                sb.append(c.display()).append(' ');
+                sb.append(Component.translatable(c.display()).getString()).append(' ');
             }
-            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, sb.toString(), 138, 0xFFFFFF88);
+            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2,
+                    Component.translatable("wifi_card_games.ddz.bottom_label", sb.toString().trim()), 138, 0xFFFFFF88);
         }
 
         // 明牌：公开地主全部手牌（所有玩家可见，随地主出牌同步移除）。
@@ -613,7 +657,9 @@ public class DdzGameScreen extends AbstractGameScreen {
             int areaTop = 156; // 标题行
             int areaH = 10 + rows * (cardH + gap) + 4;
             g.fill(panelX, areaTop - 6, panelX + panelW, areaTop + areaH, 0x44000000);
-            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2, s.landlordName + " 明牌", areaTop, 0xFFFFD700);
+            DdzGui.centeredShadowAt(g, this.font, panelX + panelW / 2,
+                    Component.literal(s.landlordName).append(Component.translatable("wifi_card_games.ddz.reveal_label")),
+                    areaTop, 0xFFFFD700);
             for (int i = 0; i < n; i++) {
                 int row = i / perRow;
                 int col = i % perRow;
@@ -847,6 +893,6 @@ public class DdzGameScreen extends AbstractGameScreen {
         g.fill(x, y, x + w, y + h, 0xFF000000); // 黑色描边
         g.fill(x + 1, y + 1, x + w - 1, y + h - 1, bg);
         int color = card.isFlower() ? 0xFF7A4E00 : (card.isRed() ? 0xFFD00000 : 0xFF111111);
-        g.drawString(Minecraft.getInstance().font, card.display(), x + 3, y + 3, color, false);
+        g.drawString(Minecraft.getInstance().font, Component.translatable(card.display()), x + 3, y + 3, color, false);
     }
 }

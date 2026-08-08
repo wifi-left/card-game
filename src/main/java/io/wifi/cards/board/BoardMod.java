@@ -9,6 +9,7 @@ import io.wifi.cards.common.GameRegistry;
 import io.wifi.cards.common.RoomBrief;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,8 +31,8 @@ public final class BoardMod {
         // 登记到小游戏注册表：小游戏菜单 / 统一 /cardgames 命令 / 跨游戏防护自动生效
         GameRegistry.register(new GameInfo(
                 GameRegistry.GAME_BOARD, GameRegistry.PREFIX_BOARD,
-                "棋类", "棋", 0xFF1E88E5,
-                "黑白棋 / 五子棋 / 围棋",
+                "wifi_card_games.board.name", "wifi_card_games.board.icon", 0xFF1E88E5,
+                "wifi_card_games.board.desc",
                 BoardCommands::openLobby,
                 (player, code) -> BoardMemoryManager.INSTANCE.joinRoom(player, code),
                 BoardMemoryManager.INSTANCE::spectate,
@@ -42,14 +43,18 @@ public final class BoardMod {
                 BoardMemoryManager.INSTANCE::roomCount,
                 BoardMemoryManager.INSTANCE::playerCount,
                 () -> BoardMemoryManager.INSTANCE.roomSnapshot().stream()
-                        .map(r -> r.id + " · " + r.gameType.displayName
-                                + " · 人数 " + r.count + "/2 · " + BoardCommands.phaseName(r.phase()))
+                        .map(r -> (Component) Component.literal(r.id + " · ")
+                                .append(Component.translatable("wifi_card_games.board.room.line",
+                                        Component.translatable(r.gameType.displayName),
+                                        r.count, Component.translatable(BoardCommands.phaseNameKey(r.phase())))))
                         .toList(),
                 // 房间列表行（/cardgames rooms）：管理员含未公开房间
                 includePrivate -> BoardMemoryManager.INSTANCE.roomSnapshot().stream()
                         .filter(r -> includePrivate || r.announce)
-                        .map(r -> new RoomBrief(r.id, r.gameType.displayName + " · 玩家 " + r.count
-                                        + "/2 · " + BoardCommands.phaseName(r.phase()),
+                        .map(r -> new RoomBrief(r.id,
+                                Component.translatable("wifi_card_games.board.room.brief",
+                                        Component.translatable(r.gameType.displayName),
+                                        r.count, Component.translatable(BoardCommands.phaseNameKey(r.phase()))),
                                 (byte) (r.phase() == BoardPhase.WAITING ? 0
                                         : r.phase() == BoardPhase.PLAYING ? 1 : 2)))
                         .toList(),

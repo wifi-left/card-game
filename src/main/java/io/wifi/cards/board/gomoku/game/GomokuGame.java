@@ -7,6 +7,7 @@ import io.wifi.cards.board.manager.BoardRoom;
 import io.wifi.cards.board.model.BoardPhase;
 import io.wifi.cards.board.network.BoardPackets.GameStartS2C;
 import io.wifi.cards.board.network.BoardPackets.MoveBroadcastS2C;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.Arrays;
@@ -27,7 +28,7 @@ public class GomokuGame extends BoardGame {
         over = false;
         winSeat = -1;
         Arrays.fill(trusted, false); // 新局重置托管：上局托管状态不得残留到下一局
-        lastAction = "游戏开始，黑方先手";
+        lastAction = "wifi_card_games.board.lastaction.game_start";
         room.broadcast(new GameStartS2C(board, (byte) 0));
         turn(0);
     }
@@ -39,23 +40,24 @@ public class GomokuGame extends BoardGame {
         }
         int seat = seatOf(player);
         if (seat != currentSeat) {
-            reject(seat, "还没轮到你落子");
+            reject(seat, Component.translatable("wifi_card_games.board.error.not_your_move"));
             return;
         }
         if (!GomokuRules.applyMove(board, size, x, y, colorOf(seat))) {
-            reject(seat, "该位置已有棋子");
+            reject(seat, Component.translatable("wifi_card_games.board.error.gomoku_occupied"));
             return;
         }
-        lastAction = room.seatName(seat) + " 落子 (" + x + "," + y + ")";
+        lastAction = "wifi_card_games.board.lastaction.moved|" + room.seatName(seat) + "|" + x + "|" + y;
         room.broadcast(new MoveBroadcastS2C((byte) seat, (byte) x, (byte) y, board));
         if (GomokuRules.checkWin(board, size, x, y, colorOf(seat))) {
-            lastAction = room.seatName(seat) + " 五连获胜";
-            settle((byte) seat, boardScore(colorOf(seat)), boardScore((byte) (3 - colorOf(seat))), "五连");
+            lastAction = "wifi_card_games.board.lastaction.five|" + room.seatName(seat);
+            settle((byte) seat, boardScore(colorOf(seat)), boardScore((byte) (3 - colorOf(seat))),
+                "wifi_card_games.board.reason.five");
             return;
         }
         if (GomokuRules.isFull(board, size)) {
-            lastAction = "棋盘已满，平局";
-            settle((byte) -1, boardScore((byte) 1), boardScore((byte) 2), "棋盘已满");
+            lastAction = "wifi_card_games.board.lastaction.board_full";
+            settle((byte) -1, boardScore((byte) 1), boardScore((byte) 2), "wifi_card_games.board.reason.board_full");
             return;
         }
         turn(1 - seat);
@@ -63,15 +65,15 @@ public class GomokuGame extends BoardGame {
 
     @Override
     public void onPass(ServerPlayer player) {
-        reject(seatOf(player), "五子棋没有停一手");
+        reject(seatOf(player), Component.translatable("wifi_card_games.board.error.gomoku_no_pass"));
     }
 
     @Override
     protected void autoAct(int seat) {
         int[] move = GomokuAi.findMove(board, size, colorOf(seat));
         if (move == null) {
-            lastAction = "棋盘已满，平局";
-            settle((byte) -1, boardScore((byte) 1), boardScore((byte) 2), "棋盘已满");
+            lastAction = "wifi_card_games.board.lastaction.board_full";
+            settle((byte) -1, boardScore((byte) 1), boardScore((byte) 2), "wifi_card_games.board.reason.board_full");
             return;
         }
         onMove(null, move[0], move[1]);

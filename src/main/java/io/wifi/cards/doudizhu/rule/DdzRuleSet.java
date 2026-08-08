@@ -9,17 +9,18 @@ package io.wifi.cards.doudizhu.rule;
  * 另：花牌（万能牌）模式恒不允许三带二。
  */
 public enum DdzRuleSet {
-    STANDARD("标准规则"),
-    FOLK("民间规则");
+    STANDARD("wifi_card_games.ddz.rule.standard"),
+    FOLK("wifi_card_games.ddz.rule.folk");
 
-    private final String displayName;
+    private final String displayNameKey;
 
-    DdzRuleSet(String displayName) {
-        this.displayName = displayName;
+    DdzRuleSet(String displayNameKey) {
+        this.displayNameKey = displayNameKey;
     }
 
+    /** 规则显示名翻译键（展示时经 Component.translatable 解析）。 */
     public String displayName() {
-        return displayName;
+        return displayNameKey;
     }
 
     /** 该规则集下是否允许某牌型（flowerMode=是否花牌模式）。 */

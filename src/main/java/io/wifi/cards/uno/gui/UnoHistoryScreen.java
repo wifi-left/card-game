@@ -22,7 +22,7 @@ import java.util.List;
 public class UnoHistoryScreen extends AbstractSubScreen {
 
     public UnoHistoryScreen(Screen parent) {
-        super(parent, "事件历史");
+        super(parent, "wifi_card_games.uno.history.title");
     }
 
     // ---------------- 滚动计算（与规则界面一致） ----------------
@@ -38,10 +38,26 @@ public class UnoHistoryScreen extends AbstractSubScreen {
         return Math.max(80, width - SCROLLBAR_RIGHT - 16);
     }
 
-    /** 构建一行历史文本：玩家（金）+ 事件描述（灰）。 */
+    /** 构建一行历史文本：玩家（金）+ 事件描述（灰）。
+     * 事件描述为"翻译键|参数"管道格式（参数为卡片/颜色翻译键），经 {@link #parseHistoryText} 解析。 */
     private MutableComponent buildLineText(HistoryLine line) {
         return Component.literal(line.name()).withStyle(ChatFormatting.GOLD)
-                .append(Component.literal(" " + line.text()).withStyle(ChatFormatting.GRAY));
+                .append(parseHistoryText(line.text()).copy().withStyle(ChatFormatting.GRAY));
+    }
+
+    /** 解析历史文本："key|arg1|arg2"（参数为翻译键）→ 翻译组件；无管道则视为纯翻译键。 */
+    private static Component parseHistoryText(String text) {
+        int pipe = text.indexOf('|');
+        if (pipe < 0) {
+            return Component.translatable(text);
+        }
+        String key = text.substring(0, pipe);
+        String[] rawArgs = text.substring(pipe + 1).split("\\|", -1);
+        Object[] args = new Object[rawArgs.length];
+        for (int i = 0; i < rawArgs.length; i++) {
+            args[i] = Component.translatable(rawArgs[i]);
+        }
+        return Component.translatable(key, args);
     }
 
     /** 超宽文本按可用宽度换行拆分（每段保留各自样式颜色）。 */
@@ -82,7 +98,7 @@ public class UnoHistoryScreen extends AbstractSubScreen {
     @Override
     protected void renderContent(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         g.fill(0, 0, width, 26, 0x66000000);
-        g.drawCenteredString(this.font, "事件历史", width / 2, 9, 0xFFFFD700);
+        g.drawCenteredString(this.font, Component.translatable("wifi_card_games.uno.history.title"), width / 2, 9, 0xFFFFD700);
         // 内容区半透明黑底（仅在有内容处），滚动文本绘制在其上
         g.fill(0, CONTENT_TOP, width, height - BOTTOM_BAR, 0x44000000);
         g.enableScissor(0, CONTENT_TOP, width, height - BOTTOM_BAR);

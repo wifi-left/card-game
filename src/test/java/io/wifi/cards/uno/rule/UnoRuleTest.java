@@ -123,9 +123,10 @@ class UnoRuleTest {
         assertTrue(card(UnoColor.NONE, UnoValue.WILD).isWild());
         assertTrue(card(UnoColor.NONE, UnoValue.WILD4).isWild());
         assertFalse(card(UnoColor.RED, UnoValue.SKIP).isWild());
-        assertEquals("红5", card(UnoColor.RED, UnoValue.FIVE).display());
-        assertEquals("万能", card(UnoColor.NONE, UnoValue.WILD).display());
-        assertEquals("万能+4", card(UnoColor.NONE, UnoValue.WILD4).display());
-        assertEquals("黄+2", card(UnoColor.YELLOW, UnoValue.DRAW2).display());
+        // display() 返回翻译键（如 wifi_card_games.uno.card.r_5），由客户端 translatable 解析
+        assertEquals("wifi_card_games.uno.card.r_5", card(UnoColor.RED, UnoValue.FIVE).display());
+        assertEquals("wifi_card_games.uno.card.wild", card(UnoColor.NONE, UnoValue.WILD).display());
+        assertEquals("wifi_card_games.uno.card.wild4", card(UnoColor.NONE, UnoValue.WILD4).display());
+        assertEquals("wifi_card_games.uno.card.y_draw2", card(UnoColor.YELLOW, UnoValue.DRAW2).display());
     }
 }

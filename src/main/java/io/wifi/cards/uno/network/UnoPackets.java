@@ -4,6 +4,9 @@ import io.wifi.cards.uno.manager.UnoMemoryManager;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.ComponentSerialization;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
@@ -570,11 +573,12 @@ public final class UnoPackets {
     }
 
     /** 房间关闭（S2C），reason 为空表示玩家主动离开，不提示。 */
-    public record RoomClosedS2C(String reason) implements CustomPacketPayload {
+    /** 房间关闭（S2C）：原因组件（空组件=正常关闭不提示），客户端显示在聊天栏并清理本地状态。 */
+    public record RoomClosedS2C(Component reason) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<RoomClosedS2C> TYPE = new CustomPacketPayload.Type<>(ROOM_CLOSED);
         public static final StreamCodec<FriendlyByteBuf, RoomClosedS2C> CODEC = StreamCodec.of(
-                (buf, value) -> buf.writeUtf(value.reason()),
-                buf -> new RoomClosedS2C(buf.readUtf()));
+                (buf, value) -> ComponentSerialization.STREAM_CODEC.encode((RegistryFriendlyByteBuf) buf, value.reason()),
+                buf -> new RoomClosedS2C(ComponentSerialization.STREAM_CODEC.decode((RegistryFriendlyByteBuf) buf)));
 
         @Override
         public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
@@ -583,11 +587,12 @@ public final class UnoPackets {
     }
 
     /** 通知（S2C）：错误提示或系统消息，客户端显示在聊天栏。 */
-    public record NoticeS2C(String message) implements CustomPacketPayload {
+    /** 通知（S2C）：错误提示或系统消息组件（翻译键 + 参数），客户端显示在聊天栏。 */
+    public record NoticeS2C(Component message) implements CustomPacketPayload {
         public static final CustomPacketPayload.Type<NoticeS2C> TYPE = new CustomPacketPayload.Type<>(NOTICE);
         public static final StreamCodec<FriendlyByteBuf, NoticeS2C> CODEC = StreamCodec.of(
-                (buf, value) -> buf.writeUtf(value.message()),
-                buf -> new NoticeS2C(buf.readUtf()));
+                (buf, value) -> ComponentSerialization.STREAM_CODEC.encode((RegistryFriendlyByteBuf) buf, value.message()),
+                buf -> new NoticeS2C(ComponentSerialization.STREAM_CODEC.decode((RegistryFriendlyByteBuf) buf)));
 
         @Override
         public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {

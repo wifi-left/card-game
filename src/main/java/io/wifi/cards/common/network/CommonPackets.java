@@ -162,8 +162,8 @@ public final class CommonPackets {
                 ctx.server().execute(() -> guarded(() -> {
                     GameInfo info = GameRegistry.byId(payload.gameId());
                     if (info == null) {
-                        ctx.player().sendSystemMessage(Component.literal(
-                                "[小游戏] 未知的游戏：" + payload.gameId()));
+                        ctx.player().sendSystemMessage(Component.translatable(
+                                "wifi_card_games.common.error.unknown_game", payload.gameId()));
                         return;
                     }
                     info.opener().accept(ctx.player());

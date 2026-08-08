@@ -57,7 +57,8 @@ public class UnoGameScreen extends AbstractGameScreen {
     private float spectatorScroll;
 
     public UnoGameScreen() {
-        super("UNO" + (UnoClientState.INSTANCE.debugView ? "（调试）" : ""));
+        super(UnoClientState.INSTANCE.debugView
+                ? "wifi_card_games.uno.name_debug" : "wifi_card_games.uno.name");
     }
 
     /** 旁观模式：服务端以 mySeat=-1 表示只读旁观（无手牌、无操作权）。 */
@@ -73,12 +74,12 @@ public class UnoGameScreen extends AbstractGameScreen {
 
     @Override
     protected void reopenHint() {
-        UnoClientState.chatReopenHint("关闭牌局界面");
+        UnoClientState.chatReopenHint(Component.translatable("wifi_card_games.uno.reopen.closed_game"));
     }
 
     @Override
-    protected String exitConfirmFirstLine() {
-        return "退出后座位将由机器人托管，对局继续";
+    protected String exitConfirmFirstLineKey() {
+        return "wifi_card_games.uno.confirm.exit_first_line";
     }
 
     /** Esc 优先处理：取消选色弹层 / 调试旁观直接回大厅。 */
@@ -164,7 +165,7 @@ public class UnoGameScreen extends AbstractGameScreen {
         int y = height - 150;
         // 旁观模式：只读观看，仅提供「退出旁观」（服务端清理旁观关系并回到大厅）
         if (isSpectator()) {
-            actionButtons.add(button(x, y, "退出旁观", b -> sendUnspectate(), true));
+            actionButtons.add(button(x, y, "wifi_card_games.uno.button.exit_spectate", b -> sendUnspectate(), true));
             return;
         }
         // 常驻行：退出游戏 + 托管（整局可用，随时可退出/取消托管）
@@ -172,38 +173,38 @@ public class UnoGameScreen extends AbstractGameScreen {
             if (confirmingExit) {
                 // 退出确认弹层：仅「确认退出 / 取消」（确认后座位转机器人托管，对局继续）。
                 // 回调只改字段，按钮由 tick 签名变化统一重建（避免点击遍历期间增删 widget）
-                actionButtons.add(button(x - 95, y - 26, "确认退出", b -> {
+                actionButtons.add(button(x - 95, y - 26, "wifi_card_games.uno.button.confirm_exit", b -> {
                     confirmingExit = false;
                     sendLeave();
                 }, true));
-                actionButtons.add(button(x, y - 26, "取消", b -> confirmingExit = false, true));
+                actionButtons.add(button(x, y - 26, "wifi_card_games.common.button.cancel", b -> confirmingExit = false, true));
                 return;
             }
             if (confirmingColor) {
                 // 选色弹层：中央 4 色按钮 + 「取消」（保留选中）
                 for (UnoColor color : new UnoColor[]{UnoColor.RED, UnoColor.YELLOW, UnoColor.GREEN, UnoColor.BLUE}) {
                     final UnoColor c = color;
-                    Button b = Button.builder(Component.literal(c.displayName()), btn -> sendPlayWithColor(c))
+                    Button b = Button.builder(Component.translatable(c.displayName()), btn -> sendPlayWithColor(c))
                             .bounds(colorBtnX(c), colorBtnY(), 60, 20).build();
                     addRenderableWidget(b);
                     actionButtons.add(b);
                 }
-                actionButtons.add(button(x, y - 26, "取消", b -> confirmingColor = false, true));
+                actionButtons.add(button(x, y - 26, "wifi_card_games.common.button.cancel", b -> confirmingColor = false, true));
                 return;
             }
-            actionButtons.add(button(x - 95, y - 26, "退出", b -> confirmingExit = true, true));
-            actionButtons.add(button(x, y - 26, s.myTrust ? "取消托管" : "托管", b -> sendTrust(), true));
+            actionButtons.add(button(x - 95, y - 26, "wifi_card_games.common.button.exit", b -> confirmingExit = true, true));
+            actionButtons.add(button(x, y - 26, s.myTrust ? "wifi_card_games.uno.button.trust_off" : "wifi_card_games.uno.button.trust_on", b -> sendTrust(), true));
         }
         if (s.phase == UnoGamePhase.PLAYING) {
             // UNO 喊牌（本人剩 1 张且未喊）：任何时候可喊
             if (s.mySeat >= 0 && s.mySeat < s.unoCatchable.length
                     && s.unoCatchable[s.mySeat] && !s.declaredUno[s.mySeat]) {
-                actionButtons.add(button(x, y + 52, "喊 UNO！", b -> sendDeclareUno(), true));
+                actionButtons.add(button(x, y + 52, "wifi_card_games.uno.button.declare_uno", b -> sendDeclareUno(), true));
             }
             // 抓 UNO（有对手剩 1 张未喊）：抓住罚对方 2 张
             int target = catchableTarget();
             if (target >= 0) {
-                actionButtons.add(button(x, y + 78, "抓 " + shortName(target) + " UNO", b -> sendCatch(target), true));
+                catchButton(x, y + 78, target);
             }
         }
         if (!s.isMyTurn()) {
@@ -213,14 +214,23 @@ public class UnoGameScreen extends AbstractGameScreen {
             // 出牌按钮仅在选择恰好一张且可打的牌时激活：
             // 没选牌 / 选错牌（颜色/点数不匹配且非万能牌）一律禁用，客户端预检拦截。
             // 提示按钮与出牌并排：自动选出一张可打的牌（无牌可打则提示抽牌）
-            actionButtons.add(button(x - 95, y, "提示", b -> hint(), true));
-            actionButtons.add(button(x, y, "出牌", b -> sendPlay(), selectionPlayable()));
+            actionButtons.add(button(x - 95, y, "wifi_card_games.uno.button.hint", b -> hint(), true));
+            actionButtons.add(button(x, y, "wifi_card_games.uno.button.play", b -> sendPlay(), selectionPlayable()));
             if (s.drawnPlayable) {
-                actionButtons.add(button(x, y + 26, "跳过", b -> sendPass(), true));
+                actionButtons.add(button(x, y + 26, "wifi_card_games.uno.button.skip", b -> sendPass(), true));
             } else {
-                actionButtons.add(button(x, y + 26, "抽牌", b -> sendDraw(), true));
+                actionButtons.add(button(x, y + 26, "wifi_card_games.uno.button.draw", b -> sendDraw(), true));
             }
         }
+    }
+
+    /** 抓 UNO 按钮（"抓 X UNO"，带参数翻译）。 */
+    private Button catchButton(int x, int y, int targetSeat) {
+        Button b = Button.builder(Component.translatable("wifi_card_games.uno.button.catch_uno",
+                shortName(targetSeat)), btn -> sendCatch(targetSeat)).bounds(x, y, 90, 20).build();
+        addRenderableWidget(b);
+        actionButtons.add(b);
+        return b;
     }
 
     /** 对手短名（过长截断，按钮标签用）。 */
@@ -289,7 +299,7 @@ public class UnoGameScreen extends AbstractGameScreen {
         if (chosen != null) {
             selected.add(chosen.id());
         } else {
-            UnoClientState.chat("没有能出的牌，请点击抽牌");
+            UnoClientState.chat(Component.translatable("wifi_card_games.uno.chat.no_play_hint"));
         }
         buttonSignature = -1; // 触发按钮重建（出牌按钮可用性）
     }
@@ -519,7 +529,8 @@ public class UnoGameScreen extends AbstractGameScreen {
         int x0 = (width - w) / 2;
         int y0 = colorPickerTop();
         g.fill(x0, y0, x0 + w, y0 + h, 0xE6000000); // 深色背景遮罩
-        UnoGui.centeredShadow(g, this.font, width, "万能牌：请选择颜色", y0 + 10, 0xFFFFD700);
+        UnoGui.centeredShadow(g, this.font, width,
+                Component.translatable("wifi_card_games.uno.color_picker.title"), y0 + 10, 0xFFFFD700);
         UnoCard card = colorCardId >= 0 ? UnoCard.byId(colorCardId) : null;
         if (card != null) {
             // 中央预览所选万能牌
@@ -538,25 +549,37 @@ public class UnoGameScreen extends AbstractGameScreen {
     private void drawTopInfo(GuiGraphics g) {
         UnoClientState s = UnoClientState.INSTANCE;
         g.fill(0, 0, width, 30, 0x66000000);
-        String left = (isSpectator() ? "旁观中 · " : "")
-                + (s.debugView ? "UNO（调试）" : "UNO 房间 " + (s.roomCode == null ? "" : s.roomCode));
+        Component left = Component.empty();
+        if (isSpectator()) {
+            left = Component.translatable("wifi_card_games.uno.top.spectating");
+        }
+        left = left.copy().append(s.debugView
+                ? Component.translatable("wifi_card_games.uno.top.debug")
+                : Component.translatable("wifi_card_games.uno.top.room",
+                        s.roomCode == null ? "" : s.roomCode));
         g.drawString(this.font, left, 6, 8, 0xFFFFFFFF, true);
         if (s.phase == UnoGamePhase.PLAYING) {
             String dir = s.direction > 0 ? "→" : "←";
-            UnoGui.centeredShadow(g, this.font, width, "出牌中 · 方向 " + dir, 8, 0xFFFFD700);
+            UnoGui.centeredShadow(g, this.font, width,
+                    Component.translatable("wifi_card_games.uno.top.playing", dir), 8, 0xFFFFD700);
             // 倒计时仅在服务端下发了截止刻（turnEndGameTime>0）时显示；
             // 调试旁观数据无截止刻，避免显示虚假的"剩余 30 秒"
-            String timeText = s.turnEndGameTime > 0 ? "（剩余 " + Math.max(0, countdown) + " 秒）" : "";
-            String turnText = s.isMyTurn()
-                    ? "轮到你" + timeText
-                    : "轮到 " + s.nameOf(s.currentSeat) + timeText;
+            Component timeText = s.turnEndGameTime > 0
+                    ? Component.translatable("wifi_card_games.uno.top.time", Math.max(0, countdown))
+                    : Component.empty();
+            Component turnText = s.isMyTurn()
+                    ? Component.translatable("wifi_card_games.uno.top.turn_you", timeText)
+                    : Component.translatable("wifi_card_games.uno.top.turn_other", s.nameOf(s.currentSeat), timeText);
             if (s.myTrust) {
-                turnText += "（托管中）"; // 托管状态标识：自动出牌中，避免误以为掉线/卡住
+                turnText = turnText.copy().append(Component.translatable("wifi_card_games.uno.top.trusting"));
             }
             UnoGui.centeredShadow(g, this.font, width, turnText, 22,
                     s.isMyTurn() ? 0xFFFFFF55 : 0xFFAAAAAA);
         } else {
-            UnoGui.centeredShadow(g, this.font, width, s.phase == UnoGamePhase.SETTLED ? "本局结束" : "等待开始…", 16, 0xFFFFD700);
+            UnoGui.centeredShadow(g, this.font, width,
+                    Component.translatable(s.phase == UnoGamePhase.SETTLED
+                            ? "wifi_card_games.uno.top.settled" : "wifi_card_games.uno.top.waiting"),
+                    16, 0xFFFFD700);
         }
     }
 
@@ -603,16 +626,17 @@ public class UnoGameScreen extends AbstractGameScreen {
         String name = s.nameOf(seat);
         name = this.font.plainSubstrByWidth(name, w - 60);
         g.drawString(this.font, name, x + 24, y + 3, isTurn ? 0xFFFFFF55 : 0xFFFFFFFF, true);
-        StringBuilder line = new StringBuilder(s.countOf(seat) + " 张");
+        MutableComponent line = Component.translatable("wifi_card_games.uno.opponent.cards", s.countOf(seat));
         if (seat < s.connected.size() && !s.connected.get(seat)) {
-            line.append(" · 离线");
+            line.append(Component.translatable("wifi_card_games.uno.opponent.offline"));
         }
-        g.drawString(this.font, line.toString(), x + 24, y + 18, 0xFFCCCCCC, true);
+        g.drawString(this.font, line, x + 24, y + 18, 0xFFCCCCCC, true);
         // UNO / 可抓标记（右上角）：仅在手牌仍为 1 张时显示
         // （被罚牌离开 1 张状态后徽标不复位，纯显示问题）
         boolean declared = seat < s.declaredUno.length && s.declaredUno[seat] && s.countOf(seat) == 1;
         boolean catchable = seat < s.unoCatchable.length && s.unoCatchable[seat] && !declared;
-        String mark = declared ? "UNO" : (catchable ? "可抓!" : "");
+        String mark = declared ? "UNO" : (catchable
+                ? Component.translatable("wifi_card_games.uno.mark.catchable").getString() : "");
         if (!mark.isEmpty()) {
             int color = declared ? 0xFF55FF55 : 0xFFFF5555;
             g.drawString(this.font, mark, x + w - this.font.width(mark) - 5, y + 3, color, true);
@@ -634,13 +658,15 @@ public class UnoGameScreen extends AbstractGameScreen {
                 drawable ? 0xFFFFFF55 : 0xFF000000);
         UnoGui.drawCardBack(g, pileX, PILE_TOP, PILE_W, PILE_H);
         if (drawable) {
-            UnoGui.centeredShadowAt(g, this.font, pileX + PILE_W / 2, "点击抽牌", PILE_TOP + PILE_H + 2, 0xFFFFFF55);
+            UnoGui.centeredShadowAt(g, this.font, pileX + PILE_W / 2,
+                    Component.translatable("wifi_card_games.uno.pile.draw_hint"), PILE_TOP + PILE_H + 2, 0xFFFFFF55);
         } else {
-            UnoGui.centeredShadowAt(g, this.font, pileX + PILE_W / 2, "抽牌堆", PILE_TOP + PILE_H + 2, 0xFFAAAAAA);
+            UnoGui.centeredShadowAt(g, this.font, pileX + PILE_W / 2,
+                    Component.translatable("wifi_card_games.uno.pile.label"), PILE_TOP + PILE_H + 2, 0xFFAAAAAA);
         }
         // 方向箭头
         int arrowX = pileX + PILE_W + 6;
-        UnoGui.centeredShadowAt(g, this.font, arrowX + 8, s.direction > 0 ? "→" : "←",
+        UnoGui.centeredShadowAt(g, this.font, arrowX + 8, Component.literal(s.direction > 0 ? "→" : "←"),
                 PILE_TOP + PILE_H / 2 - 5, 0xFFFFFFFF);
         // 弃牌堆顶牌（右侧）：万能牌显示所选颜色条
         int discX = arrowX + 22;
@@ -657,15 +683,16 @@ public class UnoGameScreen extends AbstractGameScreen {
         }
         // 事件提示（最新一条，截断防溢出）。位于牌堆（y=96~140）上方，
         // 不与其重叠（此前画在 y=128 会压在弃牌堆上）
-        if (!s.lastEvent.isEmpty()) {
-            String event = this.font.plainSubstrByWidth(s.lastEvent, panelW - 12);
+        if (!s.lastEvent.getString().isEmpty()) {
+            Component event = (Component) this.font.substrByWidth(s.lastEvent, panelW - 12);
             UnoGui.centeredShadowAt(g, this.font, panelX + panelW / 2, event, 64, 0xFFFFFF88);
         }
         // 当前有效颜色提示：顶牌为普通牌=其颜色；万能牌=出牌者所选颜色。
         // 颜色文字用 Component + ChatFormatting 着色（与聊天栏颜色一致），
         // 便于玩家快速判断可出的颜色
-        MutableComponent colorText = Component.literal("当前颜色：").append(
-                Component.literal(s.topColor.isColored() ? s.topColor.displayName() : "无")
+        MutableComponent colorText = Component.translatable("wifi_card_games.uno.color.current",
+                Component.translatable(s.topColor.isColored() ? s.topColor.displayName()
+                        : "wifi_card_games.uno.color.none")
                         .withStyle(UnoGui.chatFormatting(s.topColor)));
         int colorCx = panelX + panelW / 2;
         g.drawString(this.font, colorText,
@@ -750,8 +777,10 @@ public class UnoGameScreen extends AbstractGameScreen {
             // 仅在手牌仍为 1 张时显示（被罚牌离开 1 张状态后徽标不复位）
             boolean declared = i < s.declaredUno.length && s.declaredUno[i] && s.countOf(i) == 1;
             boolean catchable = i < s.unoCatchable.length && s.unoCatchable[i] && !declared;
-            String mark = declared ? "UNO" : (catchable ? "可抓!" : "");
-            String base = s.nameOf(i) + "：" + hand.size() + " 张";
+            String mark = declared ? "UNO" : (catchable
+                ? Component.translatable("wifi_card_games.uno.mark.catchable").getString() : "");
+            String base = Component.translatable("wifi_card_games.uno.spectator.cards",
+                    s.nameOf(i), hand.size()).getString();
             int markW = mark.isEmpty() ? 0 : this.font.width(" " + mark);
             String name = this.font.plainSubstrByWidth(base, SPECTATOR_PANEL_W - 6 - markW);
             g.drawString(this.font, name, panelX + 2, y, isTurn ? 0xFFFFFF55 : 0xFFFFFFFF, true);

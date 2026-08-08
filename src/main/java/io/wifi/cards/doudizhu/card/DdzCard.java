@@ -106,15 +106,19 @@ public final class DdzCard {
         return suit == DdzCardSuit.HEART || suit == DdzCardSuit.DIAMOND || rank == DdzCardRank.BIG_JOKER;
     }
 
+    /**
+     * 牌面文字：普通牌为字符牌值 + 花色符号（无需翻译），
+     * 王/花牌返回翻译键（展示时经 Component.translatable 解析）。
+     */
     public String display() {
         if (isFlower()) {
-            return "⭐花";
+            return "wifi_card_games.ddz.card.flower";
         }
         if (rank == DdzCardRank.SMALL_JOKER) {
-            return "小王";
+            return "wifi_card_games.ddz.card.small_joker";
         }
         if (rank == DdzCardRank.BIG_JOKER) {
-            return "大王";
+            return "wifi_card_games.ddz.card.big_joker";
         }
         return rank.symbol() + suit.symbol();
     }

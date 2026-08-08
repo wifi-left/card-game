@@ -45,8 +45,8 @@ public abstract class AbstractSubScreen extends Screen {
     /** 按下时鼠标相对滑块顶部的偏移。 */
     private double dragOffset;
 
-    protected AbstractSubScreen(Screen parent, String title) {
-        super(Component.literal(title));
+    protected AbstractSubScreen(Screen parent, String titleKey) {
+        super(Component.translatable(titleKey));
         this.parent = parent;
         this.fromGame = parent instanceof AbstractGameScreen;
     }
@@ -113,7 +113,7 @@ public abstract class AbstractSubScreen extends Screen {
 
     @Override
     protected void init() {
-        addRenderableWidget(Button.builder(Component.literal("返回"), b -> this.onClose())
+        addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.common.button.back"), b -> this.onClose())
                 .bounds(width / 2 - 40, height - BOTTOM_BAR + 4, 80, 20).build());
         buildContent();
     }
@@ -164,7 +164,8 @@ public abstract class AbstractSubScreen extends Screen {
 
     /** 底部提示文字（子类渲染内容时调用，统一文案）。 */
     protected void drawScrollHint(GuiGraphics g) {
-        g.drawCenteredString(this.font, "滚轮滚动 / 拖拽滚动条，Esc 返回", width / 2, height - 16, 0xFF888888);
+        g.drawCenteredString(this.font, Component.translatable("wifi_card_games.common.subscreen.scroll_hint"),
+                width / 2, height - 16, 0xFF888888);
     }
 
     // ---------------- 滚动交互 ----------------

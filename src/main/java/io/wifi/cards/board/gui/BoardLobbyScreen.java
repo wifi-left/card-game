@@ -38,7 +38,7 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
     private boolean botOn;
 
     public BoardLobbyScreen() {
-        super("棋类大厅");
+        super("wifi_card_games.board.lobby.title");
         // 记住上次开房间的选项（客户端 config 持久化），下次打开默认选中；
         // 防御：越界/非法值回退默认（config 文件被手改/版本变化时）
         int typeOrd = LobbyPrefs.getInt(GameRegistry.GAME_BOARD, "gameType", 0);
@@ -87,8 +87,8 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
     }
 
     @Override
-    protected String lobbyTitle() {
-        return "棋类大厅";
+    protected String lobbyTitleKey() {
+        return "wifi_card_games.board.lobby.title";
     }
 
     @Override
@@ -97,7 +97,7 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
     }
 
     @Override
-    protected void lobbyChat(String message) {
+    protected void lobbyChat(Component message) {
         BoardClientState.chat(message);
     }
 
@@ -108,7 +108,7 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
 
     @Override
     protected void reopenHint() {
-        BoardClientState.chatReopenHint("关闭大厅");
+        BoardClientState.chatReopenHint(Component.translatable("wifi_card_games.board.reopen.closed_lobby"));
     }
 
     /** 房间码点击区随滚动偏移（房间信息区首行）。 */
@@ -178,14 +178,14 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
             int lx = cx - 172;
             int rx = cx + 12;
             // 游戏选择：三个小按钮一行（选中的以 ▶ 标记）
-            addRenderableWidget(Button.builder(Component.literal(mark(selected == BoardGameType.OTHELLO, "黑白棋")),
-                    b -> selectGame(BoardGameType.OTHELLO))
+            addRenderableWidget(Button.builder(markButton(selected == BoardGameType.OTHELLO,
+                    Component.translatable("wifi_card_games.board.name_othello")), b -> selectGame(BoardGameType.OTHELLO))
                     .bounds(lx, top, 50, 20).build());
-            addRenderableWidget(Button.builder(Component.literal(mark(selected == BoardGameType.GOMOKU, "五子棋")),
-                    b -> selectGame(BoardGameType.GOMOKU))
+            addRenderableWidget(Button.builder(markButton(selected == BoardGameType.GOMOKU,
+                    Component.translatable("wifi_card_games.board.name_gomoku")), b -> selectGame(BoardGameType.GOMOKU))
                     .bounds(lx + 54, top, 50, 20).build());
-            addRenderableWidget(Button.builder(Component.literal(mark(selected == BoardGameType.GO, "围棋")),
-                    b -> selectGame(BoardGameType.GO))
+            addRenderableWidget(Button.builder(markButton(selected == BoardGameType.GO,
+                    Component.translatable("wifi_card_games.board.name_go")), b -> selectGame(BoardGameType.GO))
                     .bounds(lx + 108, top, 50, 20).build());
             // 尺寸选择：当前游戏的可选尺寸一行，按钮宽按选项数自适应铺满左列 160（对齐）；
             // 选中指示由 render 的金色描边承担（窄按钮放不下 ▶ 前缀）
@@ -193,44 +193,52 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
             int bw = sizeBtnW(opts.length);
             for (int i = 0; i < opts.length; i++) {
                 final int sz = opts[i];
-                addRenderableWidget(Button.builder(Component.literal(sz + " 路"), b -> {
+                addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.board.lobby.size_btn", sz), b -> {
                     setSize(sz);
                     rebuildLobby();
                 }).bounds(lx + i * (bw + 2), top + 24, bw, 20).build());
             }
-            addRenderableWidget(Button.builder(Component.literal("公布房间：" + (announce ? "✓ 开" : "✗ 关")), b -> {
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.board.lobby.announce",
+                    Component.translatable(announce
+                            ? "wifi_card_games.board.lobby.on" : "wifi_card_games.board.lobby.off")), b -> {
                 announce = !announce;
                 LobbyPrefs.set(GameRegistry.GAME_BOARD, "announce", announce);
-                b.setMessage(Component.literal("公布房间：" + (announce ? "✓ 开" : "✗ 关")));
+                b.setMessage(Component.translatable("wifi_card_games.board.lobby.announce",
+                        Component.translatable(announce
+                                ? "wifi_card_games.board.lobby.on" : "wifi_card_games.board.lobby.off")));
             }).bounds(lx, top + 48, 160, 20).build());
             // 机器人（围棋无 AI，禁用并提示；先清 botOn 再建按钮，避免文案残留"1 个"）
             if (selected == BoardGameType.GO) {
                 botOn = false;
             }
-            Button botBtn = Button.builder(Component.literal("机器人：" + (botOn ? "✓ 1 个" : "✗ 关")), b -> {
+            Button botBtn = Button.builder(Component.translatable("wifi_card_games.board.lobby.bots",
+                    Component.translatable(botOn
+                            ? "wifi_card_games.board.lobby.bot_on" : "wifi_card_games.board.lobby.bot_off")), b -> {
                 botOn = !botOn;
                 LobbyPrefs.set(GameRegistry.GAME_BOARD, "botOn", botOn);
-                b.setMessage(Component.literal("机器人：" + (botOn ? "✓ 1 个" : "✗ 关")));
+                b.setMessage(Component.translatable("wifi_card_games.board.lobby.bots",
+                        Component.translatable(botOn
+                                ? "wifi_card_games.board.lobby.bot_on" : "wifi_card_games.board.lobby.bot_off")));
             }).bounds(lx, top + 72, 160, 20).build();
             botBtn.active = selected != BoardGameType.GO;
             addRenderableWidget(botBtn);
-            addRenderableWidget(Button.builder(Component.literal("创建房间"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.board.lobby.create"), b ->
                     ClientPlayNetworking.send(new CreateRoomC2S((byte) selected.ordinal(), (byte) currentSize(),
                             announce, (byte) (botOn ? 1 : 0))))
                     .bounds(rx, top, 160, 20).build());
-            codeBox = new EditBox(this.font, rx, top + 24, 160, 20, Component.literal("房间码"));
+            codeBox = new EditBox(this.font, rx, top + 24, 160, 20, Component.translatable("wifi_card_games.board.lobby.code_box"));
             codeBox.setMaxLength(8);
             codeBox.setFilter(str -> str.chars().allMatch(ch -> Character.isLetterOrDigit(ch) || ch == '-'));
             addRenderableWidget(codeBox);
-            addRenderableWidget(Button.builder(Component.literal("加入房间"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.board.lobby.join"), b ->
                     ClientPlayNetworking.send(new JoinRoomC2S(codeBox.getValue().trim().toUpperCase())))
                     .bounds(rx, top + 48, 160, 20).build());
-            addRenderableWidget(Button.builder(Component.literal("规则介绍"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.common.button.rules_intro"), b ->
                     Minecraft.getInstance().setScreen(new BoardRulesScreen(BoardLobbyScreen.this)))
                     .bounds(rx, top + 72, 160, 20).build());
         } else {
             // 离开房间按钮：随滚动偏移（小窗口房间视图滚动时保持可见可点）
-            addRenderableWidget(Button.builder(Component.literal("离开房间"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.board.lobby.leave"), b ->
                     ClientPlayNetworking.send(new LeaveRoomC2S()))
                     .bounds(cx - 80, Math.max(40, height / 2 + 56) + (int) scroll, 160, 20).build());
         }
@@ -287,8 +295,8 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
     }
 
     /** 选中的按钮加 ▶ 前缀（视觉选中指示）。 */
-    private static String mark(boolean selected, String label) {
-        return selected ? "▶" + label : label;
+    private static Component markButton(boolean selected, Component label) {
+        return selected ? Component.literal("▶").copy().append(label) : label;
     }
 
     // ---------------- 渲染 ----------------
@@ -320,30 +328,40 @@ public class BoardLobbyScreen extends AbstractLobbyScreen {
                 }
             }
             // 区块标题（屏幕居中）
-            BoardGui.centeredShadow(g, this.font, width, "创建房间", top - 12, 0xFFFFD700);
+            BoardGui.centeredShadow(g, this.font, width,
+                    Component.translatable("wifi_card_games.board.lobby.create_title"), top - 12, 0xFFFFD700);
         } else {
             // 房间信息区 + 按钮区底板见 drawRoomViewBg（super.render 之前绘制）
             int sc = (int) scroll;
-            BoardGui.centeredShadow(g, this.font, width, "等待房间（满 2 人自动开始）", 34 + sc, 0xFFFFD700);
             BoardGui.centeredShadow(g, this.font, width,
-                    "房间 " + s.roomCode + "（" + s.gameType.displayName + sizeText() + "）", 50 + sc, 0xFFFFFF88);
-            BoardGui.centeredShadow(g, this.font, width, "玩家 " + s.roomSize() + " / 2", 64 + sc, 0xFFFFFFFF);
+                    Component.translatable("wifi_card_games.board.lobby.waiting_room"), 34 + sc, 0xFFFFD700);
+            BoardGui.centeredShadow(g, this.font, width,
+                    Component.translatable("wifi_card_games.board.lobby.room_header", s.roomCode,
+                            Component.translatable(s.gameType.displayName),
+                            s.gameType == BoardGameType.GO
+                                    ? Component.translatable("wifi_card_games.board.size_go_detail", s.size)
+                                    : Component.translatable("wifi_card_games.board.size_rect_detail", s.size)),
+                    50 + sc, 0xFFFFFF88);
+            BoardGui.centeredShadow(g, this.font, width,
+                    Component.translatable("wifi_card_games.board.lobby.players", s.roomSize()),
+                    64 + sc, 0xFFFFFFFF);
             for (int i = 0; i < 2; i++) {
-                String line = (i == s.mySeat ? "▶ " : "  ") + (i + 1) + ". "
-                        + (s.names[i] == null || s.names[i].isEmpty() ? "等待加入…" : s.names[i])
-                        + "（" + s.sideName(i) + "方）";
+                Component line = Component.literal(i == s.mySeat ? "▶ " : "  ")
+                        .append(Component.literal((i + 1) + ". "))
+                        .append(s.names[i] == null || s.names[i].isEmpty()
+                                ? Component.translatable("wifi_card_games.board.lobby.waiting_join")
+                                : Component.literal(s.names[i]))
+                        .append(Component.translatable("wifi_card_games.board.lobby.side",
+                                Component.translatable(s.sideName(i))));
                 BoardGui.centeredShadow(g, this.font, width, line, 80 + i * 14 + sc,
                         i == s.mySeat ? 0xFFFFFF55 : 0xFFFFFFFF);
             }
             BoardGui.centeredShadow(g, this.font, width,
-                    "提示：房主可用 /cardgames invite <玩家名> 邀请", 114 + sc, 0xFFAAAAAA);
+                    Component.translatable("wifi_card_games.board.lobby.invite_hint"), 114 + sc, 0xFFAAAAAA);
             // 房间视图滚动条（小窗口内容超高时）
             drawRoomScrollbar(g);
         }
     }
 
-    private String sizeText() {
-        BoardClientState s = BoardClientState.INSTANCE;
-        return s.gameType == BoardGameType.GO ? s.size + " 路" : " · " + s.size + "×" + s.size + " 盘";
-    }
+
 }

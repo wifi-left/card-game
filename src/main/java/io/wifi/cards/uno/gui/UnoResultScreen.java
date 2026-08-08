@@ -15,7 +15,7 @@ import net.minecraft.network.chat.Component;
  */
 public class UnoResultScreen extends Screen {
     public UnoResultScreen() {
-        super(Component.literal("本局结算"));
+        super(Component.translatable("wifi_card_games.uno.result.title"));
     }
 
     @Override
@@ -34,7 +34,7 @@ public class UnoResultScreen extends Screen {
         if (GameMenuClient.tryRestoreOtherSession(GameRegistry.GAME_UNO)) {
             return;
         }
-        UnoClientState.chatReopenHint("关闭结算界面");
+        UnoClientState.chatReopenHint(Component.translatable("wifi_card_games.uno.reopen.closed_result"));
         super.onClose();
     }
 
@@ -44,15 +44,15 @@ public class UnoResultScreen extends Screen {
         UnoClientState s = UnoClientState.INSTANCE;
         if (s.mySeat < 0) {
             // 旁观者：无"再来一局"权限（新局由成员触发），仅提供退出旁观返回大厅
-            addRenderableWidget(Button.builder(Component.literal("退出旁观"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.uno.button.exit_spectate"), b ->
                     ClientPlayNetworking.send(new LeaveRoomC2S()))
                     .bounds(cx - 55, height / 2 + 44, 110, 20).build());
             return;
         }
-        addRenderableWidget(Button.builder(Component.literal("再来一局"), b ->
+        addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.uno.button.next_game"), b ->
                 ClientPlayNetworking.send(new NextGameC2S()))
                 .bounds(cx - 120, height / 2 + 44, 110, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("返回大厅"), b ->
+        addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.uno.button.back_lobby"), b ->
                 ClientPlayNetworking.send(new LeaveRoomC2S()))
                 .bounds(cx + 10, height / 2 + 44, 110, 20).build());
     }
@@ -65,22 +65,26 @@ public class UnoResultScreen extends Screen {
         int cx = width / 2;
         // 顶部标题条
         g.fill(0, 0, width, 26, 0x66000000);
-        UnoGui.centeredShadow(g, this.font, width, "本局结算", 9, 0xFFFFD700);
+        UnoGui.centeredShadow(g, this.font, width, Component.translatable("wifi_card_games.uno.result.title"), 9, 0xFFFFD700);
         // 结算信息区半透明黑底（高度随人数自适应，最多 10 人时行不溢出面板；
         // 封顶 height/2-30 保证矮窗口下面板不遮"再来一局/返回大厅"按钮行（y=height/2+44））
         int infoH = Math.min(50 + s.names.size() * 14 + 8, Math.max(60, height / 2 - 30));
         g.fill(cx - 200, 30, cx + 200, 30 + infoH, 0x55000000);
-        String title = "🎉 " + s.winnerName + " 出完了所有牌，获得胜利！";
-        UnoGui.centeredShadow(g, this.font, width, title, 42, 0xFFFFD700);
-        UnoGui.centeredShadow(g, this.font, width, "先出完手牌者为胜", 62, 0xFFAAAAAA);
+        UnoGui.centeredShadow(g, this.font, width,
+                Component.translatable("wifi_card_games.uno.result.winner", s.winnerName), 42, 0xFFFFD700);
+        UnoGui.centeredShadow(g, this.font, width,
+                Component.translatable("wifi_card_games.uno.result.subtitle"), 62, 0xFFAAAAAA);
         // 各家剩余手牌
         for (int i = 0; i < s.names.size(); i++) {
             String name = s.names.get(i);
             if (name == null || name.isEmpty()) {
                 continue;
             }
-            String line = name + "：剩余 " + s.countOf(i) + " 张"
-                    + (i == s.winnerSeat ? "（胜者）" : "");
+            Component line = Component.literal(name)
+                    .append(Component.translatable("wifi_card_games.uno.result.remaining", s.countOf(i)));
+            if (i == s.winnerSeat) {
+                line = line.copy().append(Component.translatable("wifi_card_games.uno.result.winner_tag"));
+            }
             UnoGui.centeredShadow(g, this.font, width, line, 80 + i * 14,
                     i == s.mySeat ? 0xFFFFFF55 : 0xFFFFFFFF);
         }

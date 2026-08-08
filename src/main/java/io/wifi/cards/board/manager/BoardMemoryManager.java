@@ -14,6 +14,7 @@ import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
@@ -63,18 +64,19 @@ public final class BoardMemoryManager {
         // 先退出旁观状态（旁观者建房/入房自动退出旁观）
         leaveSpectateInternal(player);
         if (currentRoom(player) != null) {
-            error(player, "你已经在房间里了");
+            error(player, Component.translatable("wifi_card_games.board.error.in_room"));
             return;
         }
         // 跨游戏防护：一个玩家同时只能在一个小游戏中（房间成员或旁观）
         GameInfo other = GameRegistry.busyInOtherGame(player, GameRegistry.GAME_BOARD);
         if (other != null) {
-            error(player, "你正在【" + other.displayName() + "】中，请先退出该游戏再进入其他小游戏");
+            error(player, Component.translatable("wifi_card_games.common.error.busy_other_game",
+                    Component.translatable(other.displayName())));
             return;
         }
         // 防御：房间总数上限，防止恶意客户端洪泛创建房间耗尽内存
         if (rooms.size() >= MAX_ROOMS) {
-            error(player, "房间数量已达上限，请稍后再试");
+            error(player, Component.translatable("wifi_card_games.board.error.too_many_rooms"));
             return;
         }
         int realSize = BoardGameType.safeSize(gameType, size);
@@ -95,18 +97,19 @@ public final class BoardMemoryManager {
         }
         // 公布房间：全服聊天栏广播可点击加入消息
         if (announce && server != null) {
-            Component message = Component.literal("[棋牌] " + player.getGameProfile().getName()
-                    + " 创建了房间 " + room.id + "（" + gameType.displayName + sizeText(gameType, realSize) + "）")
-                    .append(Component.literal(" [点击加入]").withStyle(style -> style
-                            .withColor(ChatFormatting.GREEN)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames accept " + room.id))));
+            Component message = Component.translatable("wifi_card_games.board.chat.room_created_broadcast",
+                            player.getGameProfile().getName(), room.id,
+                            Component.translatable(gameType.displayName),
+                            Component.translatable(gameType == BoardGameType.GO
+                                    ? "wifi_card_games.board.size_go" : "wifi_card_games.board.size_rect", realSize))
+                    .append(click(Component.translatable("wifi_card_games.common.click.join"),
+                            "/cardgames accept " + room.id));
             server.getPlayerList().broadcastSystemMessage(message, false);
         }
         // 无大厅 UI：直接提示房主房间已创建（可点击查看列表）
-        player.sendSystemMessage(Component.literal("已创建房间 " + room.id + "，等待玩家加入")
-                .append(Component.literal(" [房间列表]").withStyle(style -> style
-                        .withColor(ChatFormatting.GREEN)
-                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames rooms")))));
+        player.sendSystemMessage(Component.translatable("wifi_card_games.board.chat.room_created", room.id)
+                .append(click(Component.translatable("wifi_card_games.common.click.room_list"),
+                        "/cardgames rooms")));
     }
 
     public void joinRoom(ServerPlayer player, String code) {
@@ -114,30 +117,31 @@ public final class BoardMemoryManager {
         leaveSpectateInternal(player);
         // 防御：房间码长度上限（完整码前缀-5位共 8 字符，杜绝超长输入）
         if (code == null || code.length() > 16) {
-            error(player, "房间码无效");
+            error(player, Component.translatable("wifi_card_games.board.error.bad_code"));
             return;
         }
         BoardRoom room = rooms.get(fullCode(code));
         if (room == null) {
-            error(player, "房间不存在：" + code);
+            error(player, Component.translatable("wifi_card_games.board.error.room_not_found", code));
             return;
         }
         if (currentRoom(player) != null) {
-            error(player, "你已经在房间里了");
+            error(player, Component.translatable("wifi_card_games.board.error.in_room"));
             return;
         }
         // 跨游戏防护：其他小游戏有会话（成员或旁观）时拒绝加入
         GameInfo other = GameRegistry.busyInOtherGame(player, GameRegistry.GAME_BOARD);
         if (other != null) {
-            error(player, "你正在【" + other.displayName() + "】中，请先退出该游戏再进入其他小游戏");
+            error(player, Component.translatable("wifi_card_games.common.error.busy_other_game",
+                    Component.translatable(other.displayName())));
             return;
         }
         if (room.isFull()) {
-            error(player, "房间已满");
+            error(player, Component.translatable("wifi_card_games.board.error.room_full"));
             return;
         }
         if (room.phase() != BoardPhase.WAITING) {
-            error(player, "游戏已经开始，无法加入");
+            error(player, Component.translatable("wifi_card_games.board.error.game_started"));
             return;
         }
         room.addPlayer(player);
@@ -164,7 +168,7 @@ public final class BoardMemoryManager {
         }
         BoardRoom room = currentRoom(player);
         if (room == null) {
-            error(player, "你不在任何房间里");
+            error(player, Component.translatable("wifi_card_games.board.error.not_in_room"));
             return;
         }
         BoardPhase phase = room.phase();
@@ -190,11 +194,11 @@ public final class BoardMemoryManager {
         room.game.onPlayerQuit(seat); // 五子棋/黑白棋：托管代打；围棋：直接结束本局
         room.quitToBot(seat);
         playerRoomIds.remove(player.getUUID());
-        ServerPlayNetworking.send(player, new RoomClosedS2C(
-                isGo ? "你已退出游戏，本局结束" : "你已退出游戏，座位由机器人托管"));
+        ServerPlayNetworking.send(player, new RoomClosedS2C(Component.translatable(
+                isGo ? "wifi_card_games.board.error.quit_game_over" : "wifi_card_games.board.error.quit_to_bot")));
         room.broadcastState();
         if (!room.hasRealPlayer()) {
-            destroyRoom(room, "房间内已无真人玩家，房间关闭");
+            destroyRoom(room, Component.translatable("wifi_card_games.board.error.no_real_player"));
         }
     }
 
@@ -202,7 +206,7 @@ public final class BoardMemoryManager {
     public void nextGame(ServerPlayer player) {
         // 严格限制：旁观者无权开始新对局（新局只能由成员触发）
         if (spectatorRoomIds.containsKey(player.getUUID())) {
-            error(player, "旁观者不能开始新对局");
+            error(player, Component.translatable("wifi_card_games.board.error.spectator_no_start"));
             return;
         }
         BoardRoom room = currentRoom(player);
@@ -211,7 +215,7 @@ public final class BoardMemoryManager {
         }
         // 围棋无 AI：房间存在退出者转的机器人座位时无法正常对局（机器人每轮跳过），拒绝开新局
         if (room.gameType == BoardGameType.GO && room.botCount() > 0) {
-            error(player, "有玩家已退出，围棋无法开始新对局");
+            error(player, Component.translatable("wifi_card_games.board.error.go_no_new_game"));
             return;
         }
         room.settledAtMillis = -1;
@@ -234,7 +238,7 @@ public final class BoardMemoryManager {
     private BoardGame gameOfStrict(ServerPlayer player) {
         BoardGame game = gameOf(player);
         if (game == null && spectatorRoomIds.containsKey(player.getUUID())) {
-            error(player, "旁观者不能操作对局");
+            error(player, Component.translatable("wifi_card_games.board.error.spectator_no_operate"));
         }
         return game;
     }
@@ -294,7 +298,8 @@ public final class BoardMemoryManager {
             } else {
                 room.game.onPlayerQuit(seat); // 五子棋/黑白棋：断线自动托管续玩（保留座位引用供重连）
                 // 提示剩余玩家：对手已掉线由托管代打（此前掉线完全不可见，只能从 AI 走子节奏猜测）
-                room.broadcast(new NoticeS2C(player.getGameProfile().getName() + " 掉线，由托管代打"));
+                room.broadcast(new NoticeS2C(Component.translatable(
+                    "wifi_card_games.board.info.offline_trusted", player.getGameProfile().getName())));
                 room.broadcastState();
             }
         }
@@ -317,7 +322,8 @@ public final class BoardMemoryManager {
         BoardPhase phase = room.phase();
         if (phase == BoardPhase.WAITING) {
             // 等待中断线已按离开处理（会话已清除），理论不会到达；防御性兜底关闭房间
-            room.broadcast(new RoomClosedS2C(player.getGameProfile().getName() + " 重连发现旧房间，房间已关闭"));
+            room.broadcast(new RoomClosedS2C(Component.translatable(
+                    "wifi_card_games.board.error.reconnect_old_room", player.getGameProfile().getName())));
             destroyRoomInternal(room);
             return;
         }
@@ -327,12 +333,14 @@ public final class BoardMemoryManager {
         int seat = room.replacePlayerByUuid(player.getUUID(), player);
         if (seat < 0) {
             // 找不到对应座位（理论不会发生）→ 防御性关闭房间
-            room.broadcast(new RoomClosedS2C(player.getGameProfile().getName() + " 重连失败，房间已关闭"));
+            room.broadcast(new RoomClosedS2C(Component.translatable(
+                    "wifi_card_games.board.error.reconnect_failed", player.getGameProfile().getName())));
             destroyRoomInternal(room);
             return;
         }
         room.game.onPlayerReconnect(seat);
-        room.broadcast(new NoticeS2C(player.getGameProfile().getName() + " 已重连"));
+        room.broadcast(new NoticeS2C(Component.translatable(
+                    "wifi_card_games.board.info.reconnected", player.getGameProfile().getName())));
         room.broadcastState();
         room.game.syncTo(seat);
     }
@@ -347,7 +355,7 @@ public final class BoardMemoryManager {
                     // 防御：单个房间状态机异常（理论由托管引擎等触发）不得崩溃整个服务器——
                     // 记录日志并关闭该房间，其余房间继续正常运行
                     LOGGER.error("棋牌房间 {} tick 异常，房间已关闭", room.id, t);
-                    destroyRoom(room, "房间状态异常，已关闭");
+                    destroyRoom(room, Component.translatable("wifi_card_games.board.error.room_broken"));
                     continue;
                 }
             }
@@ -356,17 +364,17 @@ public final class BoardMemoryManager {
             // 等待中不存在全 bot 房间（创建/补 bot 上限 1 个，真人离开即解散），无需处理。
             if (room.game != null && room.allBot()
                     && room.phase() != BoardPhase.WAITING) {
-                destroyRoom(room, "房间内已无真人玩家，本局结束");
+                destroyRoom(room, Component.translatable("wifi_card_games.board.error.all_bot_ended"));
                 continue;
             }
             if (room.game != null && room.allDisconnected()
                     && room.phase() != BoardPhase.WAITING && room.phase() != BoardPhase.SETTLED) {
-                destroyRoom(room, "所有玩家已离线，房间已解散");
+                destroyRoom(room, Component.translatable("wifi_card_games.board.error.all_offline"));
                 continue;
             }
             if (room.phase() == BoardPhase.SETTLED && room.settledAtMillis > 0
                     && System.currentTimeMillis() - room.settledAtMillis > SETTLED_KEEP_MS) {
-                destroyRoom(room, "房间空闲过久，已解散");
+                destroyRoom(room, Component.translatable("wifi_card_games.board.error.room_idle"));
             }
         }
     }
@@ -377,15 +385,15 @@ public final class BoardMemoryManager {
     public void addBots(ServerPlayer player, int count) {
         BoardRoom room = currentRoom(player);
         if (room == null) {
-            error(player, "你不在任何房间里，请先创建房间");
+            error(player, Component.translatable("wifi_card_games.board.error.not_in_room_create"));
             return;
         }
         if (room.gameType == BoardGameType.GO) {
-            error(player, "围棋暂不支持机器人");
+            error(player, Component.translatable("wifi_card_games.board.error.go_no_bot"));
             return;
         }
         if (room.phase() != BoardPhase.WAITING) {
-            error(player, "只有等待中的房间可以添加假人");
+            error(player, Component.translatable("wifi_card_games.board.error.bot_only_waiting"));
             return;
         }
         int canAdd = Math.min(Math.max(count, 1), 2 - room.count);
@@ -402,17 +410,17 @@ public final class BoardMemoryManager {
     public void removeBots(ServerPlayer player) {
         BoardRoom room = currentRoom(player);
         if (room == null) {
-            error(player, "你不在任何房间里");
+            error(player, Component.translatable("wifi_card_games.board.error.not_in_room"));
             return;
         }
         if (room.botCount() == 0) {
-            error(player, "房间内没有假人");
+            error(player, Component.translatable("wifi_card_games.board.error.no_bots"));
             return;
         }
         room.removeBots();
         room.broadcastState();
         if (room.count < 2) {
-            destroyRoom(room, "调试假人已移除，房间关闭");
+            destroyRoom(room, Component.translatable("wifi_card_games.board.error.bots_removed_closed"));
         }
     }
 
@@ -430,13 +438,13 @@ public final class BoardMemoryManager {
         return rooms.get(fullCode(code));
     }
 
-    /** 删除指定房间（通知成员后销毁）；返回错误信息或 null。 */
-    public String deleteRoom(String code) {
+    /** 删除指定房间（通知成员后销毁）；返回错误消息组件或 null。 */
+    public Component deleteRoom(String code) {
         BoardRoom room = rooms.get(fullCode(code));
         if (room == null) {
-            return "房间不存在：" + code;
+            return Component.translatable("wifi_card_games.board.error.room_not_found", code);
         }
-        room.broadcast(new RoomClosedS2C("管理员删除了房间"));
+        room.broadcast(new RoomClosedS2C(Component.translatable("wifi_card_games.board.error.admin_deleted")));
         destroyRoomInternal(room);
         return null;
     }
@@ -445,7 +453,7 @@ public final class BoardMemoryManager {
     public int clearAllRooms() {
         int count = rooms.size();
         for (BoardRoom room : new ArrayList<>(rooms.values())) {
-            room.broadcast(new RoomClosedS2C("管理员清空了所有房间"));
+            room.broadcast(new RoomClosedS2C(Component.translatable("wifi_card_games.board.error.admin_cleared")));
         }
         rooms.clear();
         playerRoomIds.clear();
@@ -455,29 +463,30 @@ public final class BoardMemoryManager {
 
     // ---------------- 旁观（对局开始后只读观看） ----------------
 
-    /** 请求旁观房间；返回错误信息或 null。 */
-    public String spectate(ServerPlayer player, String code) {
+    /** 请求旁观房间；返回错误消息组件或 null。 */
+    public Component spectate(ServerPlayer player, String code) {
         if (code == null || code.length() > 16) {
-            return "房间码无效";
+            return Component.translatable("wifi_card_games.board.error.bad_code");
         }
         BoardRoom room = rooms.get(fullCode(code));
         if (room == null) {
-            return "房间不存在：" + code;
+            return Component.translatable("wifi_card_games.board.error.room_not_found", code);
         }
         BoardPhase phase = room.phase();
         if (phase == BoardPhase.WAITING) {
-            return "游戏尚未开始，无法旁观";
+            return Component.translatable("wifi_card_games.board.error.not_started");
         }
         if (phase == BoardPhase.SETTLED) {
-            return "本局已结束，无法旁观";
+            return Component.translatable("wifi_card_games.board.error.game_settled");
         }
         if (currentRoom(player) != null) {
-            return "你已在房间中，无法旁观";
+            return Component.translatable("wifi_card_games.board.error.in_room_no_spectate");
         }
         // 跨游戏防护：其他小游戏有会话（成员或旁观）时拒绝旁观
         GameInfo other = GameRegistry.busyInOtherGame(player, GameRegistry.GAME_BOARD);
         if (other != null) {
-            return "你正在【" + other.displayName() + "】中，无法旁观其他小游戏";
+            return Component.translatable("wifi_card_games.common.error.busy_spectate",
+                    Component.translatable(other.displayName()));
         }
         String existing = spectatorRoomIds.get(player.getUUID());
         if (existing != null) {
@@ -487,7 +496,7 @@ public final class BoardMemoryManager {
                 room.game.syncToSpectator(player);
                 return null;
             }
-            return "你已在旁观其他房间";
+            return Component.translatable("wifi_card_games.board.error.spectating_other");
         }
         room.addSpectator(player);
         spectatorRoomIds.put(player.getUUID(), room.id);
@@ -500,14 +509,15 @@ public final class BoardMemoryManager {
     public void leaveSpectate(ServerPlayer player) {
         String roomId = spectatorRoomIds.remove(player.getUUID());
         if (roomId == null) {
-            error(player, "你不在旁观任何房间");
+            error(player, Component.translatable("wifi_card_games.board.error.not_spectating"));
             return;
         }
         BoardRoom room = rooms.get(roomId);
         if (room != null) {
             room.removeSpectator(player);
         }
-        ServerPlayNetworking.send(player, new RoomClosedS2C("已退出旁观"));
+        ServerPlayNetworking.send(player, new RoomClosedS2C(
+                Component.translatable("wifi_card_games.board.info.left_spectate")));
     }
 
     /** 进入/加入房间前自动退出旁观（避免同时旁观与对局）。 */
@@ -526,26 +536,28 @@ public final class BoardMemoryManager {
      *
      * @return 错误消息；null 表示成功
      */
-    public String forceJoin(ServerPlayer target, String roomCode) {
+    public Component forceJoin(ServerPlayer target, String roomCode) {
         // 先退出旁观状态（强制入房同样要求退出旁观）
         leaveSpectateInternal(target);
         BoardRoom room = rooms.get(fullCode(roomCode));
         if (room == null) {
-            return "房间不存在：" + roomCode;
+            return Component.translatable("wifi_card_games.board.error.room_not_found", roomCode);
         }
         if (currentRoom(target) != null) {
-            return target.getGameProfile().getName() + " 已在其他房间";
+            return Component.translatable("wifi_card_games.board.error.force_in_other_room",
+                    target.getGameProfile().getName());
         }
         // 跨游戏防护：强制入房同样要求退出其他小游戏
         GameInfo other = GameRegistry.busyInOtherGame(target, GameRegistry.GAME_BOARD);
         if (other != null) {
-            return target.getGameProfile().getName() + " 正在【" + other.displayName() + "】中，无法强制加入";
+            return Component.translatable("wifi_card_games.common.error.force_join_busy",
+                    target.getGameProfile().getName(), Component.translatable(other.displayName()));
         }
         if (room.isFull()) {
-            return "房间已满";
+            return Component.translatable("wifi_card_games.board.error.room_full");
         }
         if (room.phase() != BoardPhase.WAITING) {
-            return "游戏已经开始，无法加入";
+            return Component.translatable("wifi_card_games.board.error.game_started");
         }
         room.addPlayer(target);
         playerRoomIds.put(target.getUUID(), room.id);
@@ -568,10 +580,10 @@ public final class BoardMemoryManager {
         // 全服广播：房间已开始，其他玩家可点击旁观
         ServerPlayer host = room.members[0];
         if (host != null && host.getServer() != null) {
-            Component msg = Component.literal("[棋牌] 房间 " + room.id + "（" + room.gameType.displayName + "）已开始，")
-                    .append(Component.literal("[点击旁观]").withStyle(style -> style
-                            .withColor(ChatFormatting.GREEN)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames spectate " + room.id))));
+            Component msg = Component.translatable("wifi_card_games.board.chat.room_started",
+                            room.id, Component.translatable(room.gameType.displayName))
+                    .append(click(Component.translatable("wifi_card_games.common.click.spectate"),
+                            "/cardgames spectate " + room.id));
             host.getServer().getPlayerList().broadcastSystemMessage(msg, false);
         }
     }
@@ -582,7 +594,7 @@ public final class BoardMemoryManager {
         playerRoomIds.remove(player.getUUID());
         if (room.count < 2) {
             if (notifyOthers) {
-                room.broadcast(new RoomClosedS2C("有玩家离开，房间已解散"));
+                room.broadcast(new RoomClosedS2C(Component.translatable("wifi_card_games.board.error.player_left")));
             }
             destroyRoomInternal(room);
         } else {
@@ -590,11 +602,11 @@ public final class BoardMemoryManager {
         }
         // 离开者本人回到大厅（空 reason 不弹提示）
         if (BoardRoom.isConnected(player)) {
-            ServerPlayNetworking.send(player, new RoomClosedS2C(""));
+            ServerPlayNetworking.send(player, new RoomClosedS2C(Component.empty()));
         }
     }
 
-    private void destroyRoom(BoardRoom room, String reason) {
+    private void destroyRoom(BoardRoom room, Component reason) {
         room.broadcast(new RoomClosedS2C(reason));
         destroyRoomInternal(room);
     }
@@ -669,13 +681,18 @@ public final class BoardMemoryManager {
         return room == null ? null : room.game;
     }
 
-    private static String sizeText(BoardGameType type, int size) {
-        return type == BoardGameType.GO ? size + "路" : " · " + size + "×" + size + "盘";
-    }
 
-    private static void error(ServerPlayer player, String message) {
+
+    private static void error(ServerPlayer player, Component message) {
         if (BoardRoom.isConnected(player)) {
             ServerPlayNetworking.send(player, new NoticeS2C(message));
         }
+    }
+
+    /** 可点击命令文本（绿色 + RUN_COMMAND）。 */
+    private static MutableComponent click(Component label, String command) {
+        return label.copy().withStyle(style -> style
+                .withColor(ChatFormatting.GREEN)
+                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command)));
     }
 }

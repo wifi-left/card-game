@@ -21,6 +21,7 @@ import io.wifi.cards.uno.network.UnoPackets.TrustStateS2C;
 import io.wifi.cards.uno.network.UnoPackets.TurnS2C;
 import io.wifi.cards.uno.network.UnoPackets.UnoCatchS2C;
 import io.wifi.cards.uno.network.UnoPackets.UnoDeclaredS2C;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
@@ -191,30 +192,30 @@ public class UnoGame {
             return;
         }
         if (phase != UnoGamePhase.PLAYING) {
-            reject(p, "现在不是出牌阶段");
+            reject(p, Component.translatable("wifi_card_games.uno.error.not_playing_phase"));
             return;
         }
         if (p.seat() != currentSeat) {
-            reject(p, "还没轮到你出牌");
+            reject(p, Component.translatable("wifi_card_games.uno.error.not_your_play"));
             return;
         }
         if (cardId < 0 || cardId >= UnoCard.TOTAL_COUNT) {
-            reject(p, "牌无效");
+            reject(p, Component.translatable("wifi_card_games.uno.error.invalid_card"));
             return;
         }
         UnoCard card = UnoCard.byId(cardId);
         if (!p.hand().contains(card)) {
-            reject(p, "你手里没有这张牌");
+            reject(p, Component.translatable("wifi_card_games.uno.error.not_have_card"));
             return;
         }
         if (!canPlay(card, topCard(), chosenColor)) {
-            reject(p, "这张牌不能打：需与当前颜色或点数相同（或使用万能牌）");
+            reject(p, Component.translatable("wifi_card_games.uno.error.card_cannot_play"));
             return;
         }
         UnoColor color;
         if (card.value().isWild()) {
             if (colorOrdinal < 0 || colorOrdinal >= UnoColor.values().length || !UnoColor.values()[colorOrdinal].isColored()) {
-                reject(p, "请先选择颜色");
+                reject(p, Component.translatable("wifi_card_games.uno.error.choose_color"));
                 return;
             }
             color = UnoColor.values()[colorOrdinal];
@@ -231,8 +232,9 @@ public class UnoGame {
         room.broadcast(new PlayBroadcastS2C((byte) p.seat(), p.name(), cardId,
                 (byte) chosenColor.ordinal(), remainingCounts()));
         // 历史：打出 X（万能牌带所选颜色）
-        addHistory(p.name(), "打出 " + card.display()
-                + (card.value().isWild() ? "（选" + color.displayName() + "）" : ""));
+        addHistory(p.name(), (card.value().isWild()
+                ? "wifi_card_games.uno.history.played_color|" + card.display() + "|" + color.displayName()
+                : "wifi_card_games.uno.history.played|" + card.display()));
         // 旁观者：出牌后同步各家手牌（透视视角实时更新）
         sendHandsToSpectators();
         // 行动计数（自动抓取宽限判定）后开窗：记录本座位窗口开启时的计数，
@@ -264,15 +266,15 @@ public class UnoGame {
             return;
         }
         if (phase != UnoGamePhase.PLAYING) {
-            reject(p, "现在不是出牌阶段");
+            reject(p, Component.translatable("wifi_card_games.uno.error.not_playing_phase"));
             return;
         }
         if (p.seat() != currentSeat) {
-            reject(p, "还没轮到你");
+            reject(p, Component.translatable("wifi_card_games.uno.error.not_your_turn"));
             return;
         }
         if (drawnPlayable) {
-            reject(p, "本回合已经抽过牌");
+            reject(p, Component.translatable("wifi_card_games.uno.error.already_drawn"));
             return;
         }
         UnoCard card = drawFromDeck();
@@ -280,7 +282,7 @@ public class UnoGame {
             // 极端兜底：无牌可抽（全部牌都在玩家手中），视为跳过（同样计入行动计数）
             room.broadcast(new PassBroadcastS2C((byte) p.seat(), remainingCounts()));
             actionCount++;
-            addHistory(p.name(), "跳过");
+            addHistory(p.name(), "wifi_card_games.uno.history.skipped");
             turn(nextSeat(p.seat()));
             return;
         }
@@ -293,7 +295,7 @@ public class UnoGame {
         boolean playable = canPlay(card, topCard(), chosenColor);
         room.broadcast(new DrawBroadcastS2C((byte) p.seat(), remainingCounts()));
         actionCount++;
-        addHistory(p.name(), "抽牌");
+        addHistory(p.name(), "wifi_card_games.uno.history.draw");
         room.sendToSeat(p.seat(), new DrawResultS2C(new int[]{card.id()}, playable));
         // 旁观者：抽牌后同步各家手牌（透视视角实时更新，否则面板显示过期手牌）
         sendHandsToSpectators();
@@ -319,20 +321,20 @@ public class UnoGame {
             return;
         }
         if (phase != UnoGamePhase.PLAYING) {
-            reject(p, "现在不能跳过");
+            reject(p, Component.translatable("wifi_card_games.uno.error.cannot_skip"));
             return;
         }
         if (p.seat() != currentSeat) {
-            reject(p, "还没轮到你");
+            reject(p, Component.translatable("wifi_card_games.uno.error.not_your_turn"));
             return;
         }
         if (!drawnPlayable) {
-            reject(p, "没有抽过牌不能跳过：有牌可打请出牌，否则请抽牌");
+            reject(p, Component.translatable("wifi_card_games.uno.error.skip_without_draw"));
             return;
         }
         room.broadcast(new PassBroadcastS2C((byte) p.seat(), remainingCounts()));
         actionCount++;
-        addHistory(p.name(), "跳过");
+        addHistory(p.name(), "wifi_card_games.uno.history.skipped");
         turn(nextSeat(p.seat()));
     }
 
@@ -343,15 +345,15 @@ public class UnoGame {
             return;
         }
         if (phase != UnoGamePhase.PLAYING) {
-            reject(p, "现在不能喊 UNO");
+            reject(p, Component.translatable("wifi_card_games.uno.error.cannot_declare"));
             return;
         }
         if (p.hand().size() != 1 || !unoCatchable[p.seat()]) {
-            reject(p, "手牌没有剩 1 张，无需喊 UNO");
+            reject(p, Component.translatable("wifi_card_games.uno.error.no_uno_needed"));
             return;
         }
         if (p.declaredUno()) {
-            reject(p, "你已经喊过 UNO 了");
+            reject(p, Component.translatable("wifi_card_games.uno.error.already_declared"));
             return;
         }
         declareUnoInternal(p.seat());
@@ -364,25 +366,25 @@ public class UnoGame {
             return;
         }
         if (phase != UnoGamePhase.PLAYING) {
-            reject(catcher, "现在不能抓 UNO");
+            reject(catcher, Component.translatable("wifi_card_games.uno.error.cannot_catch"));
             return;
         }
         if (targetSeat < 0 || targetSeat >= players.size()) {
-            reject(catcher, "目标玩家无效");
+            reject(catcher, Component.translatable("wifi_card_games.uno.error.invalid_target"));
             return;
         }
         if (targetSeat == catcher.seat()) {
-            reject(catcher, "不能抓自己");
+            reject(catcher, Component.translatable("wifi_card_games.uno.error.cannot_catch_self"));
             return;
         }
         if (!unoCatchable[targetSeat] || players.get(targetSeat).declaredUno()) {
-            reject(catcher, "对方没有违规（已喊过 UNO 或已过抓捕窗口）");
+            reject(catcher, Component.translatable("wifi_card_games.uno.error.no_violation"));
             return;
         }
         drawTo(targetSeat, 2);
         unoCatchable[targetSeat] = false;
         room.broadcast(new UnoCatchS2C((byte) catcher.seat(), (byte) targetSeat, remainingCounts()));
-        addHistory(catcher.name(), "抓住 " + players.get(targetSeat).name() + " 没喊 UNO");
+        addHistory(catcher.name(), "wifi_card_games.uno.history.caught|" + players.get(targetSeat).name());
     }
 
     /** 开启/关闭指定玩家托管；开启且正轮到该玩家时立即安排自动行动。 */
@@ -603,7 +605,7 @@ public class UnoGame {
         }
         players.get(seat).setDeclaredUno(true);
         room.broadcast(new UnoDeclaredS2C((byte) seat));
-        addHistory(players.get(seat).name(), "喊了 UNO!");
+        addHistory(players.get(seat).name(), "wifi_card_games.uno.history.declared");
     }
 
     /** 应用功能牌效果并推进回合。 */
@@ -656,7 +658,7 @@ public class UnoGame {
             }
             room.sendToSeat(seat, new DrawResultS2C(ids, false));
         }
-        addHistory(players.get(seat).name(), "被罚抽 " + n + " 张");
+        addHistory(players.get(seat).name(), "wifi_card_games.uno.history.penalty|" + n);
         // 旁观者：罚牌（+2/+4/抓 UNO/自动抓）后同步各家手牌（透视视角实时更新）
         sendHandsToSpectators();
     }
@@ -689,10 +691,10 @@ public class UnoGame {
                 && actionCount > unoWindowOpenedAction[seat]) {
             unoCatchable[seat] = false;
             drawTo(seat, 2);
-            room.broadcast(new NoticeS2C(p.name() + " 没喊 UNO，自动罚 2 张"));
+            room.broadcast(new NoticeS2C(Component.translatable("wifi_card_games.uno.history.auto_caught_name", p.name())));
             // catcherSeat=-1 表示系统自动抓取（客户端据此显示"被自动罚 2 张"）
             room.broadcast(new UnoCatchS2C((byte) -1, (byte) seat, remainingCounts()));
-            addHistory(p.name(), "没喊 UNO，自动罚 2 张");
+            addHistory(p.name(), "wifi_card_games.uno.history.auto_caught");
         }
         turnEndGameTime = nowGameTime() + TURN_SECONDS * 20L;
         tickCounter = 0;
@@ -746,7 +748,7 @@ public class UnoGame {
         return null;
     }
 
-    private void reject(UnoPlayer p, String message) {
+    private void reject(UnoPlayer p, Component message) {
         room.sendToSeat(p.seat(), new NoticeS2C(message));
     }
 

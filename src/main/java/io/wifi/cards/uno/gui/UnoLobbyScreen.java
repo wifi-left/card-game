@@ -32,7 +32,7 @@ public class UnoLobbyScreen extends AbstractLobbyScreen {
     private int botCount;
 
     public UnoLobbyScreen() {
-        super("UNO 大厅");
+        super("wifi_card_games.uno.lobby.title");
         // 记住上次开房间的选项（客户端 config 持久化），下次打开默认选中
         announce = LobbyPrefs.getBool(GameRegistry.GAME_UNO, "announce", true);
         botCount = Math.max(0, Math.min(LobbyPrefs.getInt(GameRegistry.GAME_UNO, "botCount", 0), 9));
@@ -61,8 +61,8 @@ public class UnoLobbyScreen extends AbstractLobbyScreen {
     }
 
     @Override
-    protected String lobbyTitle() {
-        return "UNO 大厅";
+    protected String lobbyTitleKey() {
+        return "wifi_card_games.uno.lobby.title";
     }
 
     @Override
@@ -71,7 +71,7 @@ public class UnoLobbyScreen extends AbstractLobbyScreen {
     }
 
     @Override
-    protected void lobbyChat(String message) {
+    protected void lobbyChat(Component message) {
         UnoClientState.chat(message);
     }
 
@@ -91,7 +91,7 @@ public class UnoLobbyScreen extends AbstractLobbyScreen {
 
     @Override
     protected void reopenHint() {
-        UnoClientState.chatReopenHint("关闭大厅");
+        UnoClientState.chatReopenHint(Component.translatable("wifi_card_games.uno.reopen.closed_lobby"));
     }
 
     /** 房间操作按钮（离开房间）区底部 y："关闭界面"按钮放在其下方（随房间区滚动）。 */
@@ -157,27 +157,35 @@ public class UnoLobbyScreen extends AbstractLobbyScreen {
             int top = contentTop();
             int lx = cx - 172;
             int rx = cx + 12;
-            addRenderableWidget(Button.builder(Component.literal("公布房间：" + (announce ? "开" : "关")), b -> {
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.uno.lobby.announce",
+                    Component.translatable(announce
+                            ? "wifi_card_games.uno.lobby.on" : "wifi_card_games.uno.lobby.off")), b -> {
                 announce = !announce;
                 LobbyPrefs.set(GameRegistry.GAME_UNO, "announce", announce);
-                b.setMessage(Component.literal("公布房间：" + (announce ? "开" : "关")));
+                b.setMessage(Component.translatable("wifi_card_games.uno.lobby.announce",
+                        Component.translatable(announce
+                                ? "wifi_card_games.uno.lobby.on" : "wifi_card_games.uno.lobby.off")));
             }).bounds(lx, top, 160, 20).build());
-            addRenderableWidget(Button.builder(Component.literal("机器人：" + (botCount == 0 ? "关" : botCount + " 个")), b -> {
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.uno.lobby.bots",
+                    botCount == 0 ? Component.translatable("wifi_card_games.uno.lobby.bots_off")
+                            : Component.translatable("wifi_card_games.uno.lobby.bots_n", botCount)), b -> {
                 botCount = (botCount + 1) % 10; // 关 → 1~9 个（房间最多 10 人）
                 LobbyPrefs.set(GameRegistry.GAME_UNO, "botCount", botCount);
-                b.setMessage(Component.literal("机器人：" + (botCount == 0 ? "关" : botCount + " 个")));
+                b.setMessage(Component.translatable("wifi_card_games.uno.lobby.bots",
+                        botCount == 0 ? Component.translatable("wifi_card_games.uno.lobby.bots_off")
+                                : Component.translatable("wifi_card_games.uno.lobby.bots_n", botCount)));
             }).bounds(lx, top + 24, 160, 20).build());
-            addRenderableWidget(Button.builder(Component.literal("规则介绍"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.common.button.rules_intro"), b ->
                     Minecraft.getInstance().setScreen(new UnoRulesScreen()))
                     .bounds(lx, top + 48, 160, 20).build());
-            addRenderableWidget(Button.builder(Component.literal("创建房间"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.uno.lobby.create"), b ->
                     ClientPlayNetworking.send(new CreateRoomC2S(announce, (byte) botCount)))
                     .bounds(rx, top, 160, 20).build());
-            codeBox = new EditBox(this.font, rx, top + 24, 160, 20, Component.literal("房间码"));
+            codeBox = new EditBox(this.font, rx, top + 24, 160, 20, Component.translatable("wifi_card_games.uno.lobby.code_box"));
             codeBox.setMaxLength(8);
             codeBox.setFilter(str -> str.chars().allMatch(ch -> Character.isLetterOrDigit(ch) || ch == '-'));
             addRenderableWidget(codeBox);
-            addRenderableWidget(Button.builder(Component.literal("加入房间"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.uno.lobby.join"), b ->
                     ClientPlayNetworking.send(new JoinRoomC2S(codeBox.getValue().trim().toUpperCase())))
                     .bounds(rx, top + 48, 160, 20).build());
         } else {
@@ -185,13 +193,13 @@ public class UnoLobbyScreen extends AbstractLobbyScreen {
             // 按钮位于成员列表下方（随滚动偏移），小窗口下列表超高时可滚动查看
             int btnY = roomTop() + roomInfoH() + 8;
             if (s.isHost()) {
-                Button startBtn = Button.builder(Component.literal("开始游戏"), b ->
+                Button startBtn = Button.builder(Component.translatable("wifi_card_games.uno.lobby.start"), b ->
                         ClientPlayNetworking.send(new StartGameC2S()))
                         .bounds(cx - 80, btnY, 160, 20).build();
                 startBtn.active = s.roomSize() >= 2;
                 addRenderableWidget(startBtn);
             }
-            addRenderableWidget(Button.builder(Component.literal("离开房间"), b ->
+            addRenderableWidget(Button.builder(Component.translatable("wifi_card_games.uno.lobby.leave"), b ->
                     ClientPlayNetworking.send(new LeaveRoomC2S()))
                     .bounds(cx - 80, btnY + 26, 160, 20).build());
         }
@@ -216,17 +224,27 @@ public class UnoLobbyScreen extends AbstractLobbyScreen {
         } else {
             // 房间信息区 + 按钮区底板见 drawRoomViewBg（super.render 之前绘制）
             int top = roomTop();
-            UnoGui.centeredShadow(g, this.font, width, "房间 " + s.roomCode, top + 4, 0xFFFFFF88);
-            UnoGui.centeredShadow(g, this.font, width, "玩家 " + s.roomSize() + " / 10", top + 20, 0xFFFFFFFF);
+            UnoGui.centeredShadow(g, this.font, width,
+                    Component.translatable("wifi_card_games.uno.lobby.room_header", s.roomCode),
+                    top + 4, 0xFFFFFF88);
+            UnoGui.centeredShadow(g, this.font, width,
+                    Component.translatable("wifi_card_games.uno.lobby.players", s.roomSize()),
+                    top + 20, 0xFFFFFFFF);
             for (int i = 0; i < s.names.size(); i++) {
-                String line = (i == s.mySeat ? "▶ " : "  ") + (i + 1) + ". "
-                        + (s.names.get(i) == null || s.names.get(i).isEmpty() ? "等待加入…" : s.names.get(i))
-                        + (i == 0 ? "（房主）" : "");
+                Component line = Component.literal(i == s.mySeat ? "▶ " : "  ")
+                        .append(Component.literal((i + 1) + ". "))
+                        .append(s.names.get(i) == null || s.names.get(i).isEmpty()
+                                ? Component.translatable("wifi_card_games.uno.lobby.waiting_join")
+                                : Component.literal(s.names.get(i)));
+                if (i == 0) {
+                    line = line.copy().append(Component.translatable("wifi_card_games.uno.lobby.host_tag"));
+                }
                 UnoGui.centeredShadow(g, this.font, width, line, top + 34 + i * 14,
                         i == s.mySeat ? 0xFFFFFF55 : 0xFFFFFFFF);
             }
             UnoGui.centeredShadow(g, this.font, width,
-                    s.isHost() ? "至少 2 人可开始游戏" : "等待房主开始游戏…",
+                    Component.translatable(s.isHost()
+                            ? "wifi_card_games.uno.lobby.min_two_hint" : "wifi_card_games.uno.lobby.wait_host"),
                     top + 34 + s.names.size() * 14 + 6, 0xFFAAAAAA);
             // 房间视图滚动条（成员多/小窗口内容超高时）
             drawRoomScrollbar(g);

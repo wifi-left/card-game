@@ -157,12 +157,12 @@ public final class UnoCommands {
     /** 旁观房间：/uno spectate <房间码>（对局开始后的只读观看）。 */
     private static int spectate(CommandSourceStack source, String code) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
-        String error = UnoMemoryManager.INSTANCE.spectate(player, code);
+        Component error = UnoMemoryManager.INSTANCE.spectate(player, code);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("正在旁观房间 " + code + "，输入 /cardgames leave 退出旁观"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.uno.info.spectating", code), false);
         return 1;
     }
 
@@ -182,27 +182,29 @@ public final class UnoCommands {
 
     private static int invite(CommandSourceStack source, ServerPlayer target) throws CommandSyntaxException {
         ServerPlayer owner = source.getPlayerOrException();
-        String error = invite(owner, target);
+        Component error = invite(owner, target);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("已向 " + target.getGameProfile().getName() + " 发送邀请"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.uno.info.invite_sent",
+                target.getGameProfile().getName()), false);
         return 1;
     }
 
     /** 邀请玩家加入自己所在房间（/uno invite 与 /cardgames invite 共用）；
      *  成功时向目标发送可点击邀请消息，返回错误消息或 null。 */
-    public static String invite(ServerPlayer owner, ServerPlayer target) {
+    public static Component invite(ServerPlayer owner, ServerPlayer target) {
         UnoRoom room = UnoMemoryManager.INSTANCE.currentRoom(owner);
         if (room == null) {
-            return "你不在任何房间里，请先创建房间";
+            return Component.translatable("wifi_card_games.uno.error.not_in_room_create");
         }
         if (room.isFull() || room.phase() != UnoGamePhase.WAITING) {
-            return "只能邀请玩家加入等待中的房间";
+            return Component.translatable("wifi_card_games.uno.error.invite_waiting_only");
         }
-        Component message = Component.literal(owner.getGameProfile().getName() + " 邀请你加入 UNO 房间[" + room.id + "] ")
-                .append(Component.literal("[接受邀请]").withStyle(style -> style
+        Component message = Component.translatable("wifi_card_games.uno.chat.invite",
+                        owner.getGameProfile().getName(), room.id)
+                .append(Component.translatable("wifi_card_games.common.click.accept_invite").withStyle(style -> style
                         .withColor(ChatFormatting.GREEN)
                         .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/cardgames accept " + room.id))));
         target.sendSystemMessage(message);
@@ -236,7 +238,9 @@ public final class UnoCommands {
     private static int debugAuto(CommandSourceStack source, boolean enabled) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         UnoMemoryManager.INSTANCE.setTrust(player, enabled);
-        source.sendSuccess(() -> Component.literal("托管：" + (enabled ? "开启" : "关闭")), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.uno.debug.trust_state",
+                Component.translatable(enabled
+                        ? "wifi_card_games.uno.debug.enabled" : "wifi_card_games.uno.debug.disabled")), false);
         return 1;
     }
 
@@ -248,7 +252,9 @@ public final class UnoCommands {
             return 0;
         }
         game.setTrustSeat(seat, enabled);
-        source.sendSuccess(() -> Component.literal("已" + (enabled ? "开启" : "关闭") + " 座位 " + seat + " 的托管"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.uno.debug.trust_toggled_seat",
+                Component.translatable(enabled
+                        ? "wifi_card_games.uno.debug.enabled" : "wifi_card_games.uno.debug.disabled"), seat), false);
         return 1;
     }
 
@@ -256,11 +262,15 @@ public final class UnoCommands {
     private static int debugTrust(CommandSourceStack source, ServerPlayer target, boolean enabled) {
         UnoGame game = UnoMemoryManager.INSTANCE.gameOf(target);
         if (game == null) {
-            source.sendFailure(Component.literal(target.getGameProfile().getName() + " 不在对局中"));
+            source.sendFailure(Component.translatable("wifi_card_games.uno.error.not_in_game",
+                    target.getGameProfile().getName()));
             return 0;
         }
         game.setTrust(target, enabled);
-        source.sendSuccess(() -> Component.literal("已" + (enabled ? "开启" : "关闭") + " " + target.getGameProfile().getName() + " 的托管"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.uno.debug.trust_toggled_player",
+                Component.translatable(enabled
+                        ? "wifi_card_games.uno.debug.enabled" : "wifi_card_games.uno.debug.disabled"),
+                target.getGameProfile().getName()), false);
         return 1;
     }
 
@@ -273,17 +283,18 @@ public final class UnoCommands {
         } else {
             UnoRoom room = UnoMemoryManager.INSTANCE.currentRoom(executor);
             if (room == null) {
-                source.sendFailure(Component.literal("未指定房间码且你不在任何房间中"));
+                source.sendFailure(Component.translatable("wifi_card_games.uno.error.no_code_no_room"));
                 return 0;
             }
             code = room.id;
         }
-        String error = UnoMemoryManager.INSTANCE.forceJoin(target, code);
+        Component error = UnoMemoryManager.INSTANCE.forceJoin(target, code);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("已强制 " + target.getGameProfile().getName() + " 加入房间 " + code), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.uno.debug.force_joined",
+                target.getGameProfile().getName(), code), false);
         return 1;
     }
 
@@ -291,11 +302,13 @@ public final class UnoCommands {
      *  /uno debug kick <玩家>。 */
     private static int debugKick(CommandSourceStack source, ServerPlayer target) {
         if (UnoMemoryManager.INSTANCE.currentRoom(target) == null) {
-            source.sendFailure(Component.literal(target.getGameProfile().getName() + " 不在任何房间中"));
+            source.sendFailure(Component.translatable("wifi_card_games.uno.error.not_in_any_room",
+                    target.getGameProfile().getName()));
             return 0;
         }
         UnoMemoryManager.INSTANCE.leaveRoom(target);
-        source.sendSuccess(() -> Component.literal("已强制 " + target.getGameProfile().getName() + " 退出游戏"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.uno.debug.kicked",
+                target.getGameProfile().getName()), false);
         return 1;
     }
 
@@ -316,35 +329,30 @@ public final class UnoCommands {
         int perPage = 10;
         int totalPages = Math.max(1, (rooms.size() + perPage - 1) / perPage);
         final int shownPage = Math.min(page, totalPages);
-        source.sendSuccess(() -> Component.literal(
-                "房间列表（共 " + rooms.size() + " 个，第 " + shownPage + "/" + totalPages + " 页）"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.uno.rooms.header",
+                rooms.size(), shownPage, totalPages), false);
         int from = (shownPage - 1) * perPage;
         for (int i = from; i < Math.min(rooms.size(), from + perPage); i++) {
             UnoRoom room = rooms.get(i);
             final String code = room.id;
-            Component line = Component.literal((i + 1) + ". [" + code + "] 人数 " + room.size() + "/10 · "
-                    + phaseName(room.phase()))
-                    .append(Component.literal(" [显示具体信息]").withStyle(style -> style
-                            .withColor(ChatFormatting.GREEN)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/uno debug room " + code))))
-                    .append(Component.literal(" [删除房间]").withStyle(style -> style
-                            .withColor(ChatFormatting.RED)
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/uno debug roomdelete " + code))));
+            Component line = Component.translatable("wifi_card_games.uno.rooms.line",
+                            i + 1, code, room.size(), 10,
+                            Component.translatable(phaseNameKey(room.phase())))
+                    .append(click("wifi_card_games.uno.rooms.detail_click", "/uno debug room " + code,
+                            ChatFormatting.GREEN))
+                    .append(click("wifi_card_games.uno.rooms.delete_click", "/uno debug roomdelete " + code,
+                            ChatFormatting.RED));
             source.sendSuccess(() -> line, false);
         }
         if (totalPages > 1) {
-            MutableComponent nav = Component.literal("翻页：");
+            MutableComponent nav = Component.translatable("wifi_card_games.uno.rooms.page_label");
             if (shownPage > 1) {
-                nav.append(Component.literal(" [上一页]").withStyle(style -> style
-                        .withColor(ChatFormatting.YELLOW)
-                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                                "/uno debug rooms " + (shownPage - 1)))));
+                nav.append(click("wifi_card_games.uno.rooms.prev", "/uno debug rooms " + (shownPage - 1),
+                        ChatFormatting.YELLOW));
             }
             if (shownPage < totalPages) {
-                nav.append(Component.literal(" [下一页]").withStyle(style -> style
-                        .withColor(ChatFormatting.YELLOW)
-                        .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                                "/uno debug rooms " + (shownPage + 1)))));
+                nav.append(click("wifi_card_games.uno.rooms.next", "/uno debug rooms " + (shownPage + 1),
+                        ChatFormatting.YELLOW));
             }
             final MutableComponent navLine = nav;
             source.sendSuccess(() -> navLine, false);
@@ -356,85 +364,103 @@ public final class UnoCommands {
     private static int debugRoom(CommandSourceStack source, String code) {
         UnoRoom room = UnoMemoryManager.INSTANCE.roomByCode(code);
         if (room == null) {
-            source.sendFailure(Component.literal("房间不存在：" + code));
+            source.sendFailure(Component.translatable("wifi_card_games.uno.error.room_not_found", code));
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("房间 " + room.id + " · " + phaseName(room.phase())), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.uno.room.header",
+                room.id, Component.translatable(phaseNameKey(room.phase()))), false);
         for (int i = 0; i < room.size(); i++) {
             String name = room.seatName(i);
             if (name.isEmpty()) {
                 continue;
             }
             final int seat = i;
-            final String line;
+            final Component line;
             if (room.isBot(i)) {
-                line = "  座位" + (i + 1) + "：" + name + "（机器人）";
+                line = Component.translatable("wifi_card_games.uno.room.seat_bot", i + 1, name);
             } else {
                 boolean online = room.members.get(i) != null && UnoRoom.isConnected(room.members.get(i));
                 boolean trusted = room.game != null && room.game.isTrusted(i);
-                line = "  座位" + (i + 1) + "：" + name + "（真人·" + (online ? "在线" : "离线")
-                        + (trusted ? "·托管中" : "") + "）";
+                line = Component.translatable("wifi_card_games.uno.room.seat_real", i + 1, name,
+                        Component.translatable(online
+                                ? "wifi_card_games.uno.room.online" : "wifi_card_games.uno.room.offline"),
+                        trusted ? Component.translatable("wifi_card_games.uno.room.trusting") : Component.empty());
             }
-            source.sendSuccess(() -> Component.literal(line), false);
+            source.sendSuccess(() -> line, false);
         }
         return 1;
     }
 
     /** 删除指定房间：/uno debug roomdelete <房间码>。 */
     private static int debugRoomDelete(CommandSourceStack source, String code) {
-        String error = UnoMemoryManager.INSTANCE.deleteRoom(code);
+        Component error = UnoMemoryManager.INSTANCE.deleteRoom(code);
         if (error != null) {
-            source.sendFailure(Component.literal(error));
+            source.sendFailure(error);
             return 0;
         }
-        source.sendSuccess(() -> Component.literal("已删除房间 " + code.toUpperCase()), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.uno.debug.room_deleted", code.toUpperCase()), false);
         return 1;
     }
 
     /** 清空所有房间：/uno debug roomclear。 */
     private static int debugRoomClear(CommandSourceStack source) {
         int count = UnoMemoryManager.INSTANCE.clearAllRooms();
-        source.sendSuccess(() -> Component.literal("已清空全部房间（共 " + count + " 个）"), false);
+        source.sendSuccess(() -> Component.translatable("wifi_card_games.uno.debug.rooms_cleared", count), false);
         return 1;
     }
 
-    /** 阶段中文名（管理命令/注册表房间摘要显示用）。 */
-    public static String phaseName(UnoGamePhase phase) {
+    /** 阶段翻译键（管理命令/注册表房间摘要显示用）。 */
+    public static String phaseNameKey(UnoGamePhase phase) {
         return switch (phase) {
-            case WAITING -> "等待中";
-            case PLAYING -> "出牌阶段";
-            case SETTLED -> "本局结束";
+            case WAITING -> "wifi_card_games.uno.phase.waiting";
+            case PLAYING -> "wifi_card_games.uno.phase.playing";
+            case SETTLED -> "wifi_card_games.uno.phase.settled";
         };
     }
 
     /** 房间详细信息行（/cardgames roominfo 用）；房间不存在返回空列表。 */
-    public static List<String> roomDetail(String code) {
+    public static List<Component> roomDetail(String code) {
         UnoRoom r = UnoMemoryManager.INSTANCE.roomByCode(code);
         if (r == null) {
             return List.of();
         }
-        List<String> lines = new ArrayList<>();
-        lines.add((r.announce ? "公开" : "未公开") + " · 玩家 " + r.size() + "/" + UnoRoom.MAX_PLAYERS);
-        lines.add("阶段：" + phaseName(r.phase()));
+        List<Component> lines = new ArrayList<>();
+        lines.add(Component.translatable("wifi_card_games.uno.room.mode",
+                Component.translatable(r.announce
+                        ? "wifi_card_games.uno.room.public" : "wifi_card_games.uno.room.private"),
+                r.size(), UnoRoom.MAX_PLAYERS));
+        lines.add(Component.translatable("wifi_card_games.uno.room.phase",
+                Component.translatable(phaseNameKey(r.phase()))));
         for (int i = 0; i < r.size(); i++) {
             String name = r.seatName(i);
             if (name.isEmpty()) {
-                lines.add((i + 1) + ". 等待加入…");
+                lines.add(Component.translatable("wifi_card_games.uno.room.empty_seat", i + 1));
                 continue;
             }
-            String extra = r.isBot(i) ? "（机器人）"
-                    : (UnoRoom.isConnected(r.members.get(i)) ? "" : "（离线）");
-            lines.add((i + 1) + ". " + name + extra + (i == 0 ? "（房主）" : ""));
+            Component extra = r.isBot(i) ? Component.translatable("wifi_card_games.uno.room.bot_tag")
+                    : (UnoRoom.isConnected(r.members.get(i)) ? Component.empty()
+                            : Component.translatable("wifi_card_games.uno.room.offline_tag"));
+            if (i == 0) {
+                extra = extra.copy().append(Component.translatable("wifi_card_games.uno.room.host_tag"));
+            }
+            lines.add(Component.translatable("wifi_card_games.uno.room.seat", i + 1, name).append(extra));
         }
-        lines.add("旁观：" + r.spectators.size() + " 人");
+        lines.add(Component.translatable("wifi_card_games.uno.room.spectators", r.spectators.size()));
         return lines;
     }
 
     private static UnoGame gameOf(CommandSourceStack source, ServerPlayer player) throws CommandSyntaxException {
         UnoGame game = UnoMemoryManager.INSTANCE.gameOf(player);
         if (game == null) {
-            source.sendFailure(Component.literal("你不在任何对局中"));
+            source.sendFailure(Component.translatable("wifi_card_games.uno.error.not_in_game_self"));
         }
         return game;
+    }
+
+    /** 可点击命令文本（label 为翻译键）。 */
+    private static MutableComponent click(String labelKey, String command, ChatFormatting color) {
+        return Component.translatable(labelKey).withStyle(style -> style
+                .withColor(color)
+                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command)));
     }
 }
